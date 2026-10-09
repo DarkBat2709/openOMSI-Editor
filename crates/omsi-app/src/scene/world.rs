@@ -5,6 +5,8 @@ pub struct World {
     pub root: PathBuf,
     pub global: GlobalCfg,
     pub map_dir: PathBuf,
+    /// Empty tiles created this session, with stable global.cfg indices and mod paths.
+    pub(super) editor_tiles: Mutex<HashMap<(i32, i32), (usize, PathBuf)>>,
     /// Indexed parked car lists of the map, loaded when a parking space uses one.
     pub(super) parklist: Mutex<HashMap<usize, Vec<String>>>,
     /// Render textures of the player's mirrors (`reflexionN.bmp`), by camera index.
@@ -104,8 +106,24 @@ pub struct World {
     pub edit_objects: Mutex<HashMap<i64, EditObject>>,
     /// What the object editor did this run, by map id: kept over tile reloads until saved.
     pub object_edits: Mutex<HashMap<i64, ObjectEdit>>,
+    /// Terrain masks must be rebuilt after a ground-cutting object is hidden/restored.
+    pub object_ground_dirty: Mutex<HashSet<(i32,i32)>>,
+    pub object_text_edits: Mutex<HashMap<i64, Vec<String>>>,
+    pub spline_edits: Mutex<crate::spline_editor::Edits>,
+    pub roadside_edits: Mutex<crate::roadside_objects::Edits>,
+    pub(super) editor_next_id: Mutex<Option<i64>>,
+    /// Added objects remain owned by their editor helpers for this entire session.
+    /// A saved record must not create another visible instance during a spline rebuild.
+    pub(super) editor_helper_ids: Mutex<HashSet<i64>>,
+    /// Session baselines for independent objects. Loading a saved overlay must not
+    /// add the still-active ObjectEdit to an already moved/turned record again.
+    /// Ground-relative placements still follow explicit terrain edits.
+    pub(super) editor_object_placements: Mutex<HashMap<((i32, i32), i64), (PathBuf, Placement)>>,
+    pub(super) editor_script_states: Mutex<HashMap<((i32, i32), i64), EditorScriptState>>,
     /// The ground as the editor's brush has left it, by tile (read instead of the file).
     pub terrain_edits: Mutex<HashMap<(i32, i32), Terrain>>,
+    pub ground_paint_edits: Mutex<HashMap<crate::ground_paint::Key, crate::ground_paint::Mask>>,
+    pub ground_texture_edits: Mutex<Vec<omsi_map::GroundTex>>,
     /// Placed `[busstop]` objects: (map id, world position, heading, name).
     pub bus_stops: Mutex<Vec<(i64, DVec3, f64, String)>>,
     /// Where people wait at the stops: the `[passpos]` points of placed objects with a
@@ -658,7 +676,38 @@ impl World {
         let lx = (x - tx as f64 * tile_size()) as f32;
         let ly = (y - ty as f64 * tile_size()) as f32;
         let t = self.terrains.read();
-        Some(t.get(&(tx, ty))?.sample(lx, ly) as f64)
+        if let Some(terrain) = t.get(&(tx, ty)) { return Some(terrain.sample(lx, ly) as f64); }
+        drop(t);
+        self.spline_edits.lock().terrain_cache.get(&(tx, ty)).map(|t| t.sample(lx, ly) as f64)
+    }
+
+    /// Editor tools follow the terrain before road alignment, not the old asphalt.
+    pub fn editor_terrain_tile(&self, key: (i32, i32)) -> Option<Terrain> {
+        if let Some(t) = self.terrain_edits.lock().get(&key) { return Some(t.clone()); }
+        if let Some(t) = self.staged.lock().get(&key) { return Some(t.base_terrain.clone()); }
+        self.spline_edits.lock().terrain_cache.get(&key).cloned()
+    }
+
+    pub fn editor_terrain_height(&self, x: f64, y: f64) -> Option<f64> {
+        let size = tile_size();
+        let key = ((x / size).floor() as i32, (y / size).floor() as i32);
+        let (lx, ly) = ((x - key.0 as f64 * size) as f32, (y - key.1 as f64 * size) as f32);
+        if let Some(t) = self.terrain_edits.lock().get(&key) { return Some(t.sample(lx, ly) as f64); }
+        if let Some(t) = self.staged.lock().get(&key) { return Some(t.base_terrain.sample(lx, ly) as f64); }
+        if let Some(t) = self.spline_edits.lock().terrain_cache.get(&key) { return Some(t.sample(lx, ly) as f64); }
+        self.ground_terrain(x, y)
+    }
+
+    pub fn cache_editor_terrain(&self, keys: &[(i32, i32)]) {
+        let staged = self.staged.lock();
+        let mut edits = self.spline_edits.lock();
+        for key in keys {
+            if let Some(t) = staged.get(key) { edits.terrain_cache.insert(*key, t.base_terrain.clone()); }
+        }
+    }
+
+    pub fn clear_editor_terrain_cache(&self, key: (i32, i32)) {
+        self.spline_edits.lock().terrain_cache.remove(&key);
     }
 
     /// The height a vehicle put down at (x, y) stands at: the face its wheels would stand on
@@ -767,7 +816,7 @@ impl World {
     ///
     /// The mask is stored like a picture (first row = north), the terrain mesh's v runs
     /// north with y, so the rows are turned over here.
-    pub(super) fn load_ground_paint(&self, tile_path: &Path) -> Vec<(usize, Image)> {
+    pub(super) fn load_ground_paint(&self, tile_path: &Path, key: (i32, i32)) -> Vec<(usize, Image)> {
         let Some(name) = tile_path
             .file_name()
             .map(|n| n.to_string_lossy().to_string())
@@ -775,7 +824,18 @@ impl World {
             return Vec::new();
         };
         let mut out = Vec::new();
-        for layer in 1..self.global.ground_textures.len() {
+        for layer in 1..crate::ground_paint::layers(self).len() {
+            if let Some(mask) = self.ground_paint_edits.lock().get(&(key, layer)) {
+                let mut img = mask.image();
+                let stride = img.width as usize * 4;
+                let north = img.rgba.clone();
+                for row in 0..img.height as usize {
+                    img.rgba[row * stride..(row + 1) * stride].copy_from_slice(
+                        &north[(img.height as usize - 1 - row) * stride..(img.height as usize - row) * stride]);
+                }
+                out.push((layer, img));
+                continue;
+            }
             let path =
                 omsi_cfg::resolve_path(&self.map_dir, &format!("texture/map/{name}.{layer}.dds"));
             if !omsi_cfg::vfs::is_file(&path) {

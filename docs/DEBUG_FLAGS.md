@@ -100,6 +100,7 @@ effect. On Android, `openOMSI/env.txt` holds `NAME=value` lines that are set bef
 | `OMSI_DUMP_GROUND` | text | - | use | app | File: every loaded tile's final terrain and road cut as text. |
 | `OMSI_DUMP_SCENERY_TEXT` | text | - | use | app | Directory: write the scenery objects' text textures as drawn. |
 | `OMSI_DUMP_SCRIPTTEX` | text | - | use | app | Directory: write the player's bus's script (display) textures. |
+| `OMSI_EDITOR_TREE_TRACE` | bool | off | use | app | Log editor tree placement, terrain restoration and restored object scripts. |
 | `OMSI_ENV_PHOTO` | num | 1 | use | render | 0 leaves the environment photo out of the debug views. |
 | `OMSI_GPU_TIMERS` | bool | off | use | render | Measure GPU time per pass with timestamp queries. |
 | `OMSI_GPU_TIMERS_RAW` | bool | off | use | render | With OMSI_GPU_TIMERS: the passes in the order the GPU finished them. |

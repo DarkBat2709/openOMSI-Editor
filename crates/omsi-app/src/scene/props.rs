@@ -212,7 +212,19 @@ impl World {
     pub fn apply_object_edit(&self, renderer: &Renderer, scene: &mut Scene, id: i64, edit: ObjectEdit) {
         let before = self.object_edits.lock().insert(id, edit).unwrap_or_default();
         let Some(eo) = self.edit_objects.lock().get(&id).cloned() else { return };
+        if before.deleted!=edit.deleted {
+            if self.editor_object_type(&eo.sco.to_string_lossy()).is_ok_and(|ot|
+                !ot.holes.is_empty()||ot.sco.surface||ot.sco.render_type.is_ground_layer()) {
+                self.object_ground_dirty.lock().insert(eo.tile);
+                log::info!("object editor: rebuilding terrain cut for object {} in tile {:?}, deleted {}",id,eo.tile,edit.deleted);
+            }
+        }
         show_edit(renderer, scene, &eo, edit);
+        if omsi_cfg::env::var_os("OMSI_EDITOR_TREE_TRACE").is_some() {
+            let animated = self.scripted.lock().iter().any(|o| o.tile == eo.tile && o.map_id == id);
+            log::info!("object edit: id {}, {:?}, {} render instances, scripted {}, deleted {}",
+                id, eo.sco, eo.instances.len(), animated, edit.deleted);
+        }
         // the boxes: from the previous edit to this one, turned about the object's place
         if let Some(st) = self.tile_state.lock().get_mut(&eo.tile) {
             let from = eo.pos + before.moved;
@@ -248,8 +260,103 @@ impl World {
 
     /// The file tile (tx, ty) is read from, and the map folder's place relative to `root`.
     pub fn tile_source(&self, tx: i32, ty: i32) -> Option<PathBuf> {
+        if let Some((_, path)) = self.editor_tiles.lock().get(&(tx, ty)) { return Some(path.clone()); }
         let t = self.global.tiles.iter().find(|t| t.x == tx && t.y == ty)?;
         Some(omsi_cfg::resolve_path(&self.map_dir, &t.file))
+    }
+
+    /// Include listed-but-missing files: creating a tile must not replace a broken entry.
+    pub fn editor_tile_keys(&self) -> hashbrown::HashSet<(i32, i32)> {
+        self.global.tiles.iter().map(|t| (t.x, t.y))
+            .chain(self.editor_tiles.lock().keys().copied()).collect()
+    }
+
+    /// Appending an empty tile leaves every existing timetable/repeater index intact.
+    pub fn register_editor_tile(&self, key: (i32, i32), index: usize, path: PathBuf) {
+        self.editor_tiles.lock().insert(key, (index, path.clone()));
+        let index = self.index();
+        let mut cache = self.layout.lock();
+        if let Some(old) = cache.as_ref() {
+            let mut paths = old.paths.clone();
+            let mut sources = old.sources.clone();
+            paths.insert(key, path);
+            let mut own = Vec::new();
+            for (dx, dy) in NEIGHBOURHOOD {
+                let neighbour = (key.0 + dx, key.1 + dy);
+                if paths.contains_key(&neighbour) {
+                    own.push(neighbour);
+                    if neighbour != key {
+                        let list = sources.entry(neighbour).or_default();
+                        if !list.contains(&key) { list.push(key); list.sort(); }
+                    }
+                }
+            }
+            let ts = tile_size();
+            let bounds = [key.0 as f64 * ts - SOURCE_MARGIN, key.1 as f64 * ts - SOURCE_MARGIN,
+                (key.0 as f64 + 1.0) * ts + SOURCE_MARGIN, (key.1 as f64 + 1.0) * ts + SOURCE_MARGIN];
+            for (source, c) in &index.covers {
+                if paths.contains_key(source) && c[2] >= bounds[0] && c[0] <= bounds[2]
+                    && c[3] >= bounds[1] && c[1] <= bounds[3] { own.push(*source); }
+            }
+            own.sort(); own.dedup(); sources.insert(key, own);
+            *cache = Some(Arc::new(TileLayout { paths, sources }));
+        }
+    }
+
+    /// Reserve one ID shared by both editor modes, including records on unloaded tiles.
+    pub fn allocate_editor_id(&self) -> Option<i64> {
+        let recipe_max = self.roadside_edits.lock().groups.iter().map(|g| g.id).max().unwrap_or(0);
+        let mut next = self.editor_next_id.lock();
+        if next.is_none() {
+            let index = self.index();
+            let max = index.splines.keys().copied()
+                .chain(self.object_positions.lock().keys().copied())
+                .chain(index.masters.keys().map(|(_, id)| *id))
+                .chain(self.spline_edits.lock().added.keys().map(|(_, id)| *id))
+                .max().unwrap_or(0).max(recipe_max).max(0);
+            *next = max.checked_add(1);
+        }
+        if next.is_some_and(|id| id <= recipe_max) { *next = recipe_max.checked_add(1); }
+        let id = (*next)?;
+        *next = Some(id.checked_add(1)?);
+        Some(id)
+    }
+
+    pub(crate) fn retain_editor_helper(&self, id: i64) {
+        self.editor_helper_ids.lock().insert(id);
+    }
+
+    pub(super) fn editor_object_placement(&self, tile: (i32, i32), id: i64, sco: &Path, place: Placement) -> Placement {
+        let mut placements = self.editor_object_placements.lock();
+        let saved = placements.entry((tile, id)).or_insert_with(|| (sco.to_path_buf(), place.clone()));
+        if saved.0.as_path() != sco { *saved = (sco.to_path_buf(), place); }
+        saved.1.clone()
+    }
+
+    pub(crate) fn editor_row_source(&self, key: (i32, i32)) -> Result<(Tile, HashSet<i64>), String> {
+        let path = self.tile_source(key.0, key.1).ok_or("Tile der Straße fehlt")?;
+        let base = Tile::load(&path).map_err(|e| e.to_string())?;
+        let active = crate::tiles::read_tile(&path, &self.chrono_dirs.read()).ok_or("Aktives Tile fehlt")?;
+        let editable = base.splines.iter().filter(|s| active.splines.iter().any(|a| a == *s)).map(|s| s.id).collect();
+        Ok((base, editable))
+    }
+
+    /// Only base-map splines unchanged by active Chrono scenarios are editable. Rewriting
+    /// a Chrono addition into the base tile would make it appear on the wrong date.
+    pub fn collect_editor_splines(&self) {
+        if omsi_map::world_coordinates() { return; }
+        for tile in self.loaded_tiles() {
+            let Some(path) = self.tile_source(tile.0, tile.1) else { continue };
+            let Ok(base) = omsi_map::Tile::load(&path) else { continue };
+            if base.version != 0 && base.version < 14 { continue; }
+            let Some(active) = crate::tiles::read_tile(&path, &self.chrono_dirs.read()) else { continue };
+            let mut edits = self.spline_edits.lock();
+            for s in &base.splines {
+                if !s.deleted && active.splines.iter().any(|a| a == s) {
+                    edits.originals.entry((tile, s.id)).or_insert_with(|| s.clone());
+                }
+            }
+        }
     }
 
     /// Take a tile off the GPU and out of the world's lists (its lanes, traffic light
@@ -257,6 +364,82 @@ impl World {
     ///
     /// True when object types went with it: [`World::trim_object_types`] then lets their
     /// meshes go on the CPU side too (once after a batch of tiles, not per tile).
+    pub fn hold_editor_gpu(&self, key: (i32, i32)) -> Option<TileGpu> {
+        let mut states = self.tile_state.lock();
+        let state = states.get_mut(&key)?;
+        if state.gpu.instances.is_empty() { return None; }
+        let gpu = std::mem::take(&mut state.gpu);
+        drop(states);
+        let objects = self.edit_objects.lock();
+        let scripted = self.scripted.lock();
+        let mut saved = self.editor_script_states.lock();
+        let mut counts = HashMap::new();
+        for object in scripted.iter().filter(|o| o.tile == key) {
+            *counts.entry(object.map_id).or_insert(0usize) += 1;
+        }
+        for object in scripted.iter().filter(|o| o.tile == key) {
+            if counts.get(&object.map_id) != Some(&1) { continue; }
+            let Some(record) = objects.get(&object.map_id).filter(|r| r.tile == key && r.sco == object.ty.sco.path)
+                else { continue; };
+            // These have their own external state/resources. Their usual initialization
+            // remains intact; the plain animated trees have neither pages nor text/sound.
+            if !object.texts.is_empty() || !object.htmls.is_empty() || object.ty.sco.sound.is_some() { continue; }
+            saved.insert((key, object.map_id), EditorScriptState::capture(&record.sco, &record.strings, &object.inst));
+        }
+        Some(gpu)
+    }
+
+    pub fn clear_editor_script_states(&self, key: (i32, i32)) {
+        self.editor_script_states.lock().retain(|(tile, _), _| *tile != key);
+    }
+
+    pub fn release_editor_gpu(&self, renderer: &Renderer, scene: &mut Scene, gpu: TileGpu) {
+        self.gpu.lock().release_tile(renderer, scene, gpu);
+    }
+
+    /// A spline rebuild must not replace an unchanged independent tree's live instance.
+    /// Transfer it just before committing the hidden replacement. Abandoned partial
+    /// uploads therefore never take ownership away from the still-visible old tile.
+    pub fn reuse_editor_trees(&self, renderer: &Renderer, scene: &mut Scene,
+        upload: &mut PendingUpload, old: &mut TileGpu) -> usize {
+        let pairs = matching_editor_trees(&upload.tg, old);
+        let mut reused = 0;
+        let mut gpu = self.gpu.lock();
+        let mut objects = self.edit_objects.lock();
+        for pair in pairs {
+            let new_slot = upload.tg.editor_trees[pair.0].1.instances[0];
+            let old_slot = old.editor_trees[pair.1].1.instances[0];
+            let (Some(new), Some(previous)) = (scene.instances.get(new_slot), scene.instances.get(old_slot))
+                else { continue; };
+            let visible = upload.hidden_preview.get(&new_slot).copied().unwrap_or(new.visible);
+            // Also compare the effective object edit and the actual render resources.
+            // Changed terrain heights, tree dimensions, textures and deletions are
+            // allowed to replace a tree; they must not be frozen by this optimization.
+            if new.origin != previous.origin || new.transform != previous.transform
+                || new.mesh != previous.mesh || new.materials != previous.materials
+                || visible != previous.visible || new.slot_alpha != previous.slot_alpha
+                || new.slot_uv != previous.slot_uv || new.slot_light != previous.slot_light
+                || new.slot_night != previous.slot_night { continue; }
+            let Some((new_slot, old_slot)) = transfer_editor_tree(&mut upload.tg, old, pair)
+                else { continue; };
+            upload.hidden_preview.remove(&new_slot);
+            renderer.remove_instance(scene, new_slot);
+            let slots = renderer.instance_slots(scene, new_slot);
+            gpu.free_instances.entry(slots).or_default().push(new_slot);
+            let (id, object) = &upload.tg.editor_trees[pair.0];
+            if let Some(current) = objects.get_mut(id).filter(|current|
+                current.tile == object.tile && current.instances.len() == 1 && current.instances[0] == new_slot) {
+                current.instances[0] = old_slot;
+            }
+            reused += 1;
+        }
+        if omsi_cfg::env::var_os("OMSI_EDITOR_TREE_TRACE").is_some() {
+            log::info!("tree rebuild: tile {:?}, retained {} of {} independent tree instances",
+                upload.key(), reused, upload.tg.editor_trees.len());
+        }
+        reused
+    }
+
     pub fn unload_tile(
         &self,
         renderer: &Renderer,
@@ -292,17 +475,42 @@ impl World {
     /// as OMSI puts the dynamic route arrows. Taken away again with
     /// `remove_helper_object`.
     pub fn add_helper_object(&self, renderer: &Renderer, scene: &mut Scene, rel: &str, pos: DVec3, heading: f64, strings: &[String]) -> Option<TileGpu> {
+        self.add_editor_helper_object(renderer,scene,rel,pos,heading,[0.0,0.0],strings)
+    }
+
+    pub fn add_editor_helper_object(&self,renderer:&Renderer,scene:&mut Scene,rel:&str,pos:DVec3,heading:f64,tilt:[f64;2],strings:&[String])->Option<TileGpu> {
         let ot = self.object_type(rel)?;
         let mut guard = self.gpu.lock();
         let gpu = &mut *guard;
         self.ensure_ground(renderer, scene, gpu);
         let ground_mat = gpu.ground.as_ref()?.ground_mat;
+        let shape=editor_helper_shape(&ot.sco,strings,tilt);
+        let xf=Mat4::from_rotation_z((-heading).to_radians() as f32)*shape;
+        if let Some((texture,_,_,_,_))=&ot.sco.tree {
+            let texture=strings.first().filter(|s|!s.trim().is_empty()).unwrap_or(texture);
+            let dirs = ot.texture_dirs(&self.root);
+            let tkey = tree_material_key(texture, &dirs);
+            if !gpu.trees.contains_key(&tkey) {
+                let found=gpu.texture(renderer,scene,texture,&dirs,&HashMap::new())?;
+                renderer.address_next.set(omsi_render::TexAddressing::Clamp);
+                let material=renderer.add_material_extra(scene,Some(found.0),AlphaMode::Test,[1.0;4],false,None,None,None,None,[0.0;3],
+                    MaterialExtra {tree:true,sway:Some(tree_card_sway(&ot,texture)),..Default::default()});
+                let material=gpu.material(renderer,scene,material);
+                trace_tree_material(&ot.sco.path, &tkey, material, Some(&found.1));
+                gpu.trees.insert(tkey.clone(),TreeGpu {material,texture:Some(found.1),users:0});
+            }
+            let tr=gpu.trees.get_mut(&tkey)?;tr.users+=1;let mat=tr.material;
+            let mesh=gpu.ground.as_ref()?.tree_mesh;
+            let id=renderer.add_instance(scene,mesh,pos,xf,vec![mat]);
+            let instance=gpu.instance(renderer,scene,id);
+            return Some(TileGpu {instances:vec![instance],trees:vec![tkey],helper_shape:Some(shape),..Default::default()});
+        }
         let tkey = self.type_gpu(renderer, scene, gpu, &ot, &HashMap::new(), ground_mat);
         let mut tg = TileGpu::default();
+        tg.helper_shape=Some(shape);
         gpu.types.get_mut(&tkey)?.users += 1;
         tg.types.push(tkey);
         let meshes = gpu.types[&tkey].meshes.clone();
-        let xf = Mat4::from_rotation_z((-heading).to_radians() as f32);
         for (mi, (mesh_id, mats)) in meshes.iter().enumerate() {
             let new = renderer.add_instance(scene, *mesh_id, pos, xf, mats.clone());
             renderer.set_omsi_caster(scene, new, ot.mesh_casts.get(mi).copied().unwrap_or(false));
@@ -320,7 +528,9 @@ impl World {
                 ) else {
                     continue;
                 };
-                let text = tt.variable.trim().parse::<usize>().ok().and_then(|k| strings.get(k)).cloned().unwrap_or_default();
+                let text = tt.variable.trim().parse::<usize>().ok().or_else(||
+                    ot.program.as_ref().and_then(|p|p.str_var(tt.variable.trim())).map(|i|i as usize))
+                    .and_then(|k| strings.get(k)).cloned().unwrap_or_default();
                 let alpha = text_alpha(o3d_mats, slot, overrides);
                 let slot_ov: Vec<&MaterialDef> = overrides.iter().filter(|o| !o.item && omsi_sim::vehicle::override_slot(o3d_mats, o) == Some(slot)).collect();
                 let key = text_material_key(scenery_text_key(tt, &text, alpha), &slot_ov);
@@ -345,8 +555,68 @@ impl World {
     }
 
     /// Take away an object `add_helper_object` put down.
+    /// Update only this object's text materials. Meshes and the rest of the tile stay
+    /// resident, and the returned ownership keeps the new shared textures alive.
+    pub fn update_editor_object_labels(&self, renderer: &Renderer, scene: &mut Scene,
+        id: i64, strings: &[String]) -> Result<TileGpu, String> {
+        let object = self.edit_objects.lock().get(&id).cloned().ok_or("Objekt nicht mehr geladen")?;
+        let ot = self.editor_object_type(&object.sco.to_string_lossy())?;
+        let scripted = self.scripted.lock().iter().any(|o| o.map_id == id);
+        let resources = self.update_editor_label_materials(renderer, scene, &ot, &object.instances, strings, scripted);
+        for object in self.scripted.lock().iter_mut().filter(|o| o.map_id == id) {
+            for (value, text) in object.inst.state.str_vars.iter_mut().zip(strings) { value.clone_from(text); }
+            object.inst.set_var("Refresh_Strings", 1.0);
+        }
+        Ok(resources)
+    }
+
+    pub fn update_editor_helper_labels(&self, renderer: &Renderer, scene: &mut Scene,
+        sco: &Path, helper: &mut TileGpu, strings: &[String]) -> Result<(), String> {
+        let ot = self.editor_object_type(&sco.to_string_lossy())?;
+        let new = self.update_editor_label_materials(renderer, scene, &ot, &helper.instances, strings, false);
+        let old = TileGpu { texts: std::mem::replace(&mut helper.texts, new.texts), ..Default::default() };
+        self.remove_helper_object(renderer, scene, old);
+        Ok(())
+    }
+
+    fn update_editor_label_materials(&self, renderer: &Renderer, scene: &mut Scene,
+        ot: &ObjectType, instances: &[usize], strings: &[String], scripted: bool) -> TileGpu {
+        let mut owned = TileGpu::default(); let mut guard = self.gpu.lock(); let gpu = &mut *guard;
+        for (mi, (_, materials, overrides)) in ot.meshes.iter().enumerate() {
+            let Some(&instance) = instances.get(mi) else { continue; };
+            for o in overrides.iter().filter(|o| !o.item && o.use_text_texture.is_some()) {
+                let (Some(slot), Some(tt)) = (omsi_sim::vehicle::override_slot(materials, o),
+                    ot.model.text_textures.get(o.use_text_texture.unwrap().max(0) as usize)) else { continue; };
+                if scripted && tt.variable.trim().parse::<usize>().is_err() { continue; }
+                let index = tt.variable.trim().parse::<usize>().ok().or_else(||
+                    ot.program.as_ref().and_then(|p| p.str_var(tt.variable.trim())).map(|i| i as usize));
+                let Some(index) = index else { continue; };
+                let text = strings.get(index).map(String::as_str).unwrap_or("");
+                let alpha = text_alpha(materials, slot, overrides); let key = scenery_text_key(tt, text, alpha);
+                let mat = if let Some(entry) = gpu.text_textures.get_mut(&key) { entry.2 += 1; entry.1 } else {
+                    let atlas = self.fonts.lock().get(&tt.font, &|p| omsi_texture::decode_file(p).ok().map(|i| (i.width, i.height, i.rgba)));
+                    let image = helper_text_image(tt, atlas.as_deref(), text).unwrap_or_else(|| scenery_text_image(tt, atlas, text));
+                    let tex = gpu.add_image(renderer, scene, &image, true);
+                    let mat = renderer.add_material(scene, Some(tex), alpha, [1.0; 4], false);
+                    let mat = gpu.material(renderer, scene, mat);
+                    gpu.text_textures.insert(key.clone(), (tex, mat, 1)); mat
+                };
+                owned.texts.push(key); renderer.set_material(scene, instance, slot, mat);
+            }
+        }
+        owned
+    }
+
     pub fn remove_helper_object(&self, renderer: &Renderer, scene: &mut Scene, tg: TileGpu) {
         self.gpu.lock().release_tile(renderer, scene, tg);
+    }
+
+    /// Moving an editor helper keeps its meshes, materials and textures on the GPU.
+    /// Releasing and recreating the sole user of a type at every key repeat/drag frame
+    /// needlessly uploads the entire junction again and can stall rendering.
+    pub fn move_helper_object(&self, renderer: &Renderer, scene: &mut Scene, tg: &TileGpu, pos: DVec3, heading: f64) {
+        let rotation = Mat4::from_rotation_z((-heading).to_radians() as f32)*tg.helper_shape.unwrap_or(Mat4::IDENTITY);
+        for instance in &tg.instances { renderer.set_transform(scene, *instance, pos, rotation); }
     }
 
     /// The scripted objects of tile `key` go (their sounds stop).
@@ -426,6 +696,8 @@ impl World {
 
     /// Rebuild the world's lists (stops, obstacles, lights, lamps) from the loaded tiles.
     pub fn refresh_tile_lists(&self) {
+        // Copy edits before taking the tile lock, matching apply_object_edit's order.
+        let edits = self.object_edits.lock().clone();
         let states = self.tile_state.lock();
         let mut keys: Vec<&(i32, i32)> = states.keys().collect();
         keys.sort();
@@ -453,8 +725,9 @@ impl World {
             for m in &s.mesh_obstacles {
                 collision.add_mesh(m.clone());
             }
-            coronas.extend(s.coronas.iter().cloned());
-            lights.extend(s.lights.iter().cloned());
+            let (object_coronas, object_lights) = collect_editor_lights(s, &edits);
+            coronas.extend(object_coronas);
+            lights.extend(object_lights);
             lamps.extend(s.light_objects.iter().cloned());
             night.extend(s.night_slots.iter().cloned());
             modes.extend(s.night_modes.iter().cloned());
@@ -1125,11 +1398,15 @@ pub fn tile_companion(path: &Path, ext: &str) -> PathBuf {
 pub(super) fn show_edit(renderer: &Renderer, scene: &mut Scene, eo: &EditObject, e: ObjectEdit) {
     // (a deleted one goes deep under the ground rather than being hidden: its instances'
     // visibility is the level-of-detail switch's, and an undone delete brings it back)
-    let rot = Mat4::from_rotation_z(-(e.turned.to_radians() as f32)) * eo.xf;
-    let at = eo.pos + e.moved - if e.deleted { DVec3::Z * 10_000.0 } else { DVec3::ZERO };
+    let (at, rot) = edited_object_pose(eo.pos, eo.xf, e);
     for inst in &eo.instances {
         renderer.set_transform(scene, *inst, at, rot);
     }
+}
+
+pub(super) fn edited_object_pose(pos: DVec3, xf: Mat4, edit: ObjectEdit) -> (DVec3, Mat4) {
+    (pos + edit.moved - if edit.deleted { DVec3::Z * 10_000.0 } else { DVec3::ZERO },
+        Mat4::from_rotation_z(-(edit.turned.to_radians() as f32)) * xf)
 }
 
 /// Stop drawing an instance, keeping its other parameters.

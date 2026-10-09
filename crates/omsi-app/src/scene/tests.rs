@@ -24,10 +24,376 @@ fn helper_text_breaks_lines_at_the_at_sign() {
     assert_eq!(bands(&rows("622@Sosnowiec@Urząd")), 3);
 }
 
-use super::*;
+    use super::*;
 
-#[test]
-fn far_offset_forest_backdrops_keep_their_owner_tiles_visibility() {
+    fn independent_tree(id: i64, slot: usize) -> (i64, EditObject) {
+        (id, EditObject {
+            tile: (-18, 10), pos: DVec3::new(-5230.0, 3120.0, 0.29),
+            xf: Mat4::from_scale(glam::Vec3::new(12.0, 12.0, 15.0)), key: id,
+            instances: vec![slot], sco: PathBuf::from("Sceneryobjects/Krummenaab/Tree_Middle02.sco"),
+            strings: vec!["Tree_middle02.dds".into(), "15".into(), "0.8".into()],
+        })
+    }
+
+    #[test]
+    fn scripted_object_pose_keeps_editor_move_turn_delete_and_undo() {
+        let pos = DVec3::new(12.0, 34.0, 2.0);
+        let base = Mat4::from_rotation_z(0.2);
+        let animation = Mat4::from_rotation_z(1.1);
+        let moved = ObjectEdit { moved: DVec3::new(3.0, -2.0, 0.5), turned: 20.0, deleted: false };
+        let expected = Mat4::from_rotation_z(-20.0_f32.to_radians()) * base * animation;
+        for _ in 0..40 { // repeated script frames must not put the original pose back
+            let (at, rotation) = edited_object_pose(pos, base, moved);
+            assert_eq!(at, pos + moved.moved);
+            assert_eq!(rotation * animation, expected);
+        }
+        let (gone, _) = edited_object_pose(pos, base, ObjectEdit { deleted: true, ..moved });
+        assert_eq!(gone, pos + moved.moved - DVec3::Z * 10_000.0);
+        assert_eq!(edited_object_pose(pos, base, ObjectEdit::default()), (pos, base));
+    }
+
+    #[test]
+    fn editor_rebuild_restores_each_trees_own_script_values_and_first_frame_pose() {
+        let mut program = omsi_script::Program::default();
+        let rotation = program.declare_var("random_rotation") as usize;
+        program.declare_str_var("leaf_texture");
+        let program = Arc::new(program);
+        let sco = Path::new("Sceneryobjects/Krummenaab5/tree_medium_03.sco");
+        let labels = vec!["leaf.dds".to_string()];
+        let make = || {
+            let mut inst = omsi_sim::scenery::SceneryInstance::new(
+                program.clone(), &[], omsi_sim::SimClock::default(), &labels);
+            inst.mesh_transforms = vec![Mat4::IDENTITY];
+            inst.mesh_visible = vec![true];
+            inst
+        };
+        let mut first = make(); first.state.vars[rotation] = 37.0;
+        first.mesh_transforms[0] = Mat4::from_rotation_z(37.0_f32.to_radians());
+        let mut second = make(); second.state.vars[rotation] = 121.0;
+        second.mesh_transforms[0] = Mat4::from_rotation_z(121.0_f32.to_radians());
+        second.mesh_visible[0] = false;
+        let saved_first = EditorScriptState::capture(sco, &labels, &first);
+        let saved_second = EditorScriptState::capture(sco, &labels, &second);
+        for _ in 0..40 {
+            let mut rebuilt_first = make(); let mut rebuilt_second = make();
+            assert!(saved_first.restore(sco, &labels, &mut rebuilt_first));
+            assert!(saved_second.restore(sco, &labels, &mut rebuilt_second));
+            assert_eq!(rebuilt_first.state.vars, first.state.vars);
+            assert_eq!(rebuilt_second.state.vars, second.state.vars);
+            assert_eq!(rebuilt_first.state.str_vars, first.state.str_vars);
+            assert_eq!(rebuilt_first.mesh_transforms, first.mesh_transforms);
+            assert_eq!(rebuilt_second.mesh_transforms, second.mesh_transforms);
+            assert_eq!(rebuilt_second.mesh_visible, second.mesh_visible);
+        }
+        assert!(!saved_first.restore(Path::new("other.sco"), &labels, &mut make()));
+        assert!(!saved_first.restore(sco, &["changed.dds".into()], &mut make()));
+        let mut incompatible = make(); incompatible.mesh_transforms.clear();
+        assert!(!saved_first.restore(sco, &labels, &mut incompatible));
+        let mut other_program = omsi_script::Program::default();
+        other_program.declare_var("different_variable"); other_program.declare_str_var("leaf_texture");
+        let mut incompatible = make(); incompatible.program = Arc::new(other_program);
+        assert!(!saved_first.restore(sco, &labels, &mut incompatible));
+    }
+
+    #[test]
+    fn repeated_spline_rebuilds_keep_tree_slots_and_transfer_ownership_once() {
+        let mut tile = TileGpu { instances: vec![3, 7], trees: vec!["leaf-material".into()],
+            editor_trees: vec![independent_tree(9858784, 7)], ..Default::default() };
+        for step in 0..40 {
+            let temporary = 100 + step;
+            let ground_slot = 1000 + step;
+            let mut replacement = TileGpu { instances: vec![ground_slot, temporary], trees: vec!["leaf-material".into()],
+                editor_trees: vec![independent_tree(9858784, temporary)], ..Default::default() };
+            let pairs = matching_editor_trees(&replacement, &tile);
+            assert_eq!(pairs, vec![(0, 0)]);
+            assert_eq!(transfer_editor_tree(&mut replacement, &mut tile, pairs[0]), Some((temporary, 7)));
+            assert_eq!(transfer_editor_tree(&mut replacement, &mut tile, pairs[0]), None);
+            assert!(!tile.instances.contains(&7), "old tile must not free the kept tree");
+            assert_eq!(replacement.instances, vec![ground_slot, 7]);
+            assert_eq!(replacement.editor_trees[0].1.instances, vec![7]);
+            assert_eq!(tile.trees, replacement.trees, "each tile keeps its shared material reference until release");
+            tile = replacement;
+        }
+    }
+
+    #[test]
+    fn changed_or_ambiguous_trees_are_not_kept_during_spline_rebuilds() {
+        let old = TileGpu { instances: vec![7], editor_trees: vec![independent_tree(1, 7)], ..Default::default() };
+        let make = || TileGpu { instances: vec![8], editor_trees: vec![independent_tree(1, 8)], ..Default::default() };
+        for change in 0..7 {
+            let mut current = make();
+            let (id, object) = &mut current.editor_trees[0];
+            match change {
+                0 => *id = 2,
+                1 => object.tile = (-17, 10),
+                2 => object.pos.z += 0.1, // terrain editing must update tree height
+                3 => object.xf = Mat4::from_rotation_z(0.5) * object.xf,
+                4 => object.sco = PathBuf::from("Sceneryobjects/Other/tree.sco"),
+                5 => object.strings[0] = "fall.dds".into(),
+                _ => object.key = 2,
+            }
+            assert!(matching_editor_trees(&current, &old).is_empty(), "change {change}");
+        }
+        let mut duplicate = make();
+        duplicate.editor_trees.push(independent_tree(1, 9)); duplicate.instances.push(9);
+        assert!(matching_editor_trees(&duplicate, &old).is_empty());
+        assert!(matching_editor_trees(&old, &duplicate).is_empty());
+        let mut missing = make(); missing.instances.clear();
+        assert!(matching_editor_trees(&missing, &old).is_empty());
+        let row_or_helper = TileGpu { instances: vec![8], ..Default::default() };
+        assert!(matching_editor_trees(&row_or_helper, &old).is_empty());
+    }
+
+    #[test]
+    fn matching_a_cancelled_replacement_does_not_take_tree_ownership() {
+        let old = TileGpu { instances: vec![7], editor_trees: vec![independent_tree(1, 7)], ..Default::default() };
+        let replacement = TileGpu { instances: vec![8], editor_trees: vec![independent_tree(1, 8)], ..Default::default() };
+        assert_eq!(matching_editor_trees(&replacement, &old), vec![(0, 0)]);
+        drop(replacement); // abandoned upload frees only its own temporary slot
+        assert_eq!(old.instances, vec![7]);
+        assert_eq!(old.editor_trees[0].1.instances, vec![7]);
+    }
+
+    #[test]
+    fn tree_cards_have_no_coplanar_duplicates_and_are_pickable_from_both_sides() {
+        let mesh = tree_quad_mesh();
+        assert!(!mesh.one_sided);
+        assert_eq!(mesh.positions.len(), 42);
+        assert_eq!(mesh.indices.len(), 144);
+        let mut triangles = hashbrown::HashSet::new();
+        for t in mesh.indices.chunks_exact(3) {
+            let mut vertices = [t[0], t[1], t[2]];
+            vertices.sort_unstable();
+            assert!(triangles.insert(vertices), "duplicate coplanar tree triangle");
+        }
+        for (eye, direction) in [
+            (glam::Vec3::new(0.1, -2.0, 0.5), glam::Vec3::Y),
+            (glam::Vec3::new(0.1, 2.0, 0.5), glam::Vec3::NEG_Y),
+        ] {
+            assert!(omsi_geometry::ray_mesh(eye, direction, &mesh, &Mat4::IDENTITY).is_some());
+        }
+    }
+
+    #[test]
+    fn same_named_tree_textures_from_different_packs_do_not_share_materials() {
+        let a = Path::new("Sceneryobjects/PackA/Texture/Tree_middle03.dds");
+        let b = Path::new("Sceneryobjects/PackB/Texture/Tree_middle03.dds");
+        let name = "Tree_middle03.dds";
+        let ad = vec![a.parent().unwrap().to_path_buf()];
+        let bd = vec![b.parent().unwrap().to_path_buf()];
+        let ak = resolved_tree_material_key(name, &ad, Some(a));
+        assert_ne!(ak, resolved_tree_material_key(name, &bd, Some(b)));
+        assert_eq!(ak, resolved_tree_material_key("TREE_MIDDLE03.DDS", &bd, Some(a)));
+        assert_ne!(resolved_tree_material_key(name, &ad, None), resolved_tree_material_key(name, &bd, None));
+    }
+
+    #[test]
+    fn deleting_ground_object_removes_only_its_cut_and_restore_recuts_without_height_changes(){
+        let stamp=std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos();
+        let dir=std::env::temp_dir().join(format!("junction-ground-delete-{stamp}"));
+        let original=dir.join("original");let content=dir.join("content");let map=content.join("maps/Test");
+        std::fs::create_dir_all(&original).unwrap();std::fs::create_dir_all(&map).unwrap();
+        let sco=crate::junction_builder::export(&crate::junction_builder::Project::default(),&original,&content,&original).unwrap();
+        // Explicit cutter makes the regression independent of the optional surface-cut setting.
+        std::fs::write(&sco,"[absheight]\n[surface]\n[mesh]\nmodel/road.o3d\n[terrainhole]\nmodel/road.o3d\n").unwrap();
+        let relative=sco.strip_prefix(&content).unwrap().to_string_lossy();
+        let file=map.join("tile_0_0.map");
+        std::fs::write(map.join("global.cfg"),"[map]\n0\n0\ntile_0_0.map\n").unwrap();
+        let record=|id,x|format!("[object]\n0\n{relative}\n{id}\n{x}\n100\n0\n0\n0\n0\n0\n");
+        std::fs::write(&file,format!("[version]\n14\n[terrain]\n{}{}",record(7,80),record(8,200))).unwrap();
+        let terrain_path=map.join("tile_0_0.map.terrain");let heights=Terrain::flat().to_bytes();std::fs::write(&terrain_path,&heights).unwrap();
+        let world=World::open(&content,&map.join("global.cfg"),20000101).unwrap();let request=[(0,0,file)];
+        for deleted in [false,true,false]{world.object_edits.lock().insert(7,ObjectEdit{deleted,..Default::default()});world.forget_staged(&[(0,0)]);
+            let(prepared,_)=world.prepare_tiles(&request);assert_eq!(prepared.len(),1);
+            let surfaces=world.surfaces.read();let surface=surfaces.get(&(0,0)).unwrap();
+            assert_eq!(surface.cut_at(80.0,100.0,0.0,0.03),!deleted);
+            assert!(surface.cut_at(200.0,100.0,0.0,0.03));
+            assert_eq!(std::fs::read(&terrain_path).unwrap(),heights);
+        }
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn rebuilding_a_saved_tile_keeps_tree_headings_and_excludes_session_helpers() {
+        let stamp = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos();
+        let dir = std::env::temp_dir().join(format!("omsi-tree-rebuild-{}-{stamp}", std::process::id()));
+        let map = dir.join("maps/Test"); let scenery = dir.join("Sceneryobjects");
+        std::fs::create_dir_all(&map).unwrap(); std::fs::create_dir_all(&scenery).unwrap();
+        std::fs::write(map.join("global.cfg"), "[map]\n0\n0\ntile_0_0.map\n").unwrap();
+        std::fs::write(scenery.join("tree.sco"), "[tree]\nleaf.png\n6\n10\n0.3\n0.5\n").unwrap();
+        let record = |id, heading| format!("[object]\n0\nSceneryobjects\\tree.sco\n{id}\n20\n40\n1.25\n{heading}\n0\n0\n3\nleaf.png\n8\n0.4\n");
+        let file = map.join("tile_0_0.map");
+        std::fs::write(&file, format!("[version]\n14\n[terrain]\n{}{}", record(7, 15), record(8, 40))).unwrap();
+        std::fs::write(map.join("tile_0_0.map.terrain"), Terrain::flat().to_bytes()).unwrap();
+        let world = World::open(&dir, &map.join("global.cfg"), 20000101).unwrap();
+        let request = [(0, 0, file.clone())];
+        let (first, _) = world.prepare_tiles(&request);
+        assert_eq!(first.len(), 1); assert_eq!(first[0].trees.len(), 2);
+        let headings: HashMap<_, _> = first[0].trees.iter().map(|tree| (tree.6.as_ref().unwrap().0, tree.5)).collect();
+        // Simulate a saved overlay, including a helper's record. The tile is read anew
+        // after a spline edit, while the editor still owns object 9 independently.
+        world.retain_editor_helper(9);
+        std::fs::write(&file, format!("[version]\n14\n[terrain]\n{}{}{}", record(7, 20), record(8, 45), record(9, 90))).unwrap();
+        for _ in 0..3 {
+            world.forget_staged(&[(0, 0)]);
+            let (rebuilt, _) = world.prepare_tiles(&request);
+            assert_eq!(rebuilt.len(), 1); assert_eq!(rebuilt[0].trees.len(), 2);
+            for tree in &rebuilt[0].trees {
+                let id = tree.6.as_ref().unwrap().0;
+                assert_eq!(tree.5, headings[&id], "spline rebuild must not turn a tree");
+                assert_eq!((tree.3, tree.4), (8.0, 3.2));
+            }
+        }
+        // A new map session reads the authored headings and all saved objects normally.
+        let reopened = World::open(&dir, &map.join("global.cfg"), 20000101).unwrap();
+        let (fresh, _) = reopened.prepare_tiles(&request);
+        assert_eq!(fresh[0].trees.len(), 3);
+        assert!(fresh[0].trees.iter().any(|tree| tree.6.as_ref().unwrap().0 == 9));
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn deleting_a_construction_light_removes_its_glow_and_maplight_and_undo_restores_both() {
+        let origin = DVec3::new(100_000_000.0, 20.0, 3.0);
+        let position = origin + DVec3::new(2.0, 0.0, 1.0);
+        let corona = StaticCorona { corona: omsi_render::Corona {
+            position, direction: glam::Vec3::X, brightness: 0.65,
+            ..Default::default()
+        }, switch: LightSwitch::Constant(0.65) };
+        let point = omsi_render::PointLight { position, intensity: 0.7, ..Default::default() };
+        let mut state = TileState::default();
+        state.coronas = vec![corona.clone(), corona.clone(), corona];
+        state.lights = vec![point.clone(), point.clone(), point];
+        state.corona_owners = vec![Some((7, origin)), Some((8, origin)), None];
+        state.light_owners = state.corona_owners.clone();
+        let mut edits = HashMap::new();
+        edits.insert(7, ObjectEdit { deleted: true, ..Default::default() });
+        let (glows, points) = collect_editor_lights(&state, &edits);
+        assert_eq!((glows.len(), points.len()), (2, 2));
+        assert_eq!(state.coronas.len(), 3, "tile originals survive for undo/reloading");
+        edits.insert(7, ObjectEdit { moved: DVec3::new(10.0, 20.0, 4.0), turned: 90.0, deleted: false });
+        let (glows, points) = collect_editor_lights(&state, &edits);
+        let expected = origin + DVec3::new(10.0, 18.0, 5.0);
+        assert!((glows[0].corona.position - expected).length() < 1e-6);
+        assert!((points[0].position - expected).length() < 1e-6);
+        assert!((glows[0].corona.direction - glam::Vec3::NEG_Y).length() < 1e-6);
+        assert_eq!(glows[0].corona.brightness, 0.65);
+        assert_eq!(points[0].intensity, 0.7);
+        assert_eq!(glows[1].corona.position, position, "the neighboring lamp is unchanged");
+        let repeated = collect_editor_lights(&state, &edits);
+        assert_eq!(repeated.0[0].corona.position, glows[0].corona.position, "no accumulated transforms");
+        edits.remove(&7);
+        let restored = collect_editor_lights(&state, &edits);
+        assert_eq!((restored.0.len(), restored.1.len()), (3, 3));
+        assert_eq!(restored.0[0].corona.position, position);
+        assert_eq!(restored.0[0].corona.direction, glam::Vec3::X);
+    }
+
+    #[test]
+    fn construction_glows_are_pickable_at_large_coordinates_without_selecting_other_lamps() {
+        let eye = DVec3::new(100_000_000.0, 200_000_000.0, 3.0);
+        let point = eye + DVec3::new(0.1, 20.0, 0.0);
+        assert_eq!(editor_light_hit(eye, glam::Vec3::Y, point), Some(20.0));
+        assert!(editor_light_hit(eye, glam::Vec3::Y, point + DVec3::X).is_none());
+        assert!(editor_light_hit(eye, glam::Vec3::NEG_Y, point).is_none());
+        assert!(editor_light_hit(eye, glam::Vec3::ZERO, point).is_none());
+    }
+
+    #[test]
+    fn tree_editor_geometry_keeps_copied_size_and_is_pickable_on_its_crown() {
+        let sco=SceneryObject {tree:Some(("leaf.png".into(),6.0,10.0,0.3,0.5)),..Default::default()};
+        let strings=vec!["leaf2.png".into(),"8".into(),"0.4".into()];
+        let shape=editor_helper_shape(&sco,&strings,[0.0;2]);
+        assert!((shape.transform_vector3(glam::Vec3::X).length()-3.2).abs()<1e-5);
+        assert_eq!(shape.transform_vector3(glam::Vec3::Z).length(),8.0);
+        let pos=DVec3::new(300.0,30.0,40.0);let mesh=tree_quad_mesh();
+        let hit=editor_mesh_hit(&mesh,(glam::Vec3::new(0.0,0.0,0.5),0.8),pos+DVec3::new(0.0,20.0,4.0),glam::Vec3::NEG_Y,pos,shape).unwrap();
+        assert!((hit-20.0).abs()<1e-4);
+        assert!(editor_mesh_hit(&mesh,(glam::Vec3::new(0.0,0.0,0.5),0.8),pos+DVec3::new(20.0,20.0,4.0),glam::Vec3::NEG_Y,pos,shape).is_none());
+    }
+
+    #[test]
+    fn junction_surface_is_pickable_far_from_its_pivot_after_moving_and_turning() {
+        let mesh = MeshData { positions: vec![glam::Vec3::new(20.0, -5.0, 0.0), glam::Vec3::new(70.0, -5.0, 0.0),
+            glam::Vec3::new(70.0, 5.0, 0.0), glam::Vec3::new(20.0, 5.0, 0.0)],
+            indices: vec![0, 1, 2, 0, 2, 3], ..Default::default() };
+        let bounds = omsi_geometry::bounding_sphere(&mesh.positions);
+        let pos = DVec3::new(100_000_000.0, 200_000_000.0, 2.0);
+        let xf = Mat4::from_rotation_z(-std::f32::consts::FRAC_PI_2);
+        let point = pos + xf.transform_point3(glam::Vec3::new(50.0, 2.0, 0.0)).as_dvec3();
+        let eye = point + DVec3::Z * 30.0;
+        let hit = editor_mesh_hit(&mesh, bounds, eye, glam::Vec3::NEG_Z, pos, xf).unwrap();
+        assert!((hit - 30.0).abs() < 1e-4);
+        assert!((point - pos).truncate().length() > 40.0);
+        assert!(editor_mesh_hit(&mesh, bounds, pos + DVec3::Z * 30.0, glam::Vec3::NEG_Z, pos, xf).is_none());
+        assert!(editor_mesh_hit(&mesh, bounds, eye, glam::Vec3::NEG_Z, pos + DVec3::X * 100.0, xf).is_none());
+        assert!(editor_mesh_hit(&mesh, bounds, point + DVec3::Z * 500.0, glam::Vec3::NEG_Z, pos, xf).is_none());
+    }
+
+    struct SceneryFixture(PathBuf);
+
+    impl SceneryFixture {
+        fn new() -> Self {
+            static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+            let root = std::env::temp_dir().join(format!("openomsi-editor-object-{}-{}-{}",
+                std::process::id(), std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos(),
+                NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed)));
+            std::fs::create_dir_all(&root).unwrap();
+            Self(root)
+        }
+
+        fn write(&self, rel: &str, text: &str) -> PathBuf {
+            let path = self.0.join(rel);
+            std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+            std::fs::write(&path, text).unwrap();
+            path
+        }
+    }
+
+    impl Drop for SceneryFixture {
+        fn drop(&mut self) { let _ = std::fs::remove_dir_all(&self.0); }
+    }
+
+    #[test]
+    fn catalog_absolute_object_and_model_paths_are_not_prefixed_with_the_game_root() {
+        let fixture = SceneryFixture::new();
+        let root = fixture.0.join("game");
+        let sco_path = fixture.write("editor-content/Sceneryobjects/Junctions/tee.sco", "[model]\nModel\\junction.cfg\n");
+        fixture.write("editor-content/Sceneryobjects/Junctions/Model/junction.cfg", "[mesh]\nroad.o3d\n");
+        assert_eq!(scenery_asset_path(&root, &sco_path.to_string_lossy()), sco_path);
+        let (sco, sco_dir, model, model_dir) = scenery_definition(&root, &sco_path.to_string_lossy()).unwrap();
+        assert_eq!(sco.model_file.as_deref(), Some(r"Model\junction.cfg"));
+        assert_eq!(sco_dir, sco_path.parent().unwrap());
+        assert_eq!(model_dir, sco_path.parent().unwrap().join("Model"));
+        assert_eq!(model.meshes[0].file, "road.o3d");
+    }
+
+    #[test]
+    fn map_relative_windows_paths_and_inline_models_still_load() {
+        let fixture = SceneryFixture::new();
+        let sco_path = fixture.write("Sceneryobjects/Junctions/tee.sco", "[mesh]\nroad.o3d\n");
+        let relative = r"Sceneryobjects\Junctions\tee.sco";
+        assert_eq!(scenery_asset_path(&fixture.0, relative), sco_path);
+        let (sco, _, model, model_dir) = scenery_definition(&fixture.0, relative).unwrap();
+        assert!(sco.model_file.is_none());
+        assert_eq!(model_dir, sco_path.parent().unwrap());
+        assert_eq!(model.meshes[0].file, "road.o3d");
+    }
+
+    #[test]
+    fn missing_object_and_external_model_errors_identify_the_file() {
+        let fixture = SceneryFixture::new();
+        let missing = "Sceneryobjects/Junctions/absent.sco";
+        let Err(error) = scenery_definition(&fixture.0, missing) else { panic!("missing .sco loaded") };
+        assert!(error.contains("SCO-Datei fehlt") && error.contains("absent.sco"), "{error}");
+        let sco_path = fixture.write("Sceneryobjects/Junctions/tee.sco", "[model]\nModel\\missing.cfg\n");
+        let Err(error) = scenery_definition(&fixture.0, &sco_path.to_string_lossy()) else { panic!("missing model loaded") };
+        assert!(error.contains("Modelldefinition fehlt") && error.contains("missing.cfg"), "{error}");
+        assert!(error.contains(&sco_path.parent().unwrap().to_string_lossy().to_string()), "{error}");
+    }
+
+    #[test]
+    fn far_offset_forest_backdrops_keep_their_owner_tiles_visibility() {
     let rectangle = |x: f32, half_width: f32| MeshData {
         positions: vec![
             glam::Vec3::new(x, -half_width, -80.0),

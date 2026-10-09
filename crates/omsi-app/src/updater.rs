@@ -147,6 +147,10 @@ impl Updater {
 
     /// Download and install `r` (in the background).
     pub fn install(&mut self, r: Release) {
+        if crate::spline_editor::OFFICIAL_UPDATES_DISABLED {
+            self.set(Status::Failed("Dieser Spline-Editor wird über sein eigenes Paket aktualisiert. Die offizielle Installation kann separat aktualisiert werden.".into()));
+            return;
+        }
         if matches!(self.status(), Status::Downloading { .. } | Status::Installing(_) | Status::WaitingForInstaller(_) | Status::Restarting(_)) {
             return;
         }
@@ -165,6 +169,7 @@ impl Updater {
     /// Download `r` without installing it (in the background, the game's way): the file
     /// waits in the data folder, checked, until `install` puts it in place.
     pub fn prefetch(&mut self, r: Release) {
+        if crate::spline_editor::OFFICIAL_UPDATES_DISABLED { return; }
         if matches!(self.status(), Status::Downloading { .. } | Status::Downloaded(_) | Status::Installing(_) | Status::WaitingForInstaller(_) | Status::Restarting(_)) {
             return;
         }
@@ -329,6 +334,7 @@ fn short_error(e: &ureq::Error) -> String {
 
 /// The latest release when it is newer than this build and has a file for this platform.
 pub fn latest() -> anyhow::Result<Option<Release>> {
+    if crate::spline_editor::OFFICIAL_UPDATES_DISABLED {return Ok(None);}
     let url = omsi_cfg::flags::OMSI_UPDATE_URL.var().map(str::to_string).unwrap_or_else(|| LATEST_API.to_string());
     match fetch_text(&url).and_then(|t| Ok(serde_json::from_str::<serde_json::Value>(&t)?)) {
         Ok(v) => parse_release(&v, current_version()),

@@ -162,10 +162,14 @@ impl App {
         }
         if !self.paused {
             crate::admin::guard_fall(self, dt);
-        }
-        self.placing_frame();
-        // the host sends every edit of the map again now and then (players join)
-        if self.net.lan.as_ref().map(|l| l.role == omsi_net::Role::Host).unwrap_or(false) {
+                }
+                self.placing_frame();
+                self.editor_terrain_frame(dt);
+                if let (Some(ed), Some(w), Some(scene)) = (self.menus.editor.as_mut(), self.world.as_ref(), self.scene.as_ref()) {
+                    ed.trace_trees(w, scene);
+                }
+                // the host sends every edit of the map again now and then (players join)
+                if self.net.lan.as_ref().map(|l| l.role == omsi_net::Role::Host).unwrap_or(false) {
             self.menus.editor_sync_t -= dt;
             if self.menus.editor_sync_t <= 0.0 {
                 self.menus.editor_sync_t = 10.0;

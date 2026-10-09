@@ -30,8 +30,27 @@ pub struct MapObject {
     pub rules: Vec<MapRule>,
 }
 
+/// Optional openOMSI editor taper. Offsets are in the endpoint's right/forward/up frame.
+/// Kept on the map record so saving, undo and tile rebuild use identical geometry.
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
+pub struct ProfileTransition {
+    pub station: f64,
+    pub span: f64,
+    pub x: [f64; 2],
+    pub offsets: [[f64; 3]; 2],
+}
+
+impl ProfileTransition {
+    pub fn valid(&self) -> bool {
+        self.station.is_finite() && self.station.abs() <= 1000.0 && self.span.is_finite() && self.span > 0.0 && self.span <= 500.0
+            && self.x.iter().all(|v| v.is_finite()) && self.x[1] - self.x[0] > 0.001
+            && self.offsets.iter().flatten().all(|v| v.is_finite() && v.abs() <= 50.0)
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct MapSpline {
+    pub profile_transitions: [Option<ProfileTransition>; 2],
     pub file: String,
     pub id: i64,
     pub prev_id: i64,
@@ -430,6 +449,7 @@ impl Tile {
                         _ => (nums[0], nums[1], nums[2]),
                     };
                     t.splines.push(MapSpline {
+                        profile_transitions: [None; 2],
                         file: file_name,
                         id,
                         prev_id,
@@ -457,6 +477,14 @@ impl Tile {
                         deleted: false,
                     });
                     last = Last::Spline;
+                }
+                "openomsi_profile_transition" => {
+                    let end = r.i32();
+                    let transition = ProfileTransition { station: r.f64(), span: r.f64(), x: r.f64s::<2>(),
+                        offsets: [r.f64s::<3>(), r.f64s::<3>()] };
+                    if matches!(last, Last::Spline) && (0..2).contains(&end) && transition.valid() {
+                        if let Some(s) = t.splines.last_mut() { s.profile_transitions[end as usize] = Some(transition); }
+                    }
                 }
                 "splineattachement" | "splineattachement_repeater" => {
                     // (the detail level from version 9 on, the IDCode from 6 on, as for objects)
@@ -524,6 +552,12 @@ impl Tile {
                             }
                         }
                         _ => {}
+                    }
+                }
+                "openomsi_editor_deleted" => {
+                    // Keep the record's index: attachment rows refer to it by position.
+                    if matches!(last, Last::Spline) {
+                        if let Some(s) = t.splines.last_mut() { s.deleted = true; }
                     }
                 }
                 "spline_terrain_align" => {
@@ -863,5 +897,18 @@ Object Nr. 3\n[splineAttachement_repeater]\n0\n12\n5\nSceneryobjects\\lamp.sco\n
         assert_eq!(t.spline_attachments.last().unwrap().spline_index, 2);
         assert_eq!(t.objects[0].rules.len(), 1);
         assert_eq!(t.objects[0].rules[0].kind, "speedlimit");
+    }
+}
+
+#[cfg(test)]
+mod profile_transition_tests {
+    use super::*;
+
+    #[test]
+    fn validates_transition_values() {
+        let mut t = ProfileTransition { station: 40.0, span: 10.0, x: [-3.0, 3.0], offsets: [[0.0; 3]; 2] };
+        assert!(t.valid());
+        t.offsets[0][0] = f64::NAN; assert!(!t.valid());
+        t.offsets[0][0] = 0.0; t.x[1] = t.x[0]; assert!(!t.valid());
     }
 }

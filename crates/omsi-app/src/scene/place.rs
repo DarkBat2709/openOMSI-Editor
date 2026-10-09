@@ -255,7 +255,9 @@ impl World {
         let check_objects = omsi_cfg::flags::OMSI_CHECK_OBJECTS.is_set();
         let debug_float = omsi_cfg::flags::OMSI_DEBUG_FLOAT.is_set();
         let index = self.index();
+        let helper_ids = self.editor_helper_ids.lock().clone();
         for (oi, (o, fp)) in st.objects.iter().zip(res.poses.iter()).enumerate() {
+            if o.map_object && helper_ids.contains(&o.id) { continue; }
             let Some(Pose { pos, rot: xf }) = *fp else {
                 continue;
             };
@@ -321,7 +323,8 @@ impl World {
             if let Some(mut tree) = tree_of(&ot, o, pos, heading) {
                 // (a season's phase: this tree's own look)
                 tree.1 = self.tree_look_texture(&ot, &tree.1, o.key, pos);
-                trees.push(tree);
+                let editable=(o.map_object && matches!(o.place,Placement::Ground {..}|Placement::Pose(_))).then(||(o.id,o.key,o.extra.clone()));
+                trees.push((tree.0,tree.1,tree.2,tree.3,tree.4,tree.5,editable));
                 continue;
             }
             // Stock junctions carry a light program even where the map places no signals.
@@ -416,7 +419,8 @@ impl World {
             }
             let lamp = object_lamp(&ot, o, pos, &index);
             // lights of the placed object
-            object_lights(&mut state, &ot, pos, xf, lamp, o.key);
+            object_lights(&mut state, &ot, pos, xf, lamp, o.key,
+                (o.map_object && matches!(o.place,Placement::Ground {..}|Placement::Pose(_))).then_some((o.id,pos)));
             if debug_objects {
                 let kind = match (&o.place, o.map_object) {
                     (Placement::Attached { .. }, _) => "attachObj",
@@ -446,7 +450,7 @@ impl World {
                 warped: res.warped.get(&oi).cloned(),
                 var_parent: o.lamp_parent,
                 parked: o.parked,
-                editable: o.map_object && matches!(o.place, Placement::Ground { .. }),
+                editable: o.map_object && matches!(o.place, Placement::Ground { .. }|Placement::Pose(_)),
                 script: None,
             });
         }
@@ -466,7 +470,7 @@ impl World {
             ty,
             terrain: Some(build_terrain_mesh(terrain)),
             hole_walls: MeshData::default(),
-            paint_masks: self.load_ground_paint(&st.path),
+            paint_masks: self.load_ground_paint(&st.path, (st.tx, st.ty)),
             paint: Vec::new(),
             wall_paint: Vec::new(),
             water: st.water,
@@ -862,7 +866,7 @@ fn mesh_encloses_light(mesh: &MeshData, source: glam::Vec3) -> bool {
 }
 
 /// The sprites and `[maplight]`s of a placed object.
-fn object_lights(state: &mut TileState, ot: &ObjectType, pos: DVec3, xf: Mat4, lamp: Option<(i64, usize, bool)>, key: i64) {
+fn object_lights(state: &mut TileState, ot: &ObjectType, pos: DVec3, xf: Mat4, lamp: Option<(i64, usize, bool)>, key: i64, owner: Option<(i64,DVec3)>) {
     let switches: Mutex<Vec<LightSwitch>> = Mutex::new(Vec::new());
     // (a light gives several sprites: each takes its own light's switch)
     let coronas = model_lights_owned(&ot.model, &|_| xf, pos, &|var| {
@@ -880,6 +884,7 @@ fn object_lights(state: &mut TileState, ot: &ObjectType, pos: DVec3, xf: Mat4, l
             corona: c,
             switch: sw,
         });
+        state.corona_owners.push(owner);
     }
     // (the same for every placement of the type: its meshes are walked once)
     let embedded = ot.embedded_lights.get_or_init(|| ot.sco.map_lights.iter().map(|ml| embedded_pole_light(ot, glam::Vec3::from(ml.pos))).collect());
@@ -903,6 +908,7 @@ fn object_lights(state: &mut TileState, ot: &ObjectType, pos: DVec3, xf: Mat4, l
             shadow_owner: embedded.get(k).copied().unwrap_or(false).then_some(key),
             ..Default::default()
         });
+        state.light_owners.push(owner);
     }
 }
 
@@ -1003,6 +1009,7 @@ mod embedded_light_tests {
             collision: None, paint: false, camera: Default::default(),
             collision_shape: Default::default(),
             embedded_lights: Default::default(),
+            editor_pick_bounds: Default::default(),
         }
     }
 
@@ -1066,7 +1073,10 @@ mod embedded_light_tests {
         let mut state = TileState::default();
         let position = DVec3::new(10.0, 20.0, 30.0);
         let transform = Mat4::from_rotation_x(std::f32::consts::FRAC_PI_2);
-        object_lights(&mut state, &fixture, position, transform, None, 123);
+        object_lights(&mut state, &fixture, position, transform, None, 123, Some((123, position)));
+        assert_eq!(state.light_owners, vec![Some((123, position)); 2]);
+        assert_eq!(state.corona_owners.len(), state.coronas.len());
+        assert!(state.corona_owners.iter().all(|owner| *owner == Some((123, position))));
         assert_eq!(state.lights.len(), 2);
         assert_eq!(state.lights[0].shadow_owner, Some(123));
         assert_eq!(state.lights[1].shadow_owner, None);

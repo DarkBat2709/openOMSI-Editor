@@ -44,7 +44,8 @@ impl App {
         let vr_on = self.xr.vr.is_some();
         #[cfg(not(windows))]
         let vr_on = false;
-        let needs_mouse = self.input.mouse_drive
+        let needs_mouse = self.menus.editor.is_some()
+            || self.input.mouse_drive
             || self.menus.game_menu.is_some()
             || self.menus.chooser.is_some()
             || self.menus.list_kind.is_some()

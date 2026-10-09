@@ -74,13 +74,10 @@ impl App {
         // next to the cursor (`ui`), when the setting asks for it
         let tooltip = self.menus.hover.as_ref().map(|h| names.control(h));
         // the object editor's keys, while it is on (one quiet line)
-        // the mirror editor's keys and the panel under the cursor, while it is on
-        lines.extend(mirror_help);
-        if self.menus.editor.is_some() {
-            lines.push("Object editor: click picks · drag moves · wheel turns (Shift lifts) · Del · C copy · V variant · Backspace undo · Ctrl+S save · Esc".into());
-        }
-        if let Some(d) = self.session.duty.as_ref().filter(|d| d.trip_done()) {
-            lines.push(match d.trips.get(d.trip_index + 1) {
+                    // the mirror editor's keys and the panel under the cursor, while it is on
+                    lines.extend(mirror_help);
+                    if let Some(d) = self.session.duty.as_ref().filter(|d| d.trip_done()) {
+                        lines.push(match d.trips.get(d.trip_index + 1) {
                 Some(next) => format!(
                     "End of the trip. Next: {} to {}, from {} at {} (it starts by itself a minute before)",
                     if next.line.trim().is_empty() { "service trip".to_string() } else { format!("line {}", next.line) },
@@ -89,13 +86,17 @@ impl App {
                     crate::schedule::hhmm(next.departure)
                 ),
                 None => "End of the duty: the tour's last trip is done".into(),
-            });
-        }
-        if let Some((msg, left)) = self.service_msg.as_mut() {
-            *left -= dt;
-            if *left > 0.0 {
-                lines.push(msg.clone());
-            }
+                        });
+                    }
+                    let selection_description = self.menus.editor.as_ref().zip(self.world.as_ref())
+                        .map(|(editor, world)| editor.describe(world));
+                    if let Some((msg, left)) = self.service_msg.as_mut() {
+                        *left -= dt;
+                        if selection_description.as_deref() == Some(msg.as_str()) {
+                            *left = 0.0;
+                        } else if *left > 0.0 {
+                            lines.push(msg.clone());
+                        }
         }
         self.service_msg = self.service_msg.take().filter(|(_, l)| *l > 0.0);
         self.integrations.update_watch.tick(&mut self.menus.notices);
@@ -410,8 +411,51 @@ impl App {
                 tags,
                 notices: &self.menus.notices,
                 notice_anchor: self.menus.navigator.as_ref().and_then(|n| n.screen_rect()),
-            };
-            ui.draw_at(r, scene, &frame, dt, hud[0]);
-        }
+                        };
+                        let editor_visible = self.menus.editor.is_some() && self.menus.game_menu.is_none() && !vr_active;
+                        let editor_hud = self.menus.editor.as_ref().filter(|_| editor_visible).map(|ed| (
+                            ed.spline_mode, ed.terrain.active,
+                            self.world.as_ref().map(|world| ed.describe(world)).unwrap_or_default(),
+                            ed.catalog.is_none() && ed.tile_window.is_none() && ed.text_window.is_none() && ed.junction_window.is_none() && ed.roadside_window.is_none() && ed.sidewalk_window.is_none() && ed.placing_asset.is_none() && !ed.splines.connection_active(),
+                        ));
+                        ui.draw_editor_hud(r, scene, editor_hud.as_ref().map(|(mode, terrain, description, expand)|
+                            (*mode, *terrain, description.as_str(), *expand)), scale * frame.ui_scale, hud, self.input.cursor);
+                        ui.draw_at(r, scene, &frame, dt, hud[0]);
+                        let connection = self.menus.editor.as_ref().filter(|ed| ed.spline_mode && !ed.terrain.active)
+                            .and_then(|ed| ed.splines.connection_status())
+                            .filter(|_| self.menus.game_menu.is_none() && !vr_active);
+                        let replace = self.menus.editor.as_ref().is_some_and(|ed| ed.spline_mode && ed.splines.connection_can_replace());
+                        let tools = self.menus.editor.as_ref().filter(|ed| editor_visible && ed.spline_mode && !ed.terrain.active
+                            && ed.catalog.is_none() && ed.tile_window.is_none() && ed.text_window.is_none() && ed.junction_window.is_none() && ed.roadside_window.is_none() && ed.sidewalk_window.is_none() && ed.placing_asset.is_none() && !ed.splines.connection_active())
+                            .map(|ed| ed.splines.selected.is_some());
+                        let dock = self.menus.editor.as_ref().filter(|ed| editor_visible && ed.catalog.is_none() && ed.tile_window.is_none() && ed.text_window.is_none() && ed.junction_window.is_none() && ed.roadside_window.is_none() && ed.sidewalk_window.is_none())
+                            .map(|ed| (ed.spline_mode, ed.placing_asset.is_none() && !ed.splines.connection_active()));
+                        let objects=self.menus.editor.as_ref().filter(|ed|editor_visible && !ed.spline_mode && !ed.terrain.active
+                            && ed.catalog.is_none() && ed.tile_window.is_none() && ed.text_window.is_none() && ed.junction_window.is_none() && ed.roadside_window.is_none() && ed.sidewalk_window.is_none()).map(|ed|(
+                                self.world.as_ref().is_some_and(|w|ed.can_copy(w)),ed.clipboard.is_some(),ed.last_object.is_some(),
+                                ed.repeat_objects,ed.placing_asset.is_some()));
+                        if self.menus.editor.as_ref().is_none_or(|ed| ed.roadside_window.is_none() && ed.sidewalk_window.is_none()) {
+                            ui.draw_editor_dock(r, scene, dock, tools, connection.as_ref(), replace,
+                                self.menus.editor.as_ref().is_some_and(|ed| ed.splines.transition_enabled()), objects,
+                                self.menus.editor.as_ref().filter(|ed|ed.terrain.active).map(|ed|&ed.terrain),
+                                scale * frame.ui_scale, hud, self.input.cursor);
+                        }
+                        let sidewalk=self.menus.editor.as_mut().filter(|e|e.catalog.is_none()).and_then(|e|e.sidewalk_window.as_mut()).filter(|_|editor_visible);
+                        ui.draw_sidewalk_window(r,scene,sidewalk,scale*frame.ui_scale,hud,self.input.cursor);
+                        let roadside = self.menus.editor.as_mut().filter(|ed| ed.catalog.is_none()).and_then(|ed| ed.roadside_window.as_mut()).filter(|_| editor_visible);
+                        ui.draw_roadside_window(r, scene, roadside, scale * frame.ui_scale, hud, self.input.cursor);
+                        let catalog = self.menus.editor.as_mut().and_then(|ed| ed.catalog.as_mut());
+                        ui.draw_asset_catalog(r, scene, catalog, editor_visible, scale * frame.ui_scale, hud, self.input.cursor);
+                        let tiles = self.menus.editor.as_mut().and_then(|ed| ed.tile_window.as_mut()).filter(|_| editor_visible);
+                        ui.draw_tile_window(r, scene, tiles, scale * frame.ui_scale, hud, self.input.cursor);
+                        let text_window = self.menus.editor.as_mut().and_then(|ed| ed.text_window.as_mut()).filter(|_| editor_visible);
+                        ui.draw_object_text(r, scene, text_window, scale * frame.ui_scale, hud);
+                        let junction=self.menus.editor.as_mut().filter(|ed|ed.catalog.is_none()).and_then(|ed|ed.junction_window.as_mut()).filter(|_|editor_visible);
+                        let junction_root=self.world.as_ref().map(|w|w.root.as_path()).unwrap_or_else(||std::path::Path::new("."));
+                        ui.draw_junction_window(r,scene,junction,junction_root,scale*frame.ui_scale,hud,self.input.cursor);
+                        let audit=self.menus.editor.as_mut().filter(|ed|editor_visible&&crate::audit_events::panel_active(ed)).and_then(|ed|ed.audit.as_mut()).filter(|a|a.visible);
+                        ui.draw_spline_audit(r,scene,audit,scale*frame.ui_scale,hud,self.input.cursor);
+
+                    }
     }
 }

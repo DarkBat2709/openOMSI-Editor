@@ -116,7 +116,7 @@ impl World {
         // the painted ground layers (and their detail textures) of the tile
         let ground_dirs = vec![self.root.clone()];
         for (layer, _) in &p.paint_masks {
-            if let Some(gt) = self.global.ground_textures.get(*layer) {
+            if let Some(gt) = crate::ground_paint::layers(self).get(*layer) {
                 push(&gt.texture, &ground_dirs, &mut names);
                 push(&gt.detail_texture, &ground_dirs, &mut names);
             }
@@ -709,6 +709,9 @@ impl World {
             types,
             tg: TileGpu::default(),
             placing: Placing::default(),
+            hidden_preview: HashMap::new(),
+            scripted: Vec::new(),
+            restored_scripts: 0,
         }
     }
 
@@ -790,7 +793,7 @@ impl World {
     /// give everything back.
     pub fn commit_upload(&self, u: PendingUpload, stats: &mut LoadStats) {
         let key = u.key();
-        let PendingUpload { tg, placing, .. } = u;
+        let PendingUpload { tg, placing, scripted, restored_scripts, .. } = u;
         stats.splines += placing.splines;
         stats.trees += placing.trees;
         stats.objects += placing.objects;
@@ -806,6 +809,12 @@ impl World {
         state.night_modes = placing.night_modes;
         state.light_objects = placing.light_objects;
         state.poles = placing.poles;
+        drop(states);
+        self.scripted.lock().extend(scripted);
+        self.clear_editor_script_states(key);
+        if restored_scripts > 0 && omsi_cfg::env::var_os("OMSI_EDITOR_TREE_TRACE").is_some() {
+            log::info!("scenery rebuild: tile {:?}, restored {} script states", key, restored_scripts);
+        }
     }
 }
 

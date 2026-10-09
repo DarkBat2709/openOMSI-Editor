@@ -169,6 +169,13 @@ impl App {
                 }
             },
         };
+        // A native cursor stays above every panel without a second software pointer.
+        let cursor_size = (22.0 * window.scale_factor()).round().clamp(16.0, 96.0) as u16;
+        self.input.editor_cursor = winit::window::CustomCursor::from_rgba(
+            crate::ui::steer_cross_pixels(cursor_size as usize), cursor_size, cursor_size,
+            cursor_size / 2, cursor_size / 2,
+        ).ok().map(|source| event_loop.create_custom_cursor(source));
+        self.input.cursor_kind = u8::MAX;
         let mut renderer = match window_renderer(&mut self.gfx.instance, &window, self.settings.render_options()) {
             Ok(r) => r,
             Err(e) => {
@@ -282,6 +289,9 @@ impl App {
                         700.0,
                     ));
                     self.world = Some(w);
+                    self.menus.editor = None;
+                    self.menus.editor_paused = None;
+                    self.menus.editor_drag = false;
                     self.cam.starting = Some(cam);
                 }
                 Err(e) => {
@@ -542,6 +552,9 @@ impl App {
                     );
                 }
                 self.world = Some(w);
+                self.menus.editor = None;
+                self.menus.editor_paused = None;
+                self.menus.editor_drag = false;
             }
         }
         self.last = Instant::now();
@@ -579,6 +592,7 @@ impl App {
                 w.loaded_tiles().len()
             );
             self.start_world(w, cam, &renderer, &mut scene);
+            self.finish_editor_reload();
             self.renderer = Some(renderer);
             self.scene = Some(scene);
             return true;

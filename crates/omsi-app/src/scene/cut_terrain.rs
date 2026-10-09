@@ -131,6 +131,7 @@ impl World {
         layout: &TileLayout,
         debug_raster: Option<(f64, f64)>,
     ) -> (TileSurface, Vec<Vec<DVec3>>, usize) {
+        let object_edits=self.object_edits.lock().clone();
         let key = (p.tx, p.ty);
         let (tx, ty) = key;
         let (x0, y0) = (tx as f64 * tile_size(), ty as f64 * tile_size());
@@ -222,10 +223,13 @@ impl World {
                     ts.add_outline(&ring, tx, ty);
                     hole_rims.push(rim.iter().map(|v| *v - p.origin).collect());
                 }
-            }
-            for (oi, (o, pose)) in q.objects.iter().zip(res.poses.iter()).enumerate() {
-                let Some(pose) = pose else { continue };
-                let ot = &o.ot;
+                    }
+                    for (oi, (o, pose)) in q.objects.iter().zip(res.poses.iter()).enumerate() {
+                        // Hiding the render instance alone leaves the cutter in the staged
+                        // source. Exclude it from both terrain holes and drivable surfaces.
+                        if object_edits.get(&o.id).is_some_and(|edit|edit.deleted){continue;}
+                        let Some(pose) = pose else { continue };
+                        let ot = &o.ot;
                 // Editor-only helpers and trees do not cut terrain.
                 if ot.sco.tree.is_some()
                     || ot.sco.only_editor

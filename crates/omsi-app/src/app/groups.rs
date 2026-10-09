@@ -149,6 +149,7 @@ pub(crate) struct GfxState {
 pub(crate) struct ViewState {
     /// The map is open but the first area is still loading: the view to start with.
     pub(crate) starting: Option<Camera>,
+    pub(crate) editor_reload_view: Option<(Camera, bool, bool)>,
     pub(crate) speed: f32,
     /// The idle head sway waiting where it is while the cursor is on a control
     /// (see `head_idle::Hold`).
@@ -276,6 +277,7 @@ pub(crate) struct InputState {
     pub(crate) drag_delta: (f32, f32),
     /// The mouse cursor currently shows the hand (it is over a switch).
     pub(crate) cursor_kind: u8,
+    pub(crate) editor_cursor: Option<winit::window::CustomCursor>,
     /// The on-screen controls of a phone (see `touch.rs`).
     pub(crate) touch: crate::touch::Touch,
 }
@@ -289,6 +291,8 @@ pub(crate) struct MenuState {
     pub(crate) chooser: Option<usize>,
     /// The object editor, while it is on (`crate::editor`).
     pub(crate) editor: Option<crate::editor::Editor>,
+    /// The same map-editing session while its UI is closed, including new objects.
+    pub(crate) editor_paused: Option<crate::editor::Editor>,
     pub(crate) vehicle_list: Vec<(String, String)>,
     /// The drop-down open over a row of the settings window, if one is.
     pub(crate) dropdown: Option<crate::game_lists::Dropdown>,

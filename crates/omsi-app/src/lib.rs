@@ -36,6 +36,21 @@ mod camera_arm;
 mod career;
 mod describe;
 mod editor;
+mod editor_reload;
+mod spline_audit;
+mod audit_events;
+mod spline_editor;
+mod asset_catalog;
+mod object_text;
+mod tile_editor;
+mod terrain_editor;
+mod ground_paint;
+mod junction_builder;
+mod junction_events;
+mod roadside_objects;
+mod roadside_events;
+mod sidewalk;
+mod sidewalk_events;
 mod game_lists;
 mod game_controller_menu;
 mod rail_drive;
@@ -587,10 +602,11 @@ fn assemble_app(args: Args, settings: settings::Settings) -> App {
             metar_next: 0.0,
         },
         menus: MenuState {
-            chooser: None,
-            editor: None,
-            vehicle_list: Vec::new(),
-            dropdown: None,
+        chooser: None,
+        editor: None,
+        editor_paused: None,
+        vehicle_list: Vec::new(),
+        dropdown: None,
             vehicle_meta: std::collections::HashMap::new(),
             hud: None,
             navigator: None,
@@ -631,6 +647,7 @@ fn assemble_app(args: Args, settings: settings::Settings) -> App {
         world: None,
         cam: ViewState {
             starting: None,
+            editor_reload_view: None,
             speed: 30.0,
             f1_reset: None,
             head_idle_hold: Default::default(),
@@ -712,6 +729,7 @@ fn assemble_app(args: Args, settings: settings::Settings) -> App {
             html_object_pressed: None,
             drag_delta: (0.0, 0.0),
             cursor_kind: 0,
+            editor_cursor: None,
             touch,
         },
         last,

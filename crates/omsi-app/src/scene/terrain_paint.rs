@@ -151,6 +151,17 @@ pub(super) fn terrain_ground(src: &MeshData, slots: &[usize], pos: DVec3, xf: Ma
     ground
 }
 
+pub(crate) fn editor_helper_shape(sco:&omsi_scenery::SceneryObject,strings:&[String],tilt:[f64;2])->Mat4 {
+    if let Some((_,min_h,max_h,min_r,max_r))=&sco.tree {
+        let positive=|i:usize,fallback:f64|strings.get(i).map(|s|omsi_cfg::parse_f64(s))
+            .filter(|v|v.is_finite() && *v>0.0).unwrap_or(fallback);
+        let mid_h=(min_h+max_h)*0.5;let mid_r=(min_r+max_r)*0.5;
+        let height=positive(1,if mid_h.is_finite() && mid_h>0.0 {mid_h as f64} else {10.0});
+        let ratio=positive(2,if mid_r.is_finite() && mid_r>0.0 {mid_r as f64} else {1.0});
+        Mat4::from_scale(glam::Vec3::new((height*ratio) as f32,(height*ratio) as f32,height as f32))
+    } else {omsi_geometry::object_rotation(omsi_geometry::map_rotation([0.0,tilt[0],tilt[1]]))}
+}
+
 /// Two crossed unit quads (1 m wide, 1 m tall, centred at x=0, standing on z=0).
 /// Windy trees: whether a scenery object is a plant whose leaves the wind moves - by its
 /// `[groups]` (the stock "Trees LQ", "Deciduous", "Shrubbery", "Arbors", "Plants" and their
@@ -224,9 +235,9 @@ pub(super) fn tree_card_sway(ot: &ObjectType, texture: &str) -> [f32; 3] {
 
 /// Where a `[tree]` card's crown leaves its trunk, and a shrub's (of the card's height).
 pub(super) const TREE_CARD_PIVOT: f32 = 0.28;
-pub(super) const SHRUB_CARD_PIVOT: f32 = 0.03;
+const SHRUB_CARD_PIVOT: f32 = 0.03;
 
-pub(super) fn tree_quad_mesh() -> MeshData {
+pub(crate) fn tree_quad_mesh() -> MeshData {
     // Each card is a small grid of quads rather than one: a flat grid is the same picture,
     // and it gives the windy trees (shader.wgsl `tree_sway`) vertices to bend the crown by
     // while the trunk below the pivot stays where it stands. The rows lie on the pivots
@@ -237,6 +248,9 @@ pub(super) fn tree_quad_mesh() -> MeshData {
     const ROWS: [f32; 7] = [0.0, SHRUB_CARD_PIVOT, TREE_CARD_PIVOT, 0.46, 0.64, 0.82, 1.0];
     const TREE_ROWS: u32 = ROWS.len() as u32 - 1;
     let mut m = MeshData::default();
+    // The renderer already draws both sides. Reversed copies of the same triangles
+    // overlap exactly and double the MSAA cutout work on every tree.
+    m.one_sided = false;
     for (dx, dy) in [(0.5f32, 0.0f32), (0.0, 0.5)] {
         let base = m.positions.len() as u32;
         for r in 0..=TREE_ROWS {
@@ -253,13 +267,33 @@ pub(super) fn tree_quad_mesh() -> MeshData {
         for r in 0..TREE_ROWS {
             for c in 0..TREE_COLS {
                 let (a, b, cc, d) = (at(c, r), at(c + 1, r), at(c + 1, r + 1), at(c, r + 1));
-                // both sides
-                m.indices.extend_from_slice(&[a, b, cc, a, cc, d, a, cc, b, a, d, cc]);
+                // The renderer handles both sides; keep each wind-grid triangle once.
+                m.indices.extend_from_slice(&[a, b, cc, a, cc, d]);
             }
         }
     }
     m.ranges.push((0, m.indices.len() as u32, 0));
     m
+}
+
+/// Share a tree material only when it resolves to the same texture file. Different
+/// scenery packs frequently use the same basename for different tree pictures.
+pub(super) fn tree_material_key(texture: &str, dirs: &[PathBuf]) -> String {
+    let refs: Vec<&Path> = dirs.iter().map(PathBuf::as_path).collect();
+    resolved_tree_material_key(texture, dirs, omsi_texture::find_texture(texture, &refs).as_deref())
+}
+
+pub(super) fn resolved_tree_material_key(texture: &str, dirs: &[PathBuf], resolved: Option<&Path>) -> String {
+    match resolved {
+        Some(path) => format!("file:{path:?}"),
+        None => format!("missing:{dirs:?}:{}", texture.trim().to_ascii_lowercase()),
+    }
+}
+
+pub(super) fn trace_tree_material(sco: &Path, key: &str, material: MaterialId, texture: Option<&Path>) {
+    if omsi_cfg::env::var_os("OMSI_EDITOR_TREE_TRACE").is_some() {
+        log::info!("tree material: object {:?}, key {}, material {}, texture {:?}", sco, key, material, texture);
+    }
 }
 
 /// Where textures are looked up for a given content directory.

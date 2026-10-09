@@ -162,9 +162,18 @@ impl App {
 
     /// Show the mouse cursor `kind` (0 arrow, 1 pointing hand, 2 cross, 3 arrows, 4 closed hand).
     pub(crate) fn set_cursor_kind(&mut self, kind: u8) {
+        let kind = if self.menus.editor.is_some() && self.menus.game_menu.is_none()
+            && !self.input.mouse_look && self.input.both_drag.is_none() && kind <= 2
+            && self.input.editor_cursor.is_some() { 5 } else { kind };
         if kind != self.input.cursor_kind {
             self.input.cursor_kind = kind;
             if let Some(w) = self.window.as_ref() {
+                if kind == 5 {
+                    if let Some(cursor) = self.input.editor_cursor.as_ref() {
+                        w.set_cursor(cursor.clone());
+                    }
+                    return;
+                }
                 w.set_cursor(match kind {
                     4 => winit::window::CursorIcon::NsResize,
                     3 => winit::window::CursorIcon::Move,

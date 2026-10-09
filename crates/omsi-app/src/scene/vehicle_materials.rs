@@ -522,7 +522,7 @@ pub(super) fn scenery_texture_selection(
 /// texture (with one, the texture's alpha is used alone, as D3D's default stage does).
 /// The emissive colour lights the texture by itself (the NL202's interior display, the
 /// lamps of a traffic light); the specular term is the sun's highlight.
-pub(super) fn d3d_material(
+pub(crate) fn d3d_material(
     m: &omsi_o3d::Material,
     allcolor: Option<[f32; 14]>,
     textured: bool,

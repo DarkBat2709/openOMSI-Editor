@@ -1,6 +1,59 @@
 //! Object, spline and tile staging types: what a tile is read into before it is placed.
 use super::*;
 
+/// Catalog entries and copied map objects carry physical paths; map records carry
+/// OMSI-relative paths. resolve_path splits off a leading slash, so it must only
+/// receive the latter. Keep an absolute VFS path, including an archive mount, intact.
+pub(super) fn scenery_asset_path(root: &Path, reference: &str) -> PathBuf {
+    let path = Path::new(reference);
+    if path.is_absolute() { path.to_path_buf() } else { omsi_cfg::resolve_path(root, reference) }
+}
+
+pub(crate) fn scenery_definition(root: &Path, reference: &str) -> std::result::Result<(SceneryObject, PathBuf, Model, PathBuf), String> {
+    let path = scenery_asset_path(root, reference);
+    if !omsi_cfg::vfs::is_file(&path) { return Err(format!("SCO-Datei fehlt: {}", path.display())); }
+    let sco = SceneryObject::load(&path).map_err(|e| format!("SCO-Datei {}: {e:#}", path.display()))?;
+    let sco_dir = path.parent().ok_or_else(|| format!("Ungültiger Objektpfad: {}", path.display()))?.to_path_buf();
+    let (model, model_dir) = match &sco.model_file {
+        Some(file) => {
+            let path = omsi_cfg::resolve_path(&sco_dir, file);
+            if !omsi_cfg::vfs::is_file(&path) { return Err(format!("Modelldefinition fehlt: {}", path.display())); }
+            let model = Model::load(&path).map_err(|e| format!("Modelldefinition {}: {e:#}", path.display()))?;
+            let dir = path.parent().ok_or_else(|| format!("Ungültiger Modellpfad: {}", path.display()))?.to_path_buf();
+            (model, dir)
+        }
+        None => (sco.model.clone(), sco_dir.clone()),
+    };
+    Ok((sco, sco_dir, model, model_dir))
+}
+
+pub(crate) fn scenery_mesh_path(model_dir: &Path, file: &str) -> PathBuf {
+    let in_model = omsi_cfg::resolve_path(&omsi_cfg::resolve_path(model_dir, "model"), file);
+    if omsi_cfg::vfs::is_file(&in_model) { in_model } else { omsi_cfg::resolve_path(model_dir, file) }
+}
+
+pub(crate) fn scenery_texture_dirs(root: &Path, sco: &SceneryObject, model_dir: &Path) -> Vec<PathBuf> {
+    let mut dirs = texture_dirs(root, model_dir);
+    if let (Some(_), Some(sco_dir)) = (&sco.model_file, sco.path.parent()) {
+        let own = omsi_cfg::resolve_path(sco_dir, "texture");
+        dirs.retain(|d| *d != own);
+        dirs.insert(0, own);
+    }
+    dirs
+}
+
+/// Subtract the double-precision world position before testing in local mesh space.
+/// The bounding sphere rejects most scenery without walking every triangle on a click.
+pub(super) fn editor_mesh_hit(mesh: &MeshData, bounds: (glam::Vec3, f32), eye: DVec3, dir: glam::Vec3, pos: DVec3, xf: Mat4) -> Option<f64> {
+    let origin = (eye - pos).as_vec3();
+    let inverse = xf.inverse();
+    let local_origin = inverse.transform_point3(origin);
+    let local_dir = inverse.transform_vector3(dir).normalize_or_zero();
+    if !omsi_geometry::ray_near_sphere(local_origin, local_dir, bounds.0, bounds.1) { return None; }
+    let distance = omsi_geometry::ray_mesh(origin, dir, mesh, &xf)? as f64;
+    (distance.is_finite() && (0.01..=400.0).contains(&distance)).then_some(distance)
+}
+
 /// A loaded scenery object type: model meshes + material descriptions.
 pub struct ObjectType {
     pub sco: SceneryObject,
@@ -10,6 +63,8 @@ pub struct ObjectType {
     pub model_dir: PathBuf,
     /// LOD 0 meshes (mesh data, o3d materials, model material overrides).
     pub meshes: Vec<(MeshData, Vec<omsi_o3d::Material>, Vec<MaterialDef>)>,
+    /// Editor broad phase, calculated once per shared type rather than per placed copy.
+    pub(super) editor_pick_bounds: std::sync::OnceLock<Vec<(glam::Vec3, f32)>>,
     /// `[visible] var value` per mesh, parallel to `meshes`.
     pub mesh_visible: Vec<Option<(String, f32)>>,
     /// Model mesh definition index and pivot per loaded mesh (parallel to `meshes`).
@@ -213,19 +268,32 @@ pub(super) fn lightmap_is_white(name: &str, dirs: &[&Path]) -> Option<bool> {
 }
 
 impl ObjectType {
+    /// Pick the actual surface, including junction plates whose pivot lies far away.
+    pub fn editor_pick(&self, eye: DVec3, dir: glam::Vec3, pos: DVec3, xf: Mat4) -> Option<f64> {
+        if self.sco.tree.is_some() {
+            static MESH:std::sync::OnceLock<MeshData>=std::sync::OnceLock::new();
+            let mesh=MESH.get_or_init(tree_quad_mesh);
+            return editor_mesh_hit(mesh,(glam::Vec3::new(0.0,0.0,0.5),0.8),eye,dir,pos,xf);
+        }
+        let bounds = self.editor_pick_bounds.get_or_init(|| self.meshes.iter()
+            .map(|(mesh, _, _)| omsi_geometry::bounding_sphere(&mesh.positions)).collect());
+        let mesh_hit = self.meshes.iter().zip(bounds).enumerate().filter_map(|(i, ((mesh, _, _), bounds))| {
+            if self.mesh_shadow.get(i).copied().unwrap_or(false) { return None; }
+            editor_mesh_hit(mesh, *bounds, eye, dir, pos, xf)
+        }).min_by(f64::total_cmp);
+        let light_hit = model_light_sources(&self.model).into_iter().filter_map(|(_, point, _)| {
+            editor_light_hit(eye, dir, pos + xf.transform_point3(point).as_dvec3())
+        }).min_by(f64::total_cmp);
+        mesh_hit.into_iter().chain(light_hit).min_by(f64::total_cmp)
+    }
+
     /// The folders the object's textures are looked for in. Omsi.exe loads the model of a
     /// `.sco` with the `.sco`'s own folder as the base of `texture\`, also when `[model]`
     /// takes the model file from another folder: a retexture (a copy of the `.sco` with its
     /// own `texture` folder that points at the original's model) shows its own pictures, not
     /// the original's (#978).
     pub fn texture_dirs(&self, root: &Path) -> Vec<PathBuf> {
-        let mut dirs = texture_dirs(root, &self.model_dir);
-        if let (Some(_), Some(sco_dir)) = (&self.sco.model_file, self.sco.path.parent()) {
-            let own = omsi_cfg::resolve_path(sco_dir, "texture");
-            dirs.retain(|d| *d != own);
-            dirs.insert(0, own);
-        }
-        dirs
+        scenery_texture_dirs(root, &self.sco, &self.model_dir)
     }
 
     /// The model's own extents as a `[boundingbox]` would give them (width, length, height,
@@ -313,6 +381,43 @@ pub struct ScriptedObject {
     /// when none is), and the alphas last given.
     pub alpha_slots: Vec<LampSlots>,
     pub alpha_last: Vec<Vec<f32>>,
+}
+
+/// Placement-specific script values at the start of an editor tile replacement.
+/// In particular, a tree's random rotation chosen by {init} belongs to the tree,
+/// not to the road mesh being rebuilt. Do not retain GPU slots or texture handles.
+pub(super) struct EditorScriptState {
+    sco: PathBuf,
+    labels: Vec<String>,
+    var_names: Vec<String>,
+    string_names: Vec<String>,
+    vars: Vec<f32>,
+    strings: Vec<String>,
+    transforms: Vec<Mat4>,
+    visible: Vec<bool>,
+}
+
+impl EditorScriptState {
+    pub(super) fn capture(sco: &Path, labels: &[String], inst: &omsi_sim::scenery::SceneryInstance) -> Self {
+        Self {
+            sco: sco.to_path_buf(), labels: labels.to_vec(),
+            var_names: inst.program.var_names.clone(), string_names: inst.program.str_var_names.clone(),
+            vars: inst.state.vars.clone(), strings: inst.state.str_vars.clone(),
+            transforms: inst.mesh_transforms.clone(), visible: inst.mesh_visible.clone(),
+        }
+    }
+
+    pub(super) fn restore(&self, sco: &Path, labels: &[String], inst: &mut omsi_sim::scenery::SceneryInstance) -> bool {
+        if self.sco != sco || self.labels != labels || self.var_names != inst.program.var_names
+            || self.string_names != inst.program.str_var_names || self.vars.len() != inst.state.vars.len()
+            || self.strings.len() != inst.state.str_vars.len() || self.transforms.len() != inst.mesh_transforms.len()
+            || self.visible.len() != inst.mesh_visible.len() { return false; }
+        inst.state.vars.clone_from(&self.vars);
+        inst.state.str_vars.clone_from(&self.strings);
+        inst.mesh_transforms.clone_from(&self.transforms);
+        inst.mesh_visible.clone_from(&self.visible);
+        true
+    }
 }
 
 /// Where a ray lands on a page (`[htmltexture]`) of a scenery object: see
@@ -848,6 +953,7 @@ pub struct EditObject {
     pub instances: Vec<usize>,
     /// Its `.sco`, for the editor's display.
     pub sco: std::path::PathBuf,
+    pub strings: Vec<String>,
 }
 
 /// What the object editor did to one object: moved by `moved` (m), turned by `turned`
@@ -857,6 +963,52 @@ pub struct ObjectEdit {
     pub moved: DVec3,
     pub turned: f64,
     pub deleted: bool,
+}
+
+/// Pick a lamp's visible glow even when its tiny mesh cannot be hit. The angular
+/// tolerance is capped in metres, so nearby construction lights remain distinct.
+pub(super) fn editor_light_hit(eye: DVec3, direction: glam::Vec3, point: DVec3) -> Option<f64> {
+    if direction.length_squared() < 0.5 { return None; }
+    let direction = direction.normalize().as_dvec3();
+    let to = point - eye;
+    let along = to.dot(direction);
+    if !(0.01..=400.0).contains(&along) { return None; }
+    let radius = (along * 0.006).clamp(0.12, 0.5);
+    ((to - direction * along).length_squared() <= radius * radius).then_some(along)
+}
+
+/// Apply the same total edit as the mesh, starting from the tile's original light.
+/// Filtering a deleted owner's lights leaves those originals intact for Undo.
+fn edit_light_pose(position: &mut DVec3, direction: Option<&mut glam::Vec3>,
+    owner: Option<(i64, DVec3)>, edits: &HashMap<i64, ObjectEdit>) -> bool {
+    let Some((id, origin)) = owner else { return true };
+    let Some(edit) = edits.get(&id) else { return true };
+    if edit.deleted { return false; }
+    let (sin, cos) = edit.turned.to_radians().sin_cos();
+    let offset = *position - origin;
+    *position = origin + edit.moved + DVec3::new(
+        offset.x * cos + offset.y * sin, -offset.x * sin + offset.y * cos, offset.z);
+    if let Some(direction) = direction {
+        let (x, y) = (direction.x as f64, direction.y as f64);
+        direction.x = (x * cos + y * sin) as f32;
+        direction.y = (-x * sin + y * cos) as f32;
+    }
+    true
+}
+
+pub(super) fn collect_editor_lights(state: &TileState, edits: &HashMap<i64, ObjectEdit>)
+    -> (Vec<StaticCorona>, Vec<omsi_render::PointLight>) {
+    let coronas = state.coronas.iter().enumerate().filter_map(|(index, original)| {
+        let mut light = original.clone();
+        edit_light_pose(&mut light.corona.position, Some(&mut light.corona.direction),
+            state.corona_owners.get(index).copied().flatten(), edits).then_some(light)
+    }).collect();
+    let lights = state.lights.iter().enumerate().filter_map(|(index, original)| {
+        let mut light = original.clone();
+        edit_light_pose(&mut light.position, None,
+            state.light_owners.get(index).copied().flatten(), edits).then_some(light)
+    }).collect();
+    (coronas, lights)
 }
 
 /// A parked car of a loaded tile (see [`World::parked_objects`]).
@@ -895,8 +1047,8 @@ pub struct Prepared {
     /// Terrain-mapped spline faces pooled across types within spatial cells.
     pub(super) ground_splines: Vec<Arc<MeshData>>,
     pub(super) objects: Vec<PlacedObject>,
-    /// (type, texture, position, height, width, heading)
-    pub(super) trees: Vec<(Arc<ObjectType>, String, DVec3, f64, f64, f64)>,
+    /// (type, texture, position, height, width, heading, editor identity/labels)
+    pub(super) trees: Vec<(Arc<ObjectType>, String, DVec3, f64, f64, f64, Option<(i64,i64,Vec<String>)>)>,
     pub(super) origin: DVec3,
     pub(super) light_map: Option<TextureData>,
     /// The cut the roads make into the ground (alpha 0 = cut), in tile space.
@@ -912,6 +1064,10 @@ pub struct PendingUpload {
     pub(super) types: Vec<Arc<ObjectType>>,
     pub(super) tg: TileGpu,
     pub(super) placing: Placing,
+    pub(super) hidden_preview: HashMap<usize, bool>,
+    /// A hidden replacement must not run animations that make its instances visible.
+    pub(super) scripted: Vec<ScriptedObject>,
+    pub(super) restored_scripts: usize,
 }
 
 /// How far [`World::place_step`] got with a tile, and what it made so far.
@@ -941,6 +1097,24 @@ impl PendingUpload {
     pub fn key(&self) -> (i32, i32) {
         (self.prepared.tx, self.prepared.ty)
     }
+
+    /// A replacement is uploaded invisibly while the previous tile is still drawn.
+    pub fn hide_preview(&mut self, renderer: &Renderer, scene: &mut Scene) {
+        for &id in &self.tg.instances {
+            if !self.hidden_preview.contains_key(&id) {
+                if let Some(i) = scene.instances.get(id) { self.hidden_preview.insert(id, i.visible); }
+            }
+            hide_instance(renderer, scene, id);
+        }
+    }
+
+    pub fn show_preview(&mut self, renderer: &Renderer, scene: &mut Scene) {
+        for (id, visible) in self.hidden_preview.drain() {
+            let Some(i) = scene.instances.get(id) else { continue };
+            let (alpha, uv) = (i.slot_alpha.clone(), i.slot_uv.clone());
+            renderer.set_params(scene, id, &alpha, visible, &uv);
+        }
+    }
 }
 
 /// What a loaded tile added to the world, so that unloading it can take it away again.
@@ -956,6 +1130,9 @@ pub struct TileState {
     pub mesh_obstacles: Vec<omsi_sim::collision::MeshObstacle>,
     pub coronas: Vec<StaticCorona>,
     pub lights: Vec<omsi_render::PointLight>,
+    /// Parallel ownership for editor-visible map objects; spline rows stay unowned.
+    pub corona_owners: Vec<Option<(i64, DVec3)>>,
+    pub light_owners: Vec<Option<(i64, DVec3)>>,
     pub light_objects: Vec<LightObject>,
     pub night_slots: Vec<(usize, usize, MaterialId, MaterialId)>,
     /// The tile's objects whose night textures follow a `[NightMapMode]` timetable.
@@ -986,8 +1163,53 @@ pub struct TileGpu {
     pub types: Vec<usize>,
     pub spline_types: Vec<usize>,
     pub trees: Vec<String>,
+    /// Independent map trees, with the instance owned by this particular upload.
+    /// World::edit_objects is replaced during staging and cannot identify the old GPU.
+    pub(super) editor_trees: Vec<(i64, EditObject)>,
     /// Sign texts the tile's objects show (shared, see `GpuCache::text_textures`).
     pub texts: Vec<String>,
+    /// Preserve tree dimensions and copied pitch/bank while moving an editor helper.
+    pub(super) helper_shape: Option<Mat4>,
+}
+
+/// Match only unique, unchanged independent trees of two uploads of the same tile.
+/// Spline attachment rows and session helpers are not recorded in editor_trees.
+pub(super) fn matching_editor_trees(current: &TileGpu, old: &TileGpu) -> Vec<(usize, usize)> {
+    let mut previous: HashMap<((i32, i32), i64), Option<usize>> = HashMap::new();
+    for (index, (id, object)) in old.editor_trees.iter().enumerate() {
+        previous.entry((object.tile, *id)).and_modify(|entry| *entry = None).or_insert(Some(index));
+    }
+    let mut counts: HashMap<((i32, i32), i64), usize> = HashMap::new();
+    for (id, object) in &current.editor_trees {
+        *counts.entry((object.tile, *id)).or_insert(0usize) += 1;
+    }
+    current.editor_trees.iter().enumerate().filter_map(|(index, (id, object))| {
+        if counts.get(&(object.tile, *id)) != Some(&1) { return None; }
+        let other = (*previous.get(&(object.tile, *id))?)?;
+        let previous = &old.editor_trees[other].1;
+        if object.sco != previous.sco || object.pos != previous.pos || object.xf != previous.xf
+            || object.key != previous.key || object.strings != previous.strings
+            || object.instances.len() != 1 || previous.instances.len() != 1 { return None; }
+        let (new_slot, old_slot) = (object.instances[0], previous.instances[0]);
+        (new_slot != old_slot && current.instances.contains(&new_slot) && old.instances.contains(&old_slot))
+            .then_some((index, other))
+    }).collect()
+}
+
+/// Hand ownership to the replacement without letting release_tile free the kept slot.
+/// The caller releases the unused new slot separately; shared material references remain
+/// with both tiles until the old tile is released normally.
+pub(super) fn transfer_editor_tree(current: &mut TileGpu, old: &mut TileGpu, pair: (usize, usize)) -> Option<(usize, usize)> {
+    let new_slot = *current.editor_trees.get(pair.0)?.1.instances.first()?;
+    let old_slot = *old.editor_trees.get(pair.1)?.1.instances.first()?;
+    if new_slot == old_slot { return None; }
+    let new_index = current.instances.iter().position(|slot| *slot == new_slot)?;
+    let old_index = old.instances.iter().position(|slot| *slot == old_slot)?;
+    current.instances[new_index] = old_slot;
+    current.editor_trees[pair.0].1.instances[0] = old_slot;
+    old.instances.swap_remove(old_index);
+    old.editor_trees[pair.1].1.instances.clear();
+    Some((new_slot, old_slot))
 }
 
 pub(super) struct TexEntry {

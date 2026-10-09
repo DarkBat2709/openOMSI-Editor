@@ -69,23 +69,55 @@ impl App {
         ) {
             let vehicles = steps::light_vehicles(self.player.as_ref(), self.session.traffic.as_ref(), &self.net.remotes);
             let __tc = Instant::now();
-            lights::collect(w, scene, &daylight, cam.position, &vehicles);
-            *self.perf.profile.entry("lights.collect").or_default() += __tc.elapsed().as_secs_f64();
-            // the object editor's pick: a magenta glow over it
-            if let Some(id) = self.menus.editor.as_ref().and_then(|e| e.selected) {
-                let at = w.edit_objects.lock().get(&id).map(|o| o.pos);
-                let moved = w.object_edits.lock().get(&id).map(|e| e.moved).unwrap_or_default();
-                if let Some(p) = at {
-                    scene.coronas.push(omsi_render::Corona {
-                        position: p + moved + glam::DVec3::Z * 3.0,
-                        size: 0.6,
-                        color: [1.0, 0.1, 0.9],
-                        brightness: 2.0,
-                        ..Default::default()
-                    });
-                }
-            }
-            if let Some(wt) = &self.session.weather {
+                    lights::collect(w, scene, &daylight, cam.position, &vehicles);
+                    *self.perf.profile.entry("lights.collect").or_default() += __tc.elapsed().as_secs_f64();
+                    // Audit markers are independent of the current selection and editor mode.
+                    if let Some(a)=self.menus.editor.as_ref().filter(|_|self.menus.game_menu.is_none()).and_then(|ed|ed.audit.as_ref()).filter(|a|a.markers&&!a.busy()) {
+                        for e in a.report.nearby(cam.position,a.show_good) {
+                            scene.coronas.push(omsi_render::Corona{position:e.at+glam::DVec3::Z*0.7,size:0.65,color:e.status.color(),brightness:2.0,..Default::default()});
+                        }
+                    }
+                    // the object editor's pick: a magenta glow over it
+                    if let Some(ed) = self.menus.editor.as_ref().filter(|ed| ed.spline_mode && !ed.terrain.active) {
+                        let markers = if ed.splines.connection_active() { ed.splines.connection_markers(w) }
+                            else { ed.splines.markers(w).into_iter().map(|p| (p, [1.0, 0.1, 0.9], 0.35)).collect() };
+                        for (p, color, size) in markers {
+                            scene.coronas.push(omsi_render::Corona {
+                                position: p + glam::DVec3::Z * 0.4,
+                                size,
+                                color,
+                                brightness: 2.0,
+                                ..Default::default()
+                            });
+                        }
+                    }
+                    if let Some(panel)=self.menus.editor.as_ref().filter(|ed|ed.catalog.is_none()&&self.menus.game_menu.is_none()).and_then(|e|e.sidewalk_window.as_ref()){
+                        for p in panel.preview.markers.iter().filter(|p|p.distance(cam.position)<500.0){scene.coronas.push(omsi_render::Corona {position:*p+glam::DVec3::Z*0.15,size:0.18,color:[0.1,0.65,1.0],brightness:2.0,..Default::default()});}
+                        for (i,p) in panel.preview.handles.iter().enumerate(){scene.coronas.push(omsi_render::Corona {position:*p+glam::DVec3::Z*0.4,size:0.85,color:if i==0{[0.1,1.0,0.2]}else{[1.0,0.6,0.1]},brightness:2.0,..Default::default()});}
+                    }
+                    if let Some(panel) = self.menus.editor.as_ref().filter(|ed| ed.catalog.is_none() && self.menus.game_menu.is_none()).and_then(|ed| ed.roadside_window.as_ref()) {
+                        for point in panel.preview.points.iter().filter(|p| p.pos.distance(cam.position) < 500.0) {
+                            for height in [0.15, 0.75, 1.35] {
+                                scene.coronas.push(omsi_render::Corona { position: point.pos + glam::DVec3::Z * height,
+                                    size: 0.2, color: [0.1, 0.55, 1.0], brightness: 2.0, ..Default::default() });
+                            }
+                        }
+                    }
+                    if let Some(ed)=self.menus.editor.as_ref().filter(|ed|ed.terrain.active && ed.tile_window.is_none() && self.menus.game_menu.is_none()) {
+                        for p in ed.terrain.markers(w) {
+                            scene.coronas.push(omsi_render::Corona {position:p,size:0.25,color:[0.15,0.65,1.0],brightness:2.0,..Default::default()});
+                        }
+                    }
+                    if let Some(p) = self.menus.editor.as_ref().and_then(|ed| (!ed.terrain.active).then(||ed.selection_marker(w)).flatten()) {
+                        scene.coronas.push(omsi_render::Corona {
+                            position: p,
+                            size: 0.6,
+                            color: [1.0, 0.1, 0.9],
+                            brightness: 2.0,
+                            ..Default::default()
+                        });
+                    }
+                    if let Some(wt) = &self.session.weather {
                 let (kind, rate) = precip_of(wt);
                 self.session.rain.set(kind, rate);
                 // [wind] direction (deg) speed (m/s)

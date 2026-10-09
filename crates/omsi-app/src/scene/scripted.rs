@@ -367,6 +367,8 @@ impl World {
         let mut updated = 0;
         let now = self.script_clock();
         let day = self.day_kind(&now);
+        // Copy before taking the script lock; editor uploads take that order too.
+        let edits = self.object_edits.lock().clone();
         let mut scripted = self.scripted.lock();
         let mut boards = self.timetable_boards.lock();
         let mut wanted: Vec<i64> = Vec::new();
@@ -384,6 +386,11 @@ impl World {
         let mut inputs: Vec<Option<omsi_sim::scenery::SceneryVars>> = Vec::with_capacity(scripted.len());
         let controllers = self.controller_of_object.lock();
         for o in scripted.iter_mut() {
+            if edits.get(&o.map_id).is_some_and(|edit| edit.deleted) {
+                inputs.push(None);
+                if let (Some(a), Some(mut ss)) = (audio, o.sounds.take()) { ss.stop_all(a); }
+                continue;
+            }
             let dist = (o.pos - center).length();
             if dist > 800.0 {
                 inputs.push(None);
@@ -565,7 +572,8 @@ impl World {
                 texture_updates.push((o.ty.clone(), selection, o.instances.clone(), switches));
             }
             for (k, ((inst, xf), &visible)) in o.instances.iter().zip(&o.inst.mesh_transforms).zip(&o.inst.mesh_visible).enumerate() {
-                renderer.set_transform(scene, *inst, o.pos, o.xf * *xf);
+                let (pos, rotation) = edited_object_pose(o.pos, o.xf, edits.get(&o.map_id).copied().unwrap_or_default());
+                renderer.set_transform(scene, *inst, pos, rotation * *xf);
                 // (the slots its `[alphascale]` variables fade, see `ScriptedObject::alpha_slots`)
                 let alpha = o.alpha_slots.get(k).filter(|l| !l.alpha.is_empty()).map(|l| l.values(&|v| v.trim().parse::<f32>().ok().or_else(|| o.inst.var(v))).0);
                 let p = &mut scene.instances[*inst];

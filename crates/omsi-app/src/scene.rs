@@ -7,12 +7,12 @@
 use crate::tiles::{MapIndex, Pose};
 use anyhow::{Context, Result};
 use glam::{DVec2, DVec3, Mat4};
-use hashbrown::HashMap;
+use hashbrown::{HashMap, HashSet};
 use omsi_geometry::{
     build_spline_mesh, build_terrain_mesh, mesh_from_o3d, object_rotation, MeshData, SplineCurve,
     TileSurface,
 };
-use omsi_map::{tile_size, GlobalCfg, Terrain};
+use omsi_map::{tile_size, GlobalCfg, Terrain, Tile};
 use omsi_model::{MaterialDef, MeshDef, Model};
 use omsi_render::{
     AlphaMode, MaterialExtra, MaterialId, MeshId, RenderPhase, Renderer, Scene, TextureId,

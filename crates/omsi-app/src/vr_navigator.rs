@@ -1,6 +1,8 @@
 //! Personal cockpit navigator placement, stored per vehicle outside the repository.
 
-use glam::{DVec3, Mat4, Quat, Vec3, Vec4};
+use glam::Vec3;
+#[cfg(any(windows, test))]
+use glam::{DVec3, Mat4, Quat, Vec4};
 use serde::{Deserialize, Serialize};
 use std::{collections::BTreeMap, path::Path};
 
@@ -181,9 +183,11 @@ fn driver_origin(camera: &omsi_vehicle::Camera) -> Vec3 {
 pub(crate) struct Display {
     pub placement: Placement,
     #[cfg_attr(not(windows), allow(dead_code))]
+    #[cfg(any(windows, test))]
     pub local_center: Vec3,
 }
 
+#[cfg(any(windows, test))]
 impl Display {
     #[cfg_attr(not(windows), allow(dead_code))]
     pub fn transform(
@@ -413,14 +417,15 @@ impl crate::App {
         }
         let p = self.player.as_ref()?;
         let def = &p.vehicle.ty.def;
-        let eye = def
+        let _eye = def
             .cameras_driver
             .get(def.camera_std)
             .or(def.cameras_driver.first())?;
         let placement = self.vr_nav_profile();
         Some(Display {
             placement,
-            local_center: driver_origin(eye) + Vec3::from(placement.offset),
+            #[cfg(any(windows, test))]
+            local_center: driver_origin(_eye) + Vec3::from(placement.offset),
         })
     }
 

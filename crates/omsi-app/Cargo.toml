@@ -16,6 +16,10 @@ path = "src/lib.rs"
 name = "openomsi"
 path = "src/main.rs"
 
+[features]
+# Fork packaging only: never replace the editor with an official game release.
+standalone-editor = []
+
 [build-dependencies]
 winresource.workspace = true
 

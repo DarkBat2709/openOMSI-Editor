@@ -105,6 +105,8 @@ impl World {
             prepared: p,
             tg,
             placing: pl,
+            scripted,
+            restored_scripts,
             ..
         } = u;
         let key = (p.tx, p.ty);
@@ -170,7 +172,7 @@ impl World {
                         pl.phase = 4;
                         continue;
                     };
-                    self.place_object(renderer, scene, gpu, p, tg, pl, o, key, ground.ground_mat);
+                    self.place_object(renderer, scene, gpu, p, tg, pl, o, key, ground.ground_mat, scripted, restored_scripts);
                     pl.objects += 1;
                     done_some = true;
                 }
@@ -308,9 +310,10 @@ impl World {
         // is how OMSI's car parks get their asphalt, its side streets their cobbles and
         // its meadows their fields.
         let no_paint = omsi_cfg::flags::OMSI_NO_GROUND_PAINT.is_set();
-        for (layer, mask, painted) in p.paint.iter().filter(|_| !no_paint) {
-            let Some(gt) = self.global.ground_textures.get(*layer) else {
-                continue;
+                        for (layer, mask, painted) in p.paint.iter().filter(|_| !no_paint) {
+                            let ground_layers = crate::ground_paint::layers(self);
+                            let Some(gt) = ground_layers.get(*layer) else {
+                                continue;
             };
             let tex = gpu.add_data(renderer, scene, mask);
             tg.textures.push(tex);
@@ -358,11 +361,12 @@ impl World {
         }
         // Exposed sides keep the original brush layers. The horizontal ground's
         // masks include the hole cut and would erase these vertical faces again.
-        if let Some(wall) = wall_id {
-            for (layer, mask) in p.wall_paint.iter().filter(|_| !no_paint) {
-                let Some(gt) = self.global.ground_textures.get(*layer) else {
-                    continue;
-                };
+                        if let Some(wall) = wall_id {
+                            for (layer, mask) in p.wall_paint.iter().filter(|_| !no_paint) {
+                                let ground_layers = crate::ground_paint::layers(self);
+                                let Some(gt) = ground_layers.get(*layer) else {
+                                    continue;
+                                };
                 let tex = gpu.add_data(renderer, scene, mask);
                 tg.textures.push(tex);
                 let layer_tex = gpu
@@ -562,14 +566,14 @@ impl World {
         tree_mesh: MeshId,
     ) {
         let images: &HashMap<PathBuf, Arc<TextureData>> = &p.images;
-        // trees are cheap: a few dozen at a time
-        let end = (pl.next + 64).min(p.trees.len());
-        for (ot, texture, pos, height, width, heading) in &p.trees[pl.next..end] {
-            let tkey = texture.to_ascii_lowercase();
-            if !gpu.trees.contains_key(&tkey) {
-                let dirs = ot.texture_dirs(&self.root);
-                let found = gpu.texture(renderer, scene, texture, &dirs, images);
-                // (not repeated: the picture's bottom row, a wide trunk or grass, drew a line along the top of the card)
+                    // trees are cheap: a few dozen at a time
+                    let end = (pl.next + 64).min(p.trees.len());
+                    for (ot, texture, pos, height, width, heading, editable) in &p.trees[pl.next..end] {
+                        let dirs = ot.texture_dirs(&self.root);
+                        let tkey = tree_material_key(texture, &dirs);
+                        if !gpu.trees.contains_key(&tkey) {
+                            let found = gpu.texture(renderer, scene, texture, &dirs, images);
+                            // (not repeated: the picture's bottom row, a wide trunk or grass, drew a line along the top of the card)
                 renderer.address_next.set(omsi_render::TexAddressing::Clamp);
                 let m = renderer.add_material_extra(
                     scene,
@@ -587,10 +591,11 @@ impl World {
                         sway: Some(tree_card_sway(ot, texture)),
                         ..Default::default()
                     },
-                );
-                let m = gpu.material(renderer, scene, m);
-                gpu.trees.insert(
-                    tkey.clone(),
+                            );
+                            let m = gpu.material(renderer, scene, m);
+                            trace_tree_material(&ot.sco.path, &tkey, m, found.as_ref().map(|f| f.1.as_path()));
+                            gpu.trees.insert(
+                                tkey.clone(),
                     TreeGpu {
                         material: m,
                         texture: found.map(|f| f.1),
@@ -610,8 +615,12 @@ impl World {
                     *width as f32,
                     *height as f32,
                 ));
-            let _ =
-                instance!(gpu, renderer, scene, tg; renderer.add_instance(scene, tree_mesh, *pos, xf, vec![mat]));
+            let instance=instance!(gpu, renderer, scene, tg; renderer.add_instance(scene, tree_mesh, *pos, xf, vec![mat]));
+            if let Some((id,collision_key,strings))=editable {
+                let eo=EditObject {tile:(p.tx,p.ty),pos:*pos,xf,key:*collision_key,instances:vec![instance],sco:ot.sco.path.clone(),strings:strings.clone()};
+                if let Some(e)=self.object_edits.lock().get(id).copied() {show_edit(renderer,scene,&eo,e);}
+                tg.editor_trees.push((*id,eo.clone()));self.edit_objects.lock().insert(*id,eo);
+            }
             pl.trees += 1;
         }
         pl.next = end;
@@ -631,6 +640,8 @@ impl World {
         o: PlacedObject,
         key: (i32, i32),
         ground_mat: MaterialId,
+        scripted: &mut Vec<ScriptedObject>,
+        restored_scripts: &mut usize,
     ) {
         let images: &HashMap<PathBuf, Arc<TextureData>> = &p.images;
         let PlacedObject {
@@ -646,10 +657,12 @@ impl World {
             var_parent,
             parked,
             editable,
-            script: mut early_script,
-        } = o;
-        let script_strings: &[String] = match (&lamp, strings.as_slice()) {
-            (&Some((_, _, false)), [_, rest @ ..]) => rest,
+                        script: mut early_script,
+                    } = o;
+                    let strings = if editable { self.object_text_edits.lock().get(&map_id).cloned().unwrap_or(strings) } else { strings };
+                    if editable && self.object_text_edits.lock().contains_key(&map_id) { early_script = None; }
+                    let script_strings: &[String] = match (&lamp, strings.as_slice()) {
+                        (&Some((_, _, false)), [_, rest @ ..]) => rest,
             _ => strings.as_slice(),
         };
         let tkey = self.type_gpu(renderer, scene, gpu, &ot, images, ground_mat);
@@ -668,7 +681,7 @@ impl World {
         let has_lower = !type_lods.is_empty();
         let mut made = ObjectMade::default();
         let (mut object_script, freetex_probe, has_pages) =
-            self.object_scripts(&ot, lamp, early_script.take(), script_strings);
+            self.object_scripts(&ot, lamp, early_script.take(), script_strings, key, map_id, &strings, restored_scripts);
         let obj = ObjectCx {
             ot: &ot,
             pos,
@@ -799,11 +812,11 @@ impl World {
                 );
             }
         }
-        if editable {
-            let instances: Vec<usize> = all_instances.iter().chain(&lod_instances).copied().collect();
-            let eo = EditObject { tile: key, pos, xf, key: collision_key, instances, sco: ot.sco.path.clone() };
-            // an object edited before its tile went shows the edit again
-            if let Some(e) = self.object_edits.lock().get(&map_id).copied() {
+                    if editable {
+                        let instances: Vec<usize> = all_instances.iter().chain(&lod_instances).copied().collect();
+                        let eo = EditObject { tile: key, pos, xf, key: collision_key, instances, sco: ot.sco.path.clone(), strings:strings.clone() };
+                        // an object edited before its tile went shows the edit again
+                        if let Some(e) = self.object_edits.lock().get(&map_id).copied() {
                 show_edit(renderer, scene, &eo, e);
             }
             self.edit_objects.lock().insert(map_id, eo);
@@ -811,7 +824,7 @@ impl World {
         if let Some(lamp) = lamp {
             self.keep_light_object(pl, &obj, lamp, made);
         } else if let Some(inst) = object_script.take() {
-            self.keep_scripted_object(renderer, scene, gpu, &obj, inst, made, mesh_instances);
+            self.keep_scripted_object(renderer, scene, gpu, &obj, inst, made, mesh_instances, scripted);
         }
     }
 
@@ -824,6 +837,10 @@ impl World {
         lamp: Option<(i64, usize, bool)>,
         mut early_script: Option<omsi_sim::scenery::SceneryInstance>,
         script_strings: &[String],
+        key: (i32,i32),
+        map_id: i64,
+        strings: &[String],
+        restored_scripts: &mut usize,
     ) -> (Option<omsi_sim::scenery::SceneryInstance>, Option<omsi_sim::scenery::SceneryInstance>, bool) {
         // Run {init} once for this placement: its variable values choose CTC
         // schemes and its strings can name [matl_freetex] pictures.
@@ -846,10 +863,14 @@ impl World {
                     program,
                     &ot.mesh_defs(),
                     self.script_clock(),
-                    script_strings,
-                ));
-                if has_pages {
-                    let object_dir = ot.sco.path.parent().unwrap_or(std::path::Path::new(""));
+                                script_strings,
+                            ));
+                            if self.editor_script_states.lock().get(&(key, map_id))
+                                .is_some_and(|saved| saved.restore(&ot.sco.path, &strings, &mut inst)) {
+                                *restored_scripts += 1;
+                            }
+                            if has_pages {
+                                let object_dir = ot.sco.path.parent().unwrap_or(std::path::Path::new(""));
                     inst.init_html_textures(&ot.model.html_textures, &ot.model_dir, object_dir);
                 }
                 inst
@@ -1204,6 +1225,7 @@ impl World {
         inst: omsi_sim::scenery::SceneryInstance,
         made: ObjectMade,
         mesh_instances: usize,
+        scripted: &mut Vec<ScriptedObject>,
     ) {
         let ObjectCx { ot, pos, xf, lamp, map_id, controller, strings, var_parent, key, tkey, images, .. } = *obj;
         let ObjectMade { mut all_instances, object_variants, script_texts, html_pages, .. } = made;
@@ -1282,11 +1304,20 @@ impl World {
         {
             let arrivals = inst.wants_arrivals();
             // (a scripted object with [terrainmapping] slots had more instances
-            // than its script has meshes: "index out of bounds", #111)
-            all_instances.truncate(mesh_instances);
-            self.scripted.lock().push(ScriptedObject {
-                ty: ot.clone(),
-                pos,
+                            // than its script has meshes: "index out of bounds", #111)
+                            all_instances.truncate(mesh_instances);
+                            let edit = self.object_edits.lock().get(&map_id).copied().unwrap_or_default();
+                            let (at, rotation) = edited_object_pose(pos, xf, edit);
+                            for ((render_inst, mesh_xf), &visible) in all_instances.iter()
+                                .zip(&inst.mesh_transforms).zip(&inst.mesh_visible) {
+                                renderer.set_transform(scene, *render_inst, at, rotation * *mesh_xf);
+                                if scene.instances[*render_inst].visible != visible {
+                                    renderer.set_params(scene, *render_inst, &[], visible, &[]);
+                                }
+                            }
+                            scripted.push(ScriptedObject {
+                                ty: ot.clone(),
+                                pos,
                 xf,
                 instances: all_instances,
                 inst,

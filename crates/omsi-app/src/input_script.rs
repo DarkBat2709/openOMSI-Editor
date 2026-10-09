@@ -25,6 +25,11 @@ pub(crate) fn is_game_action(name: &str) -> bool {
 impl App {
     /// A key of the window, or of an `OMSI_INPUT` script.
     pub(crate) fn on_key(&mut self, event_loop: &ActiveEventLoop, code: KeyCode, pressed: bool, repeat: bool) {
+        if self.editor_text_input(Some(code), None, pressed) { return; }
+        if self.editor_catalog_input(Some(code), None, pressed) { return; }
+        if code==KeyCode::Escape&&pressed&&self.menus.editor.as_ref().is_some_and(|ed|crate::audit_events::panel_active(ed)&&ed.audit.as_ref().is_some_and(|a|a.visible)) {
+            self.editor_audit_command(crate::audit_events::Command::Close);self.input.keys.remove(&code);return;
+        }
         if self.xr.vr_nav_edit.is_some() {
             self.vr_nav_edit_key(code, pressed, repeat);
             return;
@@ -296,8 +301,11 @@ impl App {
             return true;
         }
         // the object editor takes its keys first (Escape leaves it)
-        if pressed && self.menus.editor.is_some() && self.editor_key(code) {
-            return true;
+        if pressed && self.menus.editor.is_some() {
+            let shift=self.input.keys.contains(&KeyCode::ShiftLeft)||self.input.keys.contains(&KeyCode::ShiftRight);
+            let ctrl=self.input.keys.contains(&KeyCode::ControlLeft)||self.input.keys.contains(&KeyCode::ControlRight);
+            if repeat && crate::editor::one_shot_key(code,shift,ctrl) {return true;}
+            if self.editor_key(code) {return true;}
         }
         if pressed && !repeat && code == KeyCode::Escape {
             self.open_game_menu();
@@ -429,6 +437,7 @@ impl App {
                 // the object editor (`crate::editor`)
                 KeyCode::KeyE if ctrl && shift_now => {
                     self.toggle_editor();
+                    self.input.keys.remove(&KeyCode::KeyE);
                     return true;
                 }
                 // OMSI's `sim_pause`
@@ -1022,6 +1031,8 @@ impl App {
     /// focus again the mouse and the keyboard work nothing (see `input_away`). A game
     /// controller's axes stay theirs.
     pub(crate) fn input_lost(&mut self) {
+        if let Some(w)=self.menus.editor.as_mut().and_then(|e|e.sidewalk_window.as_mut()){w.drag=None;}
+        self.editor_terrain_finish();
         self.input.input_away = true;
         self.release_vehicle_keys();
         self.input.keys.clear();

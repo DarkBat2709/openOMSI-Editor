@@ -71,6 +71,7 @@ impl MeshData {
 /// Analytic spline curve (one map segment).
 #[derive(Debug, Clone, Copy)]
 pub struct SplineCurve {
+    pub profile_transitions: [Option<omsi_map::ProfileTransition>; 2],
     pub start: DVec3,
     pub heading_deg: f64,
     pub length: f64,
@@ -134,6 +135,7 @@ pub fn half_cant_width_of(file: &str) -> f64 {
 impl SplineCurve {
     pub fn from_map(s: &MapSpline, tile_origin: DVec2) -> SplineCurve {
         SplineCurve {
+            profile_transitions: s.profile_transitions,
             start: DVec3::new(s.pos[0] + tile_origin.x, s.pos[1] + tile_origin.y, s.pos[2]),
             heading_deg: s.heading,
             length: s.length,
@@ -231,6 +233,10 @@ impl SplineCurve {
 
     /// Point at distance `s` and lateral offset `x` (right positive) and height `z`.
     pub fn offset_point(&self, s: f64, x: f64, z: f64) -> DVec3 {
+        self.transition_point(s, x, self.raw_offset_point(s, x, z))
+    }
+
+    fn raw_offset_point(&self, s: f64, x: f64, z: f64) -> DVec3 {
         let c = self.point_at(s);
         let d = Self::dir(self.heading_at(s));
         let right = DVec2::new(d.y, -d.x);
@@ -239,6 +245,22 @@ impl SplineCurve {
         let hcw = self.half_cant_width.max(0.0);
         let dz = -x.clamp(-hcw, hcw) * self.cant_at(s) / 100.0;
         DVec3::new(c.x + right.x * x, c.y + right.y * x, c.z + z + dz)
+    }
+
+    fn transition_point(&self, station: f64, x: f64, mut point: DVec3) -> DVec3 {
+        for transition in &self.profile_transitions {
+            let Some(t) = transition.filter(|t| t.valid()) else { continue };
+            let at = t.station;
+            let span = t.span;
+            let weight = (1.0 - (station - at).abs() / span).clamp(0.0, 1.0);
+            let weight = weight * weight * (3.0 - 2.0 * weight);
+            let across = ((x - t.x[0]) / (t.x[1] - t.x[0])).clamp(0.0, 1.0);
+            let delta = DVec3::from_array(t.offsets[0]).lerp(DVec3::from_array(t.offsets[1]), across);
+            let forward = Self::dir(self.heading_at(at));
+            let right = DVec2::new(forward.y, -forward.x);
+            point += (right.extend(0.0) * delta.x + forward.extend(0.0) * delta.y + DVec3::Z * delta.z) * weight;
+        }
+        point
     }
 
     pub fn end_point(&self) -> DVec3 {
@@ -270,7 +292,10 @@ pub fn spline_station_count(def: &Spline, curve: &SplineCurve) -> usize {
     } else {
         1
     };
-    let n = horizontal.max(vertical.max((l / 10.0) as usize));
+    let transition_steps = if curve.profile_transitions.iter().any(Option::is_some) {
+        (l / 0.5).ceil().clamp(1.0, 4096.0) as usize
+    } else { 1 };
+    let n = horizontal.max(vertical.max((l / 10.0) as usize)).max(transition_steps);
     n.min(station_cap(def)).max(1)
 }
 
@@ -378,8 +403,13 @@ fn patchwork(def: &Spline, curve: &SplineCurve, stations: &mut usize) -> Option<
 fn skewed_point(curve: &SplineCurve, s: f64, x: f64, z: f64) -> (DVec3, f64) {
     let t = if curve.length > 0.0 { s / curve.length } else { 0.0 };
     let skew = curve.skew_start * (1.0 - t) + curve.skew_end * t;
-    let s = if skew.is_finite() { s + x * skew.clamp(-32.0, 32.0) } else { s };
-    (curve.offset_point(s, x, z), s)
+    let shifted = if skew.is_finite() { s + x * skew.clamp(-32.0, 32.0) } else { s };
+    (curve.transition_point(s, x, curve.raw_offset_point(shifted, x, z)), shifted)
+}
+
+/// A visible profile point, using exactly the mesh builder's mirror, cant and skew.
+pub fn spline_profile_point(def: &Spline, curve: &SplineCurve, mirror: bool, station: f64, x: f64, z: f64) -> DVec3 {
+    skewed_point(&curve.clone().with_sli(def), station, if mirror { -x } else { x }, z).0
 }
 
 /// Extrude a spline definition along a map curve into a mesh (one material slot per texture),
@@ -1295,6 +1325,7 @@ mod tests {
         // An aligned spline's generated outline has the same explicit-hole semantics.
         let def = strip(side * 0.25, 0.0);
         let curve = SplineCurve {
+            profile_transitions: [None; 2],
             start: DVec3::new(middle as f64, lo as f64, -12.0),
             ..plain_curve((hi - lo) as f64, 0.0)
         };
@@ -1417,7 +1448,7 @@ mod tests {
         def.height_profiles.push(omsi_scenery::sli::HeightProfile { x0: -4.5, x1: 4.5, z0: 0.1, z1: 0.1 });
         def.height_profiles.push(omsi_scenery::sli::HeightProfile { x0: 4.5, x1: 7.5, z0: 0.25, z1: 0.25 });
         def.height_profiles.push(omsi_scenery::sli::HeightProfile { x0: -1.25, x1: -1.25, z0: 0.25, z1: 0.25 });
-        let c = SplineCurve { start: DVec3::new(10.0, 10.0, 30.0), heading_deg: 0.0, length: 20.0, radius: 0.0, grad_start: 0.0, grad_end: 0.0, delta_h: None, cant_start: 0.0, cant_end: 0.0, skew_start: 0.0, skew_end: 0.0, tex_offset: 0.0, seed: 0, half_cant_width: DEFAULT_HALF_CANT_WIDTH };
+        let c = SplineCurve { profile_transitions: [None; 2], start: DVec3::new(10.0, 10.0, 30.0), heading_deg: 0.0, length: 20.0, radius: 0.0, grad_start: 0.0, grad_end: 0.0, delta_h: None, cant_start: 0.0, cant_end: 0.0, skew_start: 0.0, skew_end: 0.0, tex_offset: 0.0, seed: 0, half_cant_width: DEFAULT_HALF_CANT_WIDTH };
         let m = build_height_profile_mesh(&def, &c, false, DVec3::ZERO);
         let mut g = DriveGrid::default();
         for t in m.indices.chunks_exact(3) {
@@ -1458,18 +1489,18 @@ mod tests {
 
     #[test]
     fn straight_and_arc() {
-        let c = SplineCurve { start: DVec3::ZERO, heading_deg: 90.0, length: 10.0, radius: 0.0, grad_start: 0.0, grad_end: 0.0, delta_h: None, cant_start: 0.0, cant_end: 0.0, skew_start: 0.0, skew_end: 0.0, tex_offset: 0.0, seed: 0, half_cant_width: DEFAULT_HALF_CANT_WIDTH };
+        let c = SplineCurve { profile_transitions: [None; 2], start: DVec3::ZERO, heading_deg: 90.0, length: 10.0, radius: 0.0, grad_start: 0.0, grad_end: 0.0, delta_h: None, cant_start: 0.0, cant_end: 0.0, skew_start: 0.0, skew_end: 0.0, tex_offset: 0.0, seed: 0, half_cant_width: DEFAULT_HALF_CANT_WIDTH };
         let e = c.end_point();
         assert!((e.x - 10.0).abs() < 1e-9 && e.y.abs() < 1e-9);
         // quarter circle to the right from heading 0 with radius 10 ends at (10, 10), heading 90
-        let c = SplineCurve { start: DVec3::ZERO, heading_deg: 0.0, length: std::f64::consts::FRAC_PI_2 * 10.0, radius: 10.0, grad_start: 0.0, grad_end: 0.0, delta_h: None, cant_start: 0.0, cant_end: 0.0, skew_start: 0.0, skew_end: 0.0, tex_offset: 0.0, seed: 0, half_cant_width: DEFAULT_HALF_CANT_WIDTH };
+        let c = SplineCurve { profile_transitions: [None; 2], start: DVec3::ZERO, heading_deg: 0.0, length: std::f64::consts::FRAC_PI_2 * 10.0, radius: 10.0, grad_start: 0.0, grad_end: 0.0, delta_h: None, cant_start: 0.0, cant_end: 0.0, skew_start: 0.0, skew_end: 0.0, tex_offset: 0.0, seed: 0, half_cant_width: DEFAULT_HALF_CANT_WIDTH };
         let e = c.end_point();
         assert!((e.x - 10.0).abs() < 1e-9 && (e.y - 10.0).abs() < 1e-9, "{e:?}");
         assert!((c.heading_at(c.length) - 90.0).abs() < 1e-9);
     }
 
     fn plain_curve(length: f64, radius: f64) -> SplineCurve {
-        SplineCurve { start: DVec3::ZERO, heading_deg: 0.0, length, radius, grad_start: 0.0, grad_end: 0.0, delta_h: None, cant_start: 0.0, cant_end: 0.0, skew_start: 0.0, skew_end: 0.0, tex_offset: 0.0, seed: 0, half_cant_width: DEFAULT_HALF_CANT_WIDTH }
+        SplineCurve { profile_transitions: [None; 2], start: DVec3::ZERO, heading_deg: 0.0, length, radius, grad_start: 0.0, grad_end: 0.0, delta_h: None, cant_start: 0.0, cant_end: 0.0, skew_start: 0.0, skew_end: 0.0, tex_offset: 0.0, seed: 0, half_cant_width: DEFAULT_HALF_CANT_WIDTH }
     }
 
     fn strip(half: f32, v_scale: f32) -> Spline {
@@ -1538,7 +1569,7 @@ mod tests {
     fn textures_run_on_along_a_chain() {
         let def = strip(2.0, 0.37);
         let a = plain_curve(13.0, 0.0);
-        let b = SplineCurve { start: a.end_point(), tex_offset: 13.0, ..plain_curve(9.0, 0.0) };
+        let b = SplineCurve { profile_transitions: [None; 2], start: a.end_point(), tex_offset: 13.0, ..plain_curve(9.0, 0.0) };
         let ma = build_spline_mesh(&def, &a, false, DVec3::ZERO);
         let mb = build_spline_mesh(&def, &b, false, DVec3::ZERO);
         let end_a = ma.uvs[ma.uvs.len() - 1].y;
@@ -1594,7 +1625,7 @@ mod tests {
     #[test]
     fn spline_h_height() {
         // the Ahlheim underpass ramp: 73.86 m, leaves at 6.19 %, arrives level, 5.85 m up
-        let c = SplineCurve { start: DVec3::new(0.0, 0.0, -5.79), heading_deg: 0.0, length: 73.86, radius: 0.0, grad_start: 6.19, grad_end: 0.0, delta_h: Some(5.85), cant_start: 0.0, cant_end: 0.0, skew_start: 0.0, skew_end: 0.0, tex_offset: 0.0, seed: 0, half_cant_width: DEFAULT_HALF_CANT_WIDTH };
+        let c = SplineCurve { profile_transitions: [None; 2], start: DVec3::new(0.0, 0.0, -5.79), heading_deg: 0.0, length: 73.86, radius: 0.0, grad_start: 6.19, grad_end: 0.0, delta_h: Some(5.85), cant_start: 0.0, cant_end: 0.0, skew_start: 0.0, skew_end: 0.0, tex_offset: 0.0, seed: 0, half_cant_width: DEFAULT_HALF_CANT_WIDTH };
         assert!((c.height_at(0.0) + 5.79).abs() < 1e-9);
         assert!((c.height_at(c.length) - 0.06).abs() < 1e-9, "{}", c.height_at(c.length));
         assert!((c.slope_at(0.0) - 0.0619).abs() < 1e-9);
@@ -2917,7 +2948,7 @@ mod cant_tests {
 
     #[test]
     fn cant_is_a_percentage_within_the_half_cant_width() {
-        let c = SplineCurve { start: DVec3::ZERO, heading_deg: 0.0, length: 10.0, radius: 0.0, grad_start: 0.0, grad_end: 0.0, delta_h: None, cant_start: 5.0, cant_end: 5.0, skew_start: 0.0, skew_end: 0.0, tex_offset: 0.0, seed: 0, half_cant_width: 3.0 };
+        let c = SplineCurve { profile_transitions: [None; 2], start: DVec3::ZERO, heading_deg: 0.0, length: 10.0, radius: 0.0, grad_start: 0.0, grad_end: 0.0, delta_h: None, cant_start: 5.0, cant_end: 5.0, skew_start: 0.0, skew_end: 0.0, tex_offset: 0.0, seed: 0, half_cant_width: 3.0 };
         // 2 m right at 5 %: 10 cm down
         assert!((c.offset_point(5.0, 2.0, 0.0).z + 0.10).abs() < 1e-9);
         // beyond the half cant width the height stays what it is at its edge
@@ -3001,5 +3032,35 @@ mod winding_transform_tests {
         assert_eq!(positive_det_faces_forward(&mesh), Some(false));
         assert!(!turns_round(&mesh));
         assert_eq!(mesh_from_o3d(&mesh).indices[..3], [0, 1, 2]);
+    }
+}
+
+#[cfg(test)]
+mod profile_transition_tests {
+    use super::*;
+
+    #[test]
+    fn mesh_edges_and_offset_paths_use_the_same_taper_and_keep_the_far_end() {
+        let def = Spline { profiles: vec![omsi_scenery::sli::SplineProfile {
+            texture: 0, points: vec![
+                omsi_scenery::sli::SplineProfilePoint { x: -3.0, ..Default::default() },
+                omsi_scenery::sli::SplineProfilePoint { x: 3.0, ..Default::default() },
+            ],
+        }], ..Default::default() };
+        let road = MapSpline { length: 40.0, profile_transitions: [None, Some(omsi_map::ProfileTransition {
+            station: 40.0, span: 10.0, x: [-3.0, 3.0], offsets: [[-1.0, 0.0, 0.0], [1.0, 0.0, 0.0]],
+        })], ..Default::default() };
+        let c = SplineCurve::from_map(&road, DVec2::ZERO);
+        assert_eq!(c.offset_point(40.0, -3.0, 0.0), DVec3::new(-4.0, 40.0, 0.0));
+        assert_eq!(c.offset_point(40.0, 3.0, 0.0), DVec3::new(4.0, 40.0, 0.0));
+        assert_eq!(c.offset_point(0.0, 3.0, 0.0), DVec3::new(3.0, 0.0, 0.0));
+        // A post half a metre outside the old edge keeps that clearance at the wider edge.
+        assert_eq!(c.offset_point(40.0, 3.5, 0.0), DVec3::new(4.5, 40.0, 0.0));
+        let mesh = build_spline_mesh(&def, &c, false, DVec3::ZERO);
+        for x in [-3.0, 3.0] {
+            let p = c.offset_point(40.0, x, 0.0);
+            assert!(mesh.positions.iter().any(|v| v.as_dvec3().distance(p) < 1e-6));
+        }
+        assert!(mesh.positions.iter().any(|v| v.y > 30.0 && v.y < 40.0 && v.x.abs() > 3.0 && v.x.abs() < 4.0));
     }
 }

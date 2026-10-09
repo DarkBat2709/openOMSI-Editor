@@ -218,36 +218,39 @@ impl App {
     fn frame_free_camera(&mut self, dt: f32) {
         // (the free camera flies; with no bus it is the view too - but not out of the
         // walker's eyes: on foot without a bus of one's own (started on foot, the bus
-        // removed) the keys flew the camera on from where the walk had put it every
-        // frame, and walking jumped about, the more so the lower the frame rate, #807)
-        if let (Some(cam), true) = (
-            self.camera.as_mut(),
+                // removed) the keys flew the camera on from where the walk had put it every
+                // frame, and walking jumped about, the more so the lower the frame rate, #807)
+                let camera_keys = &self.input.keys;
+                let map_editor = self.menus.editor.as_ref();
+                let fly_pressed = |code| crate::editor::camera_key_pressed(camera_keys, map_editor, code);
+                if let (Some(cam), true) = (
+                    self.camera.as_mut(),
             self.view == "free" || (self.player.is_none() && self.session.on_foot.is_none()),
         ) {
             let mut v = Vec3::ZERO;
-            let f = cam.forward();
-            let r = cam.right();
-            if self.input.keys.contains(&KeyCode::KeyW) {
-                v += f;
-            }
-            if self.input.keys.contains(&KeyCode::KeyS) {
-                v -= f;
-            }
-            if self.input.keys.contains(&KeyCode::KeyD) {
-                v += r;
-            }
-            if self.input.keys.contains(&KeyCode::KeyA) {
-                v -= r;
-            }
-            if self.input.keys.contains(&KeyCode::KeyE) || self.input.keys.contains(&KeyCode::Space) {
-                v += Vec3::Z;
-            }
-            if self.input.keys.contains(&KeyCode::KeyQ) {
-                v -= Vec3::Z;
-            }
-            let boost = if self.input.keys.contains(&KeyCode::ShiftLeft) {
-                5.0
-            } else {
+                    let f = cam.forward();
+                    let r = cam.right();
+                    if fly_pressed(KeyCode::KeyW) {
+                        v += f;
+                    }
+                    if fly_pressed(KeyCode::KeyS) {
+                        v -= f;
+                    }
+                    if fly_pressed(KeyCode::KeyD) {
+                        v += r;
+                    }
+                    if fly_pressed(KeyCode::KeyA) {
+                        v -= r;
+                    }
+                    if fly_pressed(KeyCode::KeyE) || fly_pressed(KeyCode::Space) {
+                        v += Vec3::Z;
+                    }
+                    if fly_pressed(KeyCode::KeyQ) {
+                        v -= Vec3::Z;
+                    }
+                    let boost = if fly_pressed(KeyCode::ShiftLeft) {
+                        5.0
+                    } else {
                 1.0
             };
             if self.cam.ego {
@@ -259,20 +262,20 @@ impl App {
                     cam.position.z = g + 1.7;
                 }
             } else {
-                cam.position += (v.normalize_or_zero() * self.cam.speed * boost * dt).as_dvec3();
-            }
-            if self.input.keys.contains(&KeyCode::ArrowLeft) {
-                cam.yaw -= 60.0 * dt;
-            }
-            if self.input.keys.contains(&KeyCode::ArrowRight) {
-                cam.yaw += 60.0 * dt;
-            }
-            if self.input.keys.contains(&KeyCode::ArrowUp) {
-                cam.pitch = (cam.pitch + 40.0 * dt).min(89.0);
-            }
-            if self.input.keys.contains(&KeyCode::ArrowDown) {
-                cam.pitch = (cam.pitch - 40.0 * dt).max(-89.0);
-            }
+                        cam.position += (v.normalize_or_zero() * self.cam.speed * boost * dt).as_dvec3();
+                    }
+                    if fly_pressed(KeyCode::ArrowLeft) {
+                        cam.yaw -= 60.0 * dt;
+                    }
+                    if fly_pressed(KeyCode::ArrowRight) {
+                        cam.yaw += 60.0 * dt;
+                    }
+                    if fly_pressed(KeyCode::ArrowUp) {
+                        cam.pitch = (cam.pitch + 40.0 * dt).min(89.0);
+                    }
+                    if fly_pressed(KeyCode::ArrowDown) {
+                        cam.pitch = (cam.pitch - 40.0 * dt).max(-89.0);
+                    }
         }
     }
 }
