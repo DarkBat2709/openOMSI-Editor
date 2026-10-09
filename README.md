@@ -1,3 +1,39 @@
+# openOMSI Editor — 0.7.4-pre
+
+A free, experimental map editor fork by DarkBat2709,
+based on openOMSI 0.2.20.
+
+## Editor features
+
+- Object and spline editing
+- Asset catalogue with spline texture information
+- Junction builder
+- Terrain height editing and texture painting
+- Tile creation and spline connection checks
+- German and English PDF guides
+
+## Documentation
+
+- [Deutsche Kurzanleitung](docs/openOMSI-Editor-Kurzanleitung.pdf)
+- [English quick guide](docs/openOMSI-Editor-Quick-Guide-EN.pdf)
+
+## Current status
+
+Automated validation and release builds have passed on Linux and Windows.
+Manual editing, saving and reloading have been tested by the maintainer
+on Linux. Interactive Windows testing is still pending.
+
+This is a preview, not version 1.0. Back up your maps before editing.
+A packaged editor release is being prepared.
+
+This fork builds on the work of the openOMSI contributors.
+It is not an official openOMSI release. Original OMSI 2 content is required
+and is not included.
+
+---
+
+## Original openOMSI project documentation
+
 <p align="center">
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="assets/logos/openomsi-wordmark-light.svg">
