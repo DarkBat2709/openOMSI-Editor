@@ -1,4 +1,4 @@
-# openOMSI Editor — 0.7.6-pre (development)
+# openOMSI Editor — 0.7.6-pre
 
 A free, experimental map editor fork by DarkBat2709,
 based on openOMSI 0.2.20.
@@ -23,16 +23,17 @@ based on openOMSI 0.2.20.
 
 ## Current status
 
-The 0.7.5-pre map creation, saving/reopening and existing-map editor start have been manually checked on Linux.
-The 0.7.6-pre camera bookmarks and above-ground start still need an interactive check.
+Version 0.7.6-pre is available as a Linux x64 preview.
+Automated validation and release builds have passed on Linux and Windows.
+Map creation, editing, saving/reopening, existing-map editor start,
+per-map camera bookmarks and above-ground camera start have been manually
+tested by the maintainer on Linux. Interactive Windows testing is still pending.
 See [Editor start / Editor-Start](docs/EDITOR_START.md).
 
-For the published 0.7.4-pre release: automated validation and release builds have passed on Linux and Windows.
-Manual editing, saving and reloading have been tested by the maintainer
-on Linux. Interactive Windows testing is still pending.
+The editor does not yet fully follow the language selected in the game.
 
 This is a preview, not version 1.0. Back up your maps before editing.
-[Download the Linux x64 editor preview 0.7.4-pre](https://github.com/DarkBat2709/openOMSI-Editor/releases/tag/v0.7.4-pre)
+[Download the Linux x64 editor preview 0.7.6-pre](https://github.com/DarkBat2709/openOMSI-Editor/releases/tag/v0.7.6-pre)
 
 Requires an existing openOMSI 0.2.20 installation with original OMSI 2 content.
 German and English PDF guides are included. No Windows download is available yet.
