@@ -1,6 +1,8 @@
-# Manual validation only. No release, push or publication permissions.
+# Validation on editor-preview pushes and manual runs. Read-only permissions.
 name: Editor preview validation
 on:
+  push:
+    branches: [editor-preview]
   workflow_dispatch:
 permissions:
   contents: read
