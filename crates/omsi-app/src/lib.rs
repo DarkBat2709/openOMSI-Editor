@@ -48,6 +48,7 @@ mod terrain_editor;
 mod ground_paint;
 mod junction_builder;
 mod junction_events;
+mod junction_connections;
 mod roadside_objects;
 mod roadside_events;
 mod sidewalk;

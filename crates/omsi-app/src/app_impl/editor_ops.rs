@@ -913,6 +913,7 @@ impl App {
         if let Some(m) = ed.drag_to(&world, r, scene, hit) {
             self.service_msg = Some((m, 3.0));
         }
+        self.editor_reload_splines();
     }
 
     /// The wheel in the object editor: the object turns (5° a notch), with Shift it rises.

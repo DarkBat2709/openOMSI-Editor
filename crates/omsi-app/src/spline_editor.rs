@@ -772,11 +772,11 @@ impl SplineEditor {
     pub fn generation_started(&self) -> bool { self.start.is_some() }
     pub fn cancel_generation(&mut self) { self.start = None; }
 
-    pub(crate) fn junction_plan(&self,world:&World,key:Key,id:i64,point:DVec3,heading:f64,def:&omsi_scenery::Spline)->Result<MapSpline,String>{
+    pub(crate) fn junction_plan(&self,world:&World,key:Key,id:i64,port:crate::junction_connections::Port,def:&omsi_scenery::Spline)->Result<MapSpline,String>{
         let mut original=world.spline_edits.lock().current(key).ok_or("Road no longer loaded")?;
         // Only a uniquely resolved, explicitly deleted spline may release this end.
         // Missing IDs may belong to live objects or unloaded neighbours.
-        let c=curve(key.0,&original);let end=if c.start.distance(point)<c.end_point().distance(point){End::Start}else{End::Finish};
+        let c=curve(key.0,&original);let end=junction_end(&original,&c,id,port.point);
         let link=end.link(&original);
         if link!=0&&link!=id{
             let edits=world.spline_edits.lock();let keys:HashSet<_>=edits.originals.keys().chain(edits.changed.keys()).chain(edits.added.keys()).filter(|k|k.1==link).copied().collect();
@@ -784,7 +784,7 @@ impl SplineEditor {
             if deleted_junction_neighbor(link,id,&matches){end.set_link(&mut original,0);log::info!("junction connection: spline {} releases deleted neighbour {}",key.1,link);}
         }
         let ty=world.spline_type(&original.file).ok_or("Road profile missing")?;
-        let fitted=junction_fit(key.0,&original,&ty.def,id,point,heading,def)?;
+        let fitted=junction_fit_port(key.0,&original,&ty.def,id,port,&def)?;
         for tile in connection_tiles(key,key,&fitted){if world.tile_source(tile.0,tile.1).is_none(){return Err("Connection leaves the map".into());}}
         Ok(fitted)
     }
@@ -1201,6 +1201,11 @@ fn compatible_sections(a: &omsi_scenery::Spline, am: bool, b: &omsi_scenery::Spl
 fn align_connection_edges(source_tile: (i32, i32), original: &MapSpline, source_def: &omsi_scenery::Spline,
     target_tile: (i32, i32), target_def: &omsi_scenery::Spline, preview: &mut ConnectionGeometry,
     allow_transition: bool) -> Result<(), String> {
+    align_connection_surface(source_tile,original,source_def,target_tile,target_def,preview,allow_transition,None)
+}
+fn align_connection_surface(source_tile:(i32,i32),original:&MapSpline,source_def:&omsi_scenery::Spline,
+    target_tile:(i32,i32),target_def:&omsi_scenery::Spline,preview:&mut ConnectionGeometry,
+    allow_transition:bool,surface:Option<&dyn Fn(f64,f64)->DVec3>)->Result<(),String> {
     let end = if preview.source_end == End::Start { 0 } else { 1 };
     let source_edges = physical_edges(source_def, preview.source.mirror);
     let target_edges = physical_edges(target_def, preview.target.mirror);
@@ -1219,7 +1224,7 @@ fn align_connection_edges(source_tile: (i32, i32), original: &MapSpline, source_
     // Recompute from the undeformed end, so repeated connect is idempotent.
     preview.source.profile_transitions[end] = None;
     let actual = edge_points(source_tile, &preview.source, source_def, preview.source_end);
-    let mut goal = edge_points(target_tile, &preview.target, target_def, preview.target_end);
+    let mut goal = if let Some(surface)=surface {target_edges.map(|(x,z)|surface(x,z))} else {edge_points(target_tile, &preview.target, target_def, preview.target_end)};
     if reverse { goal.swap(0, 1); }
     let c = curve(source_tile, &preview.source);
     let forward = SplineCurve::dir(preview.source_end.heading(&c));
@@ -1263,8 +1268,8 @@ fn align_connection_edges(source_tile: (i32, i32), original: &MapSpline, source_
         let matches = target_def.profiles.iter().flat_map(|p| p.points.windows(2)).any(|pair| {
             let x = pair.iter().map(|p| p.x as f64 * if preview.target.mirror { -1.0 } else { 1.0 }).collect::<Vec<_>>();
             if tx < x[0].min(x[1]) - 1e-4 || tx > x[0].max(x[1]) + 1e-4 { return false; }
-            let points = [0, 1].map(|i| omsi_geometry::spline_profile_point(target_def, &target_curve, false,
-                target_station, x[i], pair[i].z as f64));
+            let points = [0, 1].map(|i| if let Some(surface)=surface {surface(x[i],pair[i].z as f64)} else {omsi_geometry::spline_profile_point(target_def, &target_curve, false,
+                target_station, x[i], pair[i].z as f64)});
             let v = points[1] - points[0];
             let f = ((source_point - points[0]).dot(v) / v.length_squared().max(1e-12)).clamp(0.0, 1.0);
             source_point.distance(points[0] + v * f) <= 0.02
@@ -1449,19 +1454,30 @@ fn fit_connection_endpoint(source_tile: (i32, i32), source: &MapSpline, source_e
 fn deleted_junction_neighbor(link:i64,junction:i64,matches:&[MapSpline])->bool{
     link!=0&&link!=junction&&matches.len()==1&&matches[0].id==link&&matches[0].deleted
 }
+fn junction_end(source:&MapSpline,c:&SplineCurve,id:i64,point:DVec3)->End {
+    if source.prev_id==id {End::Start} else if source.next_id==id {End::Finish}
+    else if c.start.distance(point)<c.end_point().distance(point){End::Start}else{End::Finish}
+}
+#[cfg(test)]
 fn junction_fit(tile:(i32,i32),source:&MapSpline,source_def:&omsi_scenery::Spline,id:i64,point:DVec3,outward:f64,target_def:&omsi_scenery::Spline)->Result<MapSpline,String>{
+    let port=crate::junction_connections::Pose{at:point,heading:0.0,tilt:[0.0;2]}.port(DVec3::ZERO,outward)?;
+    junction_fit_port(tile,source,source_def,id,port,target_def)
+}
+fn junction_fit_port(tile:(i32,i32),source:&MapSpline,source_def:&omsi_scenery::Spline,id:i64,port:crate::junction_connections::Port,target_def:&omsi_scenery::Spline)->Result<MapSpline,String>{
     if source.deleted||!valid_spline(source){return Err("Invalid road".into());}
-    let c=curve(tile,source);let end=if c.start.distance(point)<c.end_point().distance(point){End::Start}else{End::Finish};
-    let gap=end.point(&c).distance(point);if gap>50.0{return Err(format!("Road {}: {:.2} m distance to arm (max. 50 m). Select a matching road",source.id,gap));}
+    if source.prev_id==id&&source.next_id==id{return Err("Road is connected to this junction at both ends; edit separately".into());}
+    let c=curve(tile,source);let end=junction_end(source,&c,id,port.point);
+    let gap=end.point(&c).distance(port.point);if gap>50.0{return Err(format!("Road {}: {:.2} m distance to arm (max. 50 m). Select a matching road",source.id,gap));}
     if ![0,id].contains(&end.link(source)){return Err(format!("Road {}: {} occupied by ID {}. Active connection not overwritten",source.id,if end==End::Start{"Start"}else{"End"},end.link(source)));}
-    let mut fitted=fit_connection_endpoint(tile,source,end,point,0.0,0.0)?;
-    let desired=outward+if end==End::Finish{180.0}else{0.0};
+    let sign=if end==End::Finish{-1.0}else{1.0};
+    let mut fitted=fit_connection_endpoint(tile,source,end,port.point,port.grade*sign,port.cant*sign)?;
+    let desired=port.outward+if end==End::Finish{180.0}else{0.0};
     let delta=(end.heading(&curve(tile,&fitted))-desired+180.0).rem_euclid(360.0)-180.0;
     if delta.abs()>30.0{return Err("Connection angle above 30°; align road or junction arm first".into());}
     end.set_link(&mut fitted,id);
-    let o=origin(tile);let target=MapSpline{id,pos:[point.x-o.x,point.y-o.y,point.z],heading:(outward+180.0).rem_euclid(360.0),length:1.0,..Default::default()};
+    let o=origin(tile);let target=MapSpline{id,pos:[port.point.x-o.x,port.point.y-o.y,port.point.z],heading:(port.outward+180.0).rem_euclid(360.0),length:1.0,grad_start:-port.grade,grad_end:-port.grade,cant_start:-port.cant,cant_end:-port.cant,..Default::default()};
     let mut preview=ConnectionGeometry{source:fitted,target,source_end:end,target_end:End::Start,gap,neighbors:Vec::new()};
-    align_connection_edges(tile,source,source_def,tile,target_def,&mut preview,true)?;
+    align_connection_surface(tile,source,source_def,tile,target_def,&mut preview,true,Some(&|x,z|port.surface(x,z)))?;
     if !valid_spline(&preview.source){return Err("Invalid junction connection".into());}Ok(preview.source)
 }
 
@@ -2298,3 +2314,7 @@ mod junction_connection_tests {
         assert!(crate::junction_builder::port(&project,3).is_err());
     }
 }
+
+#[cfg(test)]
+#[path="junction_connections_tests.rs"]
+mod junction_pose_connection_tests;

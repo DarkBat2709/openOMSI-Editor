@@ -29,11 +29,11 @@ auf −89° bis +89° begrenzt. Nach Löschen kann Entf das Bauteil wiederherste
 anschließend setzt Rücktaste die Neigung zurück. Rücktaste auf einem gelöschten
 Bauteil verwendet zunächst die bisherige Wiederherstellungs-/Rücksetzfunktion.
 
-**Grenzen:** Angeschlossene Splines werden nicht automatisch mitgedreht oder
-mitgeneigt. Die Baukastenfunktion zum automatischen Anschließen von Straßen
-verlangt weiterhin 0° Neigung. Straßen müssen bei einer geneigten Kreuzung
-separat angepasst werden. Die KI-Fahrwege werden erst beim Neuladen aktualisiert.
-Die Funktion unterstützt normale OMSI-Karten, keine Weltkoordinatenkarten.
+**Ab 0.7.10-pre:** Explizit angeschlossene Straßen folgen dem Bauteil beim
+Verschieben, Drehen und Neigen. Das entfernte Ende bleibt stehen. Rücktaste
+setzt die zusammengehörige Lageänderung mit den Straßen zurück. Unmögliche
+Anpassungen werden abgelehnt. Einzelheiten: [Straßenanschlüsse](JUNCTION_CONNECTIONS.md).
+KI-Fahrwege werden nach Speichern und Neuladen aktualisiert. Keine Weltkoordinatenkarten.
 
 Im Spline-Modus bleiben ,/. für die Krümmung und Pos1/Ende für die Steigung
 zuständig. Diese Anleitung ergänzt die vorhandenen PDFs; diese sind in diesem
@@ -62,9 +62,10 @@ Both angles are limited to −89°…+89°. After deletion, use Delete to restor
 object before resetting tilt. Backspace on a deleted object first uses the
 existing restore/reset behaviour.
 
-Connected splines do not follow the changed pose automatically. Automatic road
-connection still requires zero tilt; adjust roads separately for tilted objects.
-Traffic paths are refreshed on map reload. Only standard OMSI maps are supported.
+**Since 0.7.10-pre:** Explicitly connected roads follow movement, rotation and tilt.
+Their far endpoints stay fixed. Backspace restores the combined pose and road
+changes. Impossible fits are rejected. See [road connections](JUNCTION_CONNECTIONS.md).
+Traffic paths refresh on map reload. Only standard OMSI maps are supported.
 Spline-mode curvature and gradient keys are unchanged.
 
 This supplements the existing PDF guides; the PDFs have not been regenerated.

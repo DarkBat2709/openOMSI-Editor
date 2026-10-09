@@ -168,34 +168,62 @@ impl App {
     }
 }
 
-/// Resolve the persistent object placement and all roads explicitly linked to its ID.
+/// Resolve explicit links; cached originals avoid reading every map tile on each drag frame.
+fn linked_roads(world:&crate::scene::World,id:i64)->Result<Vec<(crate::spline_editor::Key,omsi_map::MapSpline)>,String>{
+    let index=world.index();
+    let missing={let edits=world.spline_edits.lock();index.splines.iter().filter(|(_,s)|s.prev==id||s.next==id)
+        .filter(|(sid,_)|!edits.originals.keys().chain(edits.changed.keys()).chain(edits.added.keys()).any(|k|k.1==**sid)).count()};
+    if missing>0 {for(_,tx,ty,_)in world.map_tiles(){let(tile,editable)=world.editor_row_source((tx,ty))?;
+        if tile.version!=0&&tile.version<14{continue;}
+        let mut edits=world.spline_edits.lock();for s in tile.splines.into_iter().filter(|s|editable.contains(&s.id)){edits.originals.entry(((tx,ty),s.id)).or_insert(s);}
+    }}
+    let edits=world.spline_edits.lock();
+    if index.splines.iter().filter(|(_,s)|s.prev==id||s.next==id).any(|(sid,_)|!edits.originals.keys().chain(edits.changed.keys()).chain(edits.added.keys()).any(|k|k.1==*sid)){
+        return Err("A connected road cannot be edited (missing, Chrono scenario or old tile format)".into());
+    }
+    let keys:std::collections::BTreeSet<_>=edits.originals.iter().chain(edits.changed.iter()).chain(edits.added.iter()).filter(|(_,s)|s.prev_id==id||s.next_id==id).map(|(k,_)|*k).collect();
+    Ok(keys.into_iter().filter_map(|k|edits.current(k).filter(|s|!s.deleted&&(s.prev_id==id||s.next_id==id)).map(|s|(k,s))).collect())
+}
+
+pub(crate) fn follow_junction_pose(ed:&crate::editor::Editor,world:&crate::scene::World,id:i64,new:crate::junction_connections::Pose)->Result<Vec<(crate::spline_editor::Key,omsi_map::MapSpline)>,String>{
+    let (path,at,heading,tilt,_,_)=ed.junction_placement(world,id)?;
+    if !crate::editor::builder_asset(&path){return Ok(Vec::new());}
+    let path=path.parent().unwrap().join("junction.junction.json");
+    let bytes=std::fs::read(path).map_err(|e|e.to_string())?;
+    if bytes.len()>65536{return Err("Junction project is too large".into());}
+    let project:crate::junction_builder::Project=serde_json::from_slice(&bytes).map_err(|e|e.to_string())?;
+    junction_roads_at(ed,world,id,&project,&project,None,crate::junction_connections::Pose{at,heading,tilt},new)
+}
 fn junction_roads(ed:&crate::editor::Editor,world:&crate::scene::World,id:i64,project:&crate::junction_builder::Project,old:&crate::junction_builder::Project,pending:Option<(crate::spline_editor::Key,usize)>)->Result<Vec<(crate::spline_editor::Key,omsi_map::MapSpline)>,String>{
-    if world.global.world_coordinates{return Err("Junction connections require a standard OMSI map".into());}
     let(_,at,heading,tilt,_,_)=ed.junction_placement(world,id)?;
-    if tilt.iter().any(|v|v.abs()>1e-6){return Err("Tilted junction: set tilt to 0 before connecting".into());}
-    let transform=|p:glam::DVec3|{let(s,c)=heading.to_radians().sin_cos();at+glam::DVec3::new(p.x*c+p.y*s,p.y*c-p.x*s,p.z)};
+    let pose=crate::junction_connections::Pose{at,heading,tilt};
+    junction_roads_at(ed,world,id,project,old,pending,pose,pose)
+}
+fn junction_roads_at(ed:&crate::editor::Editor,world:&crate::scene::World,id:i64,project:&crate::junction_builder::Project,old:&crate::junction_builder::Project,pending:Option<(crate::spline_editor::Key,usize)>,before:crate::junction_connections::Pose,after:crate::junction_connections::Pose)->Result<Vec<(crate::spline_editor::Key,omsi_map::MapSpline)>,String>{
+    if world.global.world_coordinates{return Err("Junction connections require a standard OMSI map".into());}
+    let linked=linked_roads(world,id)?;
+    if linked.is_empty()&&pending.is_none(){return Ok(Vec::new());}
+    let old_ports:Vec<_>=(0..4).filter_map(|i|crate::junction_builder::port(old,i).ok().map(|(q,_,_)|(i,before.point(q)))).collect();
     let mut assigned=std::collections::BTreeMap::new();
-    for(_,tx,ty,_)in world.map_tiles(){let(mut tile,_)=world.editor_row_source((tx,ty))?;
-        {let mut edits=world.spline_edits.lock();for s in &tile.splines{edits.originals.entry(((tx,ty),s.id)).or_insert_with(||s.clone());}edits.overlay((tx,ty),&mut tile);}
-        for s in tile.splines.into_iter().filter(|s|!s.deleted&&(s.prev_id==id||s.next_id==id)){
-            let key=((tx,ty),s.id);if s.prev_id==id&&s.next_id==id{return Err("Road is connected to this junction at both ends; edit separately".into());}
-            let curve=omsi_geometry::SplineCurve::from_map(&s,glam::DVec2::new(tx as f64,ty as f64)*omsi_map::tile_size());
-            let p=curve.point_at(if s.prev_id==id{0.0}else{s.length});
-            let arm=(0..4).filter_map(|i|crate::junction_builder::port(old,i).ok().map(|(q,_,_)|(i,transform(q).distance(p)))).min_by(|a,b|a.1.total_cmp(&b.1)).filter(|(_,d)|*d<0.1).ok_or("Old road connection no longer meets junction arm; reset junction/road first")?.0;
-            assigned.insert(key,arm);
-        }
+    for(key,s)in linked {
+        if pending.is_some_and(|(k,_)|k==key){continue;}
+        if s.prev_id==id&&s.next_id==id{return Err("Road is connected to this junction at both ends; edit separately".into());}
+        let curve=omsi_geometry::SplineCurve::from_map(&s,glam::DVec2::new(key.0.0 as f64,key.0.1 as f64)*omsi_map::tile_size());
+        let p=curve.point_at(if s.prev_id==id{0.0}else{s.length});
+        let arm=old_ports.iter().map(|(i,q)|(*i,q.distance(p))).min_by(|a,b|a.1.total_cmp(&b.1)).filter(|(_,d)|*d<0.1).ok_or("Road no longer meets its arm: select that road and reconnect it in the builder")?.0;
+        assigned.insert(key,arm);
     }
     if let Some((key,arm))=pending{assigned.insert(key,arm);}
     let mut occupied=std::collections::HashSet::new();let mut result=Vec::new();
     for(key,arm)in assigned{if !occupied.insert(arm){return Err("Junction arm is already connected to another road".into());}
         let(point,direction,def)=crate::junction_builder::port(project,arm)?;
-        result.push((key,ed.splines.junction_plan(world,key,id,transform(point),direction+heading,&def)?));
+        result.push((key,ed.splines.junction_plan(world,key,id,after.port(point,direction)?,&def)?));
     }Ok(result)
 }
 
 fn show_junction_connections(ed:&mut crate::editor::Editor,world:&crate::scene::World,id:i64,project:&crate::junction_builder::Project,parts:&[(crate::spline_editor::Key,omsi_map::MapSpline)],pending:Option<(crate::spline_editor::Key,usize)>)->Result<(),String>{
-    let(_,at,heading,_,_,_)=ed.junction_placement(world,id)?;let(s,c)=heading.to_radians().sin_cos();
-    let local=|p:glam::DVec3|{let p=p-at;glam::DVec3::new(p.x*c-p.y*s,p.x*s+p.y*c,p.z)};
+    let(_,at,heading,tilt,_,_)=ed.junction_placement(world,id)?;
+    let pose=crate::junction_connections::Pose{at,heading,tilt};let local=|p:glam::DVec3|pose.local(p);
     let mut existing=Vec::new();let mut proposed=Vec::new();let mut links=[None;4];
     for(key,spline)in parts{
         let curve=omsi_geometry::SplineCurve::from_map(spline,glam::DVec2::new(key.0.0 as f64,key.0.1 as f64)*omsi_map::tile_size());

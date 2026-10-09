@@ -385,10 +385,10 @@ fn helper_text_breaks_lines_at_the_at_sign() {
         let fixture = SceneryFixture::new();
         let missing = "Sceneryobjects/Junctions/absent.sco";
         let Err(error) = scenery_definition(&fixture.0, missing) else { panic!("missing .sco loaded") };
-        assert!(error.contains("SCO-Datei fehlt") && error.contains("absent.sco"), "{error}");
+        assert!(error.contains("SCO file missing") && error.contains("absent.sco"), "{error}");
         let sco_path = fixture.write("Sceneryobjects/Junctions/tee.sco", "[model]\nModel\\missing.cfg\n");
         let Err(error) = scenery_definition(&fixture.0, &sco_path.to_string_lossy()) else { panic!("missing model loaded") };
-        assert!(error.contains("Modelldefinition fehlt") && error.contains("missing.cfg"), "{error}");
+        assert!(error.contains("Model definition missing") && error.contains("missing.cfg"), "{error}");
         assert!(error.contains(&sco_path.parent().unwrap().to_string_lossy().to_string()), "{error}");
     }
 

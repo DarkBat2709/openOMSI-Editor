@@ -66,6 +66,7 @@ pub struct Editor {
     pub junction_window: Option<crate::junction_builder::Window>,
     junction_history:Vec<JunctionUndo>,
     tilt_baselines:HashMap<i64,[f64;2]>,
+    follow_history:HashMap<i64,FollowUndo>,
     pub sidewalk_window: Option<crate::sidewalk::Window>,
     pub roadside_window: Option<crate::roadside_objects::Window>,
     pub texture_target: Option<TextureTarget>,
@@ -218,6 +219,13 @@ pub enum Action {
     Flatten,
     /// Make the brush larger (or smaller) by this factor.
     Brush(f64),
+}
+
+#[derive(Clone)]
+struct FollowUndo {
+    id:i64,path:PathBuf,pose:crate::junction_connections::Pose,
+    before:Vec<(crate::spline_editor::Key,omsi_map::MapSpline)>,
+    after:Vec<(crate::spline_editor::Key,omsi_map::MapSpline)>,
 }
 
 impl Editor {
@@ -402,19 +410,9 @@ impl Editor {
     pub fn drag_to(&mut self, world: &World, renderer: &omsi_render::Renderer, scene: &mut omsi_render::Scene, ground: DVec3) -> Option<String> {
         if self.spline_mode { return self.splines.drag_to(world, ground); }
         let ground = self.drag_position(ground);
-        if let Some(k) = self.editing_added {
-            let a = self.added.get_mut(k)?;
-            a.moved = ground - a.base;
-            self.place_added(k, world, renderer, scene);
-            return Some(self.describe(world));
-        }
-        let id = self.selected?;
-        let (tile, pos) = world.edit_objects.lock().get(&id).map(|o| (o.tile, o.pos))?;
-        let mut e = world.object_edits.lock().get(&id).copied().unwrap_or_default();
-        e.moved = ground - pos;
-        self.tiles.insert(id, tile);
-        world.apply_object_edit(renderer, scene, id, e);
-        Some(self.describe(world))
+        let (current,_,deleted)=self.selected_pose(world)?;
+        if deleted||ground.distance_squared(current)<1e-12{return None;}
+        self.apply(world,renderer,scene,&Action::Move(ground-current))
     }
 
     /// What the other players' games need to show the object being edited as it is now
@@ -462,6 +460,9 @@ impl Editor {
         }
         if matches!(action, Action::Undo) {
             let selected_id=self.editing_added.and_then(|k|self.added.get(k)).map(|a|a.id).or(self.selected);
+            if let Some(h)=selected_id.and_then(|id|self.follow_history.get(&id)).cloned(){
+                return Some(self.restore_followed_pose(world,renderer,scene,h).unwrap_or_else(|e|e));
+            }
             if let Some((id,tilt))=selected_id.filter(|id|!self.added.iter().any(|a|a.id==*id&&a.deleted)).and_then(|id|self.tilt_baselines.get(&id).copied().map(|tilt|(id,tilt))) {
                 return Some(match self.set_builder_tilt(world,renderer,scene,id,tilt) {
                     Ok(())=>{self.tilt_baselines.remove(&id);"Object tilt reset · Ctrl+S to save · Reload map for traffic".into()},Err(e)=>e,
@@ -485,6 +486,10 @@ impl Editor {
                 }
             }
         }
+        let road_plan=if matches!(action,Action::Move(_)|Action::Turn(_)|Action::Undo) {
+            match self.follow_pose_action(world,action) {Ok(v)=>v,Err(e)=>return Some(format!("Junction not changed: {e}"))}
+        } else {Vec::new()};
+        let follow_undo=self.follow_snapshot(world,&road_plan);
         match action {
             Action::Copy => return self.copy(world, renderer, scene),
             Action::Variant => return self.variant(world, renderer, scene),
@@ -504,6 +509,8 @@ impl Editor {
                 _ => return None,
             }
             self.place_added(k, world, renderer, scene);
+            self.splines.apply_junction_roads(world,road_plan);
+            self.remember_follow(follow_undo);
             return Some(self.describe(world));
         }
         let id = self.selected?;
@@ -518,6 +525,8 @@ impl Editor {
         }
         self.tiles.insert(id, tile);
         world.apply_object_edit(renderer, scene, id, e);
+        self.splines.apply_junction_roads(world,road_plan);
+        self.remember_follow(follow_undo);
         Some(self.describe(world))
     }
 
@@ -659,12 +668,68 @@ impl Editor {
         "Object placed · IJKL to move · N/M to rotate · U/O for height · Ctrl+S to save · Then reload map".into()
     }
 
+    fn follow_snapshot(&self,world:&World,roads:&[(crate::spline_editor::Key,omsi_map::MapSpline)])->Option<FollowUndo>{
+        if roads.is_empty(){return None;}
+        let id=self.editing_added.and_then(|k|self.added.get(k)).map(|a|a.id).or(self.selected)?;
+        let(path,at,heading,tilt,_,_)=self.junction_placement(world,id).ok()?;
+        let edits=world.spline_edits.lock();
+        let before=roads.iter().map(|(k,_)|edits.current(*k).map(|s|(*k,s))).collect::<Option<Vec<_>>>()?;
+        Some(FollowUndo{id,path,pose:crate::junction_connections::Pose{at,heading,tilt},before,after:roads.to_vec()})
+    }
+    fn remember_follow(&mut self,snapshot:Option<FollowUndo>){
+        if let Some(snapshot)=snapshot {
+            if let Some(old)=self.follow_history.get_mut(&snapshot.id).filter(|old|old.path==snapshot.path&&old.after==snapshot.before){old.after=snapshot.after;}
+            else{self.follow_history.insert(snapshot.id,snapshot);}
+        }
+    }
+    fn restore_followed_pose(&mut self,world:&World,renderer:&omsi_render::Renderer,scene:&mut omsi_render::Scene,h:FollowUndo)->Result<String,String>{
+        let(path,_,_,_,_,_)=self.junction_placement(world,h.id)?;
+        if path!=h.path||!h.after.iter().all(|(k,s)|world.spline_edits.lock().current(*k).as_ref()==Some(s)){
+            return Err("Connected roads changed separately; their changes are kept. Undo them before resetting the junction".into());
+        }
+        let native=if self.added.iter().all(|a|a.id!=h.id){
+            let (_,at,heading,_,_,_)=self.junction_placement(world,h.id)?;
+            let edit=world.object_edits.lock().get(&h.id).copied().unwrap_or_default();
+            Some((at-edit.moved,heading-edit.turned))
+        }else{None};
+        // Rendering is the only fallible operation: do it before changing the road records.
+        self.replace_junction(world,renderer,scene,h.id,h.path,h.before,false)?;
+        let a=self.added.iter_mut().find(|a|a.id==h.id).unwrap();
+        if let Some((base,heading))=native{a.base=base;a.base_heading=heading;}
+        a.moved=h.pose.at-a.base;a.turned=h.pose.heading-a.base_heading;a.tilt=h.pose.tilt;a.shape=crate::object_angles::shape(a.tilt);
+        if let Some(gpu)=a.gpu.as_mut(){world.reshape_editor_helper(renderer,scene,gpu,h.pose.at,h.pose.heading,a.shape);}
+        self.follow_history.remove(&h.id);self.tilt_baselines.remove(&h.id);
+        Ok("Junction pose and connected roads reset together · Ctrl+S to save".into())
+    }
+
+    fn follow_pose_action(&self,world:&World,action:&Action)->Result<Vec<(crate::spline_editor::Key,omsi_map::MapSpline)>,String>{
+        let id=self.editing_added.and_then(|k|self.added.get(k)).map(|a|a.id).or(self.selected);
+        let Some(id)=id else{return Ok(Vec::new());};
+        let path=self.editing_added.and_then(|k|self.added.get(k)).map(|a|a.sco.clone())
+            .or_else(||world.edit_objects.lock().get(&id).map(|o|o.sco.clone()));
+        if !path.as_deref().is_some_and(builder_asset){return Ok(Vec::new());}
+        // Restore deleted builder objects explicitly before fitting their roads.
+        if self.added.iter().any(|a|a.id==id&&a.deleted){return Err("Restore the junction with Delete before moving or resetting it".into());}
+        let (_,at,heading,tilt,_,_)=self.junction_placement(world,id)?;
+        let mut pose=crate::junction_connections::Pose{at,heading,tilt};
+        match action {
+            Action::Move(d)=>pose.at+=*d,Action::Turn(t)=>pose.heading+=*t,
+            Action::Undo=>{
+                if let Some(a)=self.added.iter().find(|a|a.id==id){pose.at=a.base;pose.heading=a.base_heading;}
+                else{let edit=world.object_edits.lock().get(&id).copied().unwrap_or_default();pose.at-=edit.moved;pose.heading-=edit.turned;}
+            },_=>return Ok(Vec::new()),
+        }
+        crate::junction_events::follow_junction_pose(self,world,id,pose)
+    }
+
     /// Keep the object's ID and native map angles when promoting a loaded builder
     /// object to the existing editable-helper path. No asset file is changed.
     fn set_builder_tilt(&mut self,world:&World,renderer:&omsi_render::Renderer,scene:&mut omsi_render::Scene,id:i64,tilt:[f64;2])->Result<(),String> {
         let (path,at,heading,_,_,_)=self.junction_placement(world,id)?;
         if !builder_asset(&path) {return Err("Tilt controls currently support builder junctions and roundabouts".into());}
         if world.global.world_coordinates {return Err("Object tilt requires a standard OMSI map".into());}
+        let roads=crate::junction_events::follow_junction_pose(self,world,id,crate::junction_connections::Pose{at,heading,tilt})?;
+        let follow_undo=self.follow_snapshot(world,&roads);
         if self.added.iter().all(|a|a.id!=id) {
             let edit=world.object_edits.lock().get(&id).copied().unwrap_or_default();
             self.replace_junction(world,renderer,scene,id,path,Vec::new(),false)?;
@@ -678,6 +743,8 @@ impl Editor {
             world.reshape_editor_helper(renderer,scene,gpu,a.base+a.moved,a.base_heading+a.turned,a.shape);
         }
         self.editing_added=Some(index);
+        self.splines.apply_junction_roads(world,roads);
+        self.remember_follow(follow_undo);
         Ok(())
     }
 
@@ -706,7 +773,7 @@ impl Editor {
             self.editing_added=Some(self.added.len()-1);
         }
         world.retain_editor_helper(id);self.selected=None;
-        if remember{self.junction_history.push(JunctionUndo{id,path:old,before,after:roads.clone(),at,heading});}
+        if remember{self.follow_history.remove(&id);self.junction_history.push(JunctionUndo{id,path:old,before,after:roads.clone(),at,heading});}
         self.splines.apply_junction_roads(world,roads);Ok(())
     }
 
@@ -1541,6 +1608,19 @@ mod tests {
         assert!(omsi_map::Tile::load(&saved).unwrap().objects.is_empty());
         assert_eq!(std::fs::read_to_string(map.join("tile_0_0.map")).unwrap(),source);
         std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn junction_follow_history_keeps_original_and_respects_separate_road_edits() {
+        let mut ed=Editor::default();
+        let road=|x|omsi_map::MapSpline{id:51,pos:[x,0.0,0.0],length:20.0,..Default::default()};
+        let snapshot=|x,y|FollowUndo{id:123,path:"junction.sco".into(),pose:crate::junction_connections::Pose{at:DVec3::new(x,0.0,0.0),heading:0.0,tilt:[0.0;2]},before:vec![(((0,0),51),road(x))],after:vec![(((0,0),51),road(y))]};
+        ed.remember_follow(Some(snapshot(0.0,1.0)));ed.remember_follow(Some(snapshot(1.0,2.0)));
+        let h=ed.follow_history.get(&123).unwrap();assert_eq!(h.pose.at.x,0.0);assert_eq!(h.before[0].1.pos[0],0.0);assert_eq!(h.after[0].1.pos[0],2.0);
+        // The road was then adjusted separately. A new pose edit must keep that work.
+        ed.remember_follow(Some(snapshot(5.0,6.0)));
+        let h=ed.follow_history.get(&123).unwrap();assert_eq!(h.pose.at.x,5.0);assert_eq!(h.before[0].1.pos[0],5.0);assert_eq!(h.after[0].1.pos[0],6.0);
+        ed.remember_follow(None);assert_eq!(ed.follow_history.len(),1);
     }
 
     #[test]

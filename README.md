@@ -1,4 +1,4 @@
-# openOMSI Editor — 0.7.9-pre (development)
+# openOMSI Editor — 0.7.10-pre (development)
 
 A free, experimental map editor fork by DarkBat2709,
 based on openOMSI 0.2.20.
@@ -12,6 +12,7 @@ based on openOMSI 0.2.20.
 - Object and spline editing
 - Asset catalogue with spline texture information
 - Junction builder
+- Connected approach roads follow builder movement, rotation and tilt ([connection guide](docs/JUNCTION_CONNECTIONS.md))
 - Pitch/bank controls for builder junctions and roundabouts ([keys and limits](docs/OBJECT_ANGLES.md))
 - Single-lane roundabout builder with 3/4 entrances, adjustable island and ring width
 - Terrain height editing and texture painting
@@ -32,7 +33,7 @@ per-map camera bookmarks and above-ground camera start have been manually
 tested by the maintainer on Linux. Interactive Windows testing is still pending.
 See [Editor start / Editor-Start](docs/EDITOR_START.md).
 
-The 0.7.9-pre development source adds a [roundabout builder](docs/ROUNDABOUT_BUILDER.md)
+The 0.7.10-pre development source adds a [roundabout builder](docs/ROUNDABOUT_BUILDER.md)
 and includes the German/English editor language switching from 0.7.7-pre.
 See [Editor language switching](docs/EDITOR_LANGUAGE.md) for coverage and manual checks.
 The published 0.7.6-pre package does not include this change.

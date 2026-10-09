@@ -2,7 +2,10 @@
 use std::io::Write;
 
 fn main() {
-    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../assets/icons");
+    // Cargo supplies the current location when running the build script. A compiled
+    // env! value can still point at the old checkout after moving a project.
+    let manifest_dir = std::env::var_os("CARGO_MANIFEST_DIR").expect("Cargo manifest directory missing");
+    let root = std::path::PathBuf::from(manifest_dir).join("../../assets/icons");
     let out = std::path::Path::new(&std::env::var("OUT_DIR").unwrap()).join("icons.rs");
     let mut f = std::fs::File::create(out).unwrap();
     writeln!(f, "pub static ICONS: &[(&str, &str)] = &[").unwrap();
