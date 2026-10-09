@@ -42,6 +42,7 @@ mod audit_events;
 mod spline_editor;
 mod asset_catalog;
 mod object_text;
+mod object_angles;
 mod tile_editor;
 mod terrain_editor;
 mod ground_paint;
@@ -141,12 +142,16 @@ rust_i18n::i18n!("locales");
 // (the tables are read when this crate compiles: this makes cargo compile it again when they
 // change - the macro alone left the old texts in the program)
 const _LOCALES: &str = include_str!("../locales/app.yml");
+const _EDITOR_LOCALES: &str = include_str!("../locales/editor.yml");
 
 /// Show the interface in `code` (the settings' ENG / DEU / FRA / RUS).
 pub(crate) fn ui_language(code: &str) {
     omsi_ui::i18n::set_lookup(|lang, text| _rust_i18n_try_translate(lang, text).map(|t| t.into_owned()));
     static TEMPLATES: std::sync::Once = std::sync::Once::new();
-    TEMPLATES.call_once(|| omsi_ui::i18n::set_templates(locale_keys(_LOCALES)));
+    TEMPLATES.call_once(|| {
+        omsi_ui::i18n::set_templates(locale_keys(_LOCALES));
+        omsi_ui::i18n::set_explicit_templates(locale_keys(_EDITOR_LOCALES));
+    });
     let iso = omsi_launcher_lib::language_iso(code);
     omsi_ui::i18n::set_language(iso);
     omsi_sim::vehicle_api::set_locale(iso);

@@ -491,6 +491,7 @@ pub struct Ui {
     pub editor_audit_rect: Option<[f32;4]>,
     pub tile_open_rect: Option<[f32; 4]>,
     pub terrain_open_rect: Option<[f32; 4]>,
+    pub roundabout_open_rect: Option<[f32;4]>,
     pub junction_open_rect: Option<[f32;4]>,
     junction_image:Option<(u64,TextureId)>,
     pub terrain_tool_rects: Vec<([f32; 4], crate::terrain_editor::Command)>,
@@ -571,9 +572,9 @@ pub(crate) const INFO_SEP: &str = "   ·   ";
 
 fn editor_scale(scale: f32, viewport: [f32; 4]) -> f32 {
     // HUD + dock buttons + one hint row + largest (connection) footer need
-    // 526 logical pixels including margins. Leave room for rounding at small sizes.
+    // 558 logical pixels including margins. Leave room for rounding at small sizes.
     scale.max(0.5).min((viewport[2] / 544.0).max(0.1))
-        .min((viewport[3] / 544.0).max(0.1))
+        .min((viewport[3] / 576.0).max(0.1))
 }
 
 fn editor_contains(rect: [f32; 4], cursor: (f32, f32)) -> bool {
@@ -583,32 +584,33 @@ fn editor_contains(rect: [f32; 4], cursor: (f32, f32)) -> bool {
 
 fn editor_shortcuts(spline: bool, expanded: bool) -> Vec<(&'static str, &'static str)> {
     let mut keys = vec![
-        ("WASD / Q E", "Kamera"), ("Klick / Enter", "Auswahl"),
-        ("I J K L", "Verschieben"), ("U / O", "Höhe"), ("N / M", "Drehen"),
-        ("Strg+S", "Speichern"), ("T", if spline { "Objekte" } else { "Splines" }),
+        ("WASD / Q E", "Camera"), ("Click / Enter", "Selection"),
+        ("I J K L", "Move"), ("U / O", "Height"), ("N / M", "Rotate"),
+        ("Ctrl+S", "Save"), ("T", if spline { "Objects" } else { "Splines" }),
     ];
     if spline {
         if expanded {
             keys.extend([
-                ("F6", "An Boden anpassen"), ("F8", "Rand glätten"),
-                ("Tab", "Nächster Treffer"), ("Umschalt", "Fein bewegen"),
-                ("+ / -", "Länge"), (", / .", "Kurve"), ("Pos1 / Ende", "Steigung"),
-                ("B", "Gerade / Abbrechen"), ("Umschalt+F8", "Breiter glätten"),
-                ("C", "Verlängern"), ("G", "Verbinden"), ("Strg+G", "Anschluss ersetzen"),
-                ("Umschalt+G", "Neue Strecke"), ("R / Umschalt+R", "Seitlich rechts / links"),
-                ("H", "Ende einrasten"), ("F7", "Teilen"), ("Entf", "Löschen"),
-                ("Strg+Z", "Rückgängig"), ("P / X", "Katalog / Objekte"), ("Esc", "Schließen / Abbruch"),
+                ("F6", "Fit to ground"), ("F8", "Smooth shoulder"),
+                ("Tab", "Next hit"), ("Shift", "Fine movement"),
+                ("+ / -", "Length"), (", / .", "Curve"), ("Home / End", "Gradient"),
+                ("B", "Straight / Cancel"), ("Shift+F8", "Smooth wider"),
+                ("C", "Extend"), ("G", "Connect"), ("Ctrl+G", "Replace connection"),
+                ("Shift+G", "New road"), ("R / Shift+R", "Branch right / left"),
+                ("H", "Snap end"), ("F7", "Split"), ("Del", "Delete"),
+                ("Ctrl+Z", "Undo"), ("P / X", "Catalogue / Objects"), ("Esc", "Close / Cancel"),
             ]);
         }
     } else {
-        keys.extend([("Entf", "Löschen / zurückholen"),("C", "Kopieren und setzen"),("Strg+C / Strg+V", "Kopieren / Einfügen")]);
+        keys.extend([("Del", "Delete / Restore"),("C", "Copy and place"),("Ctrl+C / Ctrl+V", "Copy / Paste")]);
         if expanded {
             keys.extend([
-                ("Tab", "Nächster Treffer"), ("Umschalt", "Fein bewegen"),
-                ("Ziehen", "Verschieben"), ("Mausrad", "Drehen"), ("Umschalt+Rad", "Höhe"),
-                ("Strg+R", "Letztes Objekt setzen"), ("V", "Variante"), ("Rücktaste", "Zurücksetzen"),
-                ("P / X", "Katalog / Objekte"), ("Bild auf / ab", "Gelände heben / senken"),
-                ("F", "Gelände ebnen"), ("[ / ]", "Pinselgröße"), ("Esc", "Schließen / Abbruch"),
+                ("Tab", "Next hit"), ("Shift", "Fine movement"),
+                ("Drag", "Move"), ("Mouse wheel", "Rotate"), ("Shift+Wheel", "Height"),
+                ("Ctrl+R", "Place last object"), ("V", "Variant"), ("Backspace", "Reset"),
+                ("P / X", "Catalogue / Objects"),
+                ("Home / End", "Builder pitch"), ("Page Up / Down", "Builder bank"),
+                ("F", "Level terrain"), ("[ / ]", "Brush size"), ("Esc", "Close / Cancel"),
             ]);
         }
     }
@@ -635,6 +637,7 @@ struct EditorDockLayout {
     bounds: [f32; 4],
     header: [f32; 4],
     catalog: [f32; 4],
+    builders: [f32; 4],
     tiles: [f32; 4],
     terrain: [f32; 4],
     toggle: [f32; 4],
@@ -654,7 +657,7 @@ fn editor_dock_layout(viewport: [f32; 4], s: f32, hud_bottom: f32,
     let min_x = viewport[0] + 12.0 * s;
     let min_y = hud_bottom + 10.0 * s;
     let available = viewport[1] + viewport[3] - min_y - 12.0 * s;
-    let fixed = (200.0 + if footer > 0.0 { 8.0 + footer } else { 0.0 }) * s;
+    let fixed = (232.0 + if footer > 0.0 { 8.0 + footer } else { 0.0 }) * s;
     let rows = (((available - fixed) / (24.0 * s)).floor().max(1.0) as usize).min(count);
     let height = fixed + rows as f32 * 24.0 * s;
     let width = 304.0 * s;
@@ -664,18 +667,19 @@ fn editor_dock_layout(viewport: [f32; 4], s: f32, hud_bottom: f32,
     let x = min_x + position[0].clamp(0.0, 1.0) * (max_x - min_x);
     let y = min_y + position[1].clamp(0.0, 1.0) * (max_y - min_y);
     let right = x + width;
-    let hint_top = y + 190.0 * s;
+    let hint_top = y + 222.0 * s;
     EditorDockLayout {
         panel: [x, y, right, y + height],
         bounds: [min_x, min_y, max_x, max_y],
         header: [x, y, right, y + 28.0 * s],
         catalog: [x + 10.0 * s, y + 32.0 * s, right - 10.0 * s, y + 58.0 * s],
-        tiles: [x + 10.0 * s, y + 64.0 * s, x + 145.0 * s, y + 90.0 * s],
-        terrain: [x + 151.0 * s, y + 64.0 * s, right - 10.0 * s, y + 90.0 * s],
-        reload: [x + 10.0 * s, y + 96.0 * s, right - 10.0 * s, y + 122.0 * s],
-        audit: [x + 10.0 * s, y + 128.0 * s, right - 10.0 * s, y + 154.0 * s],
-        toggle: [x + 10.0 * s, y + 160.0 * s, right - 62.0 * s, y + 182.0 * s],
-        reset: [right - 56.0 * s, y + 160.0 * s, right - 10.0 * s, y + 182.0 * s],
+        builders: [x + 10.0 * s, y + 64.0 * s, right - 10.0 * s, y + 90.0 * s],
+        tiles: [x + 10.0 * s, y + 96.0 * s, x + 145.0 * s, y + 122.0 * s],
+        terrain: [x + 151.0 * s, y + 96.0 * s, right - 10.0 * s, y + 122.0 * s],
+        reload: [x + 10.0 * s, y + 128.0 * s, right - 10.0 * s, y + 154.0 * s],
+        audit: [x + 10.0 * s, y + 160.0 * s, right - 10.0 * s, y + 186.0 * s],
+        toggle: [x + 10.0 * s, y + 192.0 * s, right - 62.0 * s, y + 214.0 * s],
+        reset: [right - 56.0 * s, y + 192.0 * s, right - 10.0 * s, y + 214.0 * s],
         hints: [x + 10.0 * s, hint_top, right - 10.0 * s, hint_top + rows as f32 * 24.0 * s],
         rows,
         max_scroll: count.saturating_sub(rows),
@@ -773,7 +777,7 @@ impl Ui {
         self.chat.rect[2] += x;
     }
     pub fn new() -> Option<Ui> {
-        Some(Ui { origin_x: 0.0, editor_hud_rect: None, editor_help_rect: None, editor_help_expanded: false, editor_help_scroll: 0, editor_help_scroll_max: 0, editor_hint_mode: None, editor_dock_rect: None, editor_dock_header: None, editor_dock_reset: None, editor_reload_rect: None, editor_audit_rect: None, tile_open_rect: None, terrain_open_rect: None, junction_open_rect:None, junction_image:None, terrain_tool_rects: Vec::new(), editor_hint_rect: None, editor_dock_position: None, editor_dock_drag: None, editor_dock_bounds: [0.0; 4], editor_notes_top: 0.0, notes_bottom: 0.0, editor_tools_rect: None, editor_connection_rect: None, spline_connect_rect: None, spline_transition_rect: None, spline_cancel_rect: None, text: TextCache::new()?, chat: ChatWidget::default(), menu_rects: Vec::new(), menu_arrows: Vec::new(), menu_scroll_thumb: None, menu_scroll_track: None, menu_ctl: Vec::new(), dd_rects: Vec::new(), dd_top: 0, dd_rows: 8, dd_scroll: None, menu_side: Vec::new(), menu_pane: Vec::new(), menu_pane_start: 0, menu_pane_go: None, menu_pane_box: None, menu_pane_scroll: None, menu_time: Vec::new(), anim: Default::default(), anim_dt: 0.0, menu_overlay_range: 0..0, vr_cursor_overlay: None, vr_tooltip_overlay: None, menu_start: 0, menu_rows: 0, menu_row_h: 1.0, images: Default::default(), catalog_images: Default::default(), catalog_open_rect: None, spline_tool_rects: Vec::new(), info_rect: None })
+        Some(Ui { origin_x: 0.0, editor_hud_rect: None, editor_help_rect: None, editor_help_expanded: false, editor_help_scroll: 0, editor_help_scroll_max: 0, editor_hint_mode: None, editor_dock_rect: None, editor_dock_header: None, editor_dock_reset: None, editor_reload_rect: None, editor_audit_rect: None, tile_open_rect: None, terrain_open_rect: None, junction_open_rect:None, roundabout_open_rect:None, junction_image:None, terrain_tool_rects: Vec::new(), editor_hint_rect: None, editor_dock_position: None, editor_dock_drag: None, editor_dock_bounds: [0.0; 4], editor_notes_top: 0.0, notes_bottom: 0.0, editor_tools_rect: None, editor_connection_rect: None, spline_connect_rect: None, spline_transition_rect: None, spline_cancel_rect: None, text: TextCache::new()?, chat: ChatWidget::default(), menu_rects: Vec::new(), menu_arrows: Vec::new(), menu_scroll_thumb: None, menu_scroll_track: None, menu_ctl: Vec::new(), dd_rects: Vec::new(), dd_top: 0, dd_rows: 8, dd_scroll: None, menu_side: Vec::new(), menu_pane: Vec::new(), menu_pane_start: 0, menu_pane_go: None, menu_pane_box: None, menu_pane_scroll: None, menu_time: Vec::new(), anim: Default::default(), anim_dt: 0.0, menu_overlay_range: 0..0, vr_cursor_overlay: None, vr_tooltip_overlay: None, menu_start: 0, menu_rows: 0, menu_row_h: 1.0, images: Default::default(), catalog_images: Default::default(), catalog_open_rect: None, spline_tool_rects: Vec::new(), info_rect: None })
     }
 
     fn catalog_text(&mut self, r: &Renderer, scene: &mut Scene, text: &str, at: (f32, f32), width: f32, size: f32, color: [u8; 4]) {
@@ -820,10 +824,11 @@ impl Ui {
         let flat = self.text.flat;
         self.text.flat = true;
         self.editor_surface(r, scene, layout.panel, 5.0 * s, PANEL);
-        let title = if terrain { "Gelände-Editor 0.7.6-pre" } else if spline { "Spline-Editor 0.7.6-pre" } else { "Objekt-Editor 0.7.6-pre" };
+        let title = if terrain { "Terrain editor 0.7.9-pre" } else if spline { "Spline editor 0.7.9-pre" } else { "Object editor 0.7.9-pre" };
         self.put(r, scene, title, ((13.0 * s) as u32).max(1) | BOLD,
             MUTED, layout.panel[0] + 10.0 * s, layout.panel[1] + 12.0 * s);
         self.editor_surface(r, scene, layout.selection, 3.0 * s, PANEL_ALT);
+        let description = omsi_ui::tr(description);
         let mut parts = description.split(" · ");
         let mut selected = parts.next().unwrap_or_default().to_string();
         if let Some(name) = parts.next() { selected.push_str(" · "); selected.push_str(name); }
@@ -847,36 +852,36 @@ impl Ui {
         let panel=rect(0.0,0.0,620.0,700.0);a.rect=Some(panel);
         let flat=self.text.flat;self.text.flat=true;
         self.editor_surface(r,scene,panel,5.0*s,PANEL);
-        self.catalog_text(r,scene,"Spline-Verbindungen · ganze Karte",(x+12.0*s,y+12.0*s),590.0*s,20.0*s,WHITE);
+        self.catalog_text(r,scene,"Spline connections · entire map",(x+12.0*s,y+12.0*s),590.0*s,20.0*s,WHITE);
         let mut buttons=vec![
-            (rect(12.0,46.0,110.0,30.0),"Erneut prüfen".to_string(),Command::Scan,!a.busy()),
-            (rect(128.0,46.0,135.0,30.0),if a.markers{"Marker: AN"}else{"Marker: AUS"}.into(),Command::ToggleMarkers,true),
-            (rect(269.0,46.0,235.0,30.0),if a.show_good{"Alle Enden anzeigen"}else{"Nur offene / auffällige Enden"}.into(),Command::ToggleGood,true),
-            (rect(510.0,46.0,98.0,30.0),"Schließen".into(),Command::Close,true),
+            (rect(12.0,46.0,110.0,30.0),"Check again".to_string(),Command::Scan,!a.busy()),
+            (rect(128.0,46.0,135.0,30.0),if a.markers{"Markers: ON"}else{"Markers: OFF"}.into(),Command::ToggleMarkers,true),
+            (rect(269.0,46.0,235.0,30.0),if a.show_good{"Show all ends"}else{"Only open / suspect ends"}.into(),Command::ToggleGood,true),
+            (rect(510.0,46.0,98.0,30.0),"Close".into(),Command::Close,true),
         ];
-        for (i,(label,color))in [("Rot: Fehler",[255,80,80,0]),("Gelb: offen",[255,215,60,0]),("Grau: ungeprüft",MUTED),("Grün: verbunden",[60,240,110,0])].into_iter().enumerate(){
+        for (i,(label,color))in [("Red: errors",[255,80,80,0]),("Yellow: open",[255,215,60,0]),("Grey: unchecked",MUTED),("Green: connected",[60,240,110,0])].into_iter().enumerate(){
             self.catalog_text(r,scene,label,(x+(12.0+i as f32*150.0)*s,y+86.0*s),148.0*s,12.0*s,color);
         }
-        let n=a.report.counts();let summary=format!("{} Splines · Enden: {} Fehler / {} offen / {} ungeprüft / {} verbunden",a.report.roads,n[0],n[1],n[2],n[3]);
+        let n=a.report.counts();let summary=format!("{} splines · Ends: {} errors / {} open / {} unchecked / {} connected",a.report.roads,n[0],n[1],n[2],n[3]);
         self.catalog_text(r,scene,&summary,(x+12.0*s,y+110.0*s),596.0*s,12.0*s,WHITE);
-        let message=if !a.report.unread_tiles.is_empty(){format!("UNVOLLSTÄNDIG: {} Tiles nicht gelesen · {}",a.report.unread_tiles.len(),a.message)}else{a.message.clone()};
+        let message=if !a.report.unread_tiles.is_empty(){format!("INCOMPLETE: {} tiles not read · {}",a.report.unread_tiles.len(),a.message)}else{a.message.clone()};
         self.catalog_text(r,scene,&message,(x+12.0*s,y+133.0*s),596.0*s,11.0*s,[220,206,165,0]);
         let indices=a.indices();a.page=a.page.min(indices.len().saturating_sub(1)/8);
         for (row,i)in indices.clone().skip(a.page*8).take(8).enumerate(){
             let e=&a.report.entries[i];let area=rect(12.0,160.0+row as f32*54.0,596.0,50.0);
             let col=e.status.color().map(|v|(v*255.0)as u8);let color=[col[0],col[1],col[2],0];
             self.editor_surface(r,scene,area,3.0*s,if crate::audit_events::contains(area,cursor){LIT}else{PANEL_ALT});
-            let title=format!("{} · ID {} · {} · Tile ({}, {})",e.status.name(),e.key.1,if e.end==0{"Start"}else{"Ende"},e.key.0.0,e.key.0.1);
+            let title=format!("{} · ID {} · {} · Tile ({}, {})",e.status.name(),e.key.1,if e.end==0{"Start"}else{"End"},e.key.0.0,e.key.0.1);
             self.catalog_text(r,scene,&title,(area[0]+7.0*s,area[1]+5.0*s),580.0*s,13.0*s,color);
             self.catalog_text(r,scene,&e.reason,(area[0]+7.0*s,area[1]+26.0*s),580.0*s,11.0*s,WHITE);
             if e.at.is_finite(){a.buttons.push((area,Command::Jump(i)));}
         }
-        if !a.busy()&&indices.is_empty(){self.catalog_text(r,scene,"Keine Treffer im gewählten Filter.",(x+20.0*s,y+184.0*s),560.0*s,14.0*s,WHITE);}
-        buttons.push((rect(12.0,606.0,100.0,30.0),"Zurück".into(),Command::Previous,a.page>0));
-        buttons.push((rect(508.0,606.0,100.0,30.0),"Weiter".into(),Command::Next,(a.page+1)*8<indices.len()));
-        self.catalog_text(r,scene,&format!("Seite {} / {} · Zeile anklicken: zur Stelle",a.page+1,indices.len().div_ceil(8).max(1)),(x+122.0*s,y+614.0*s),378.0*s,12.0*s,WHITE);
-        self.catalog_text(r,scene,"Gelb kann ein absichtliches Ende sein. Es wird nichts automatisch verändert.",(x+12.0*s,y+650.0*s),596.0*s,11.0*s,SOFT);
-        self.catalog_text(r,scene,"15 cm Endpunkttoleranz · Marker in der 3D-Ansicht · Esc schließt diese Liste",(x+12.0*s,y+674.0*s),596.0*s,11.0*s,SOFT);
+        if !a.busy()&&indices.is_empty(){self.catalog_text(r,scene,"No results for the selected filter.",(x+20.0*s,y+184.0*s),560.0*s,14.0*s,WHITE);}
+        buttons.push((rect(12.0,606.0,100.0,30.0),"Back".into(),Command::Previous,a.page>0));
+        buttons.push((rect(508.0,606.0,100.0,30.0),"Next".into(),Command::Next,(a.page+1)*8<indices.len()));
+        self.catalog_text(r,scene,&format!("Page {} / {} · Click a row to go there",a.page+1,indices.len().div_ceil(8).max(1)),(x+122.0*s,y+614.0*s),378.0*s,12.0*s,WHITE);
+        self.catalog_text(r,scene,"Yellow may be an intentional end. Nothing is changed automatically.",(x+12.0*s,y+650.0*s),596.0*s,11.0*s,SOFT);
+        self.catalog_text(r,scene,"15 cm endpoint tolerance · Markers in 3D · Esc closes this list",(x+12.0*s,y+674.0*s),596.0*s,11.0*s,SOFT);
         for(area,title,command,enabled)in buttons{
             self.editor_surface(r,scene,area,3.0*s,if !enabled{TRACK_OFF}else if crate::audit_events::contains(area,cursor){LIT}else{CHIP});
             self.catalog_text(r,scene,&title,(area[0]+6.0*s,area[1]+7.0*s),area[2]-area[0]-12.0*s,12.0*s,WHITE);
@@ -898,7 +903,7 @@ impl Ui {
         self.catalog_open_rect = None;
         self.tile_open_rect = None;
         self.terrain_open_rect = None;
-        self.junction_open_rect = None;
+        self.junction_open_rect = None; self.roundabout_open_rect = None;
         self.terrain_tool_rects.clear();
         self.editor_tools_rect = None;
         self.editor_connection_rect = None;
@@ -928,12 +933,13 @@ impl Ui {
         self.text.flat = true;
         self.editor_surface(r, scene, layout.panel, 5.0 * s, PANEL);
         self.editor_surface(r, scene, layout.header, 5.0 * s, PANEL_ALT);
-        self.put(r, scene, "Werkzeuge · hier ziehen", ((13.0 * s) as u32).max(1) | BOLD,
+        self.put(r, scene, "Tools · drag here", ((13.0 * s) as u32).max(1) | BOLD,
             SOFT, layout.header[0] + 10.0 * s, layout.header[1] + 14.0 * s);
-        let mut catalog=layout.catalog;catalog[2]=catalog[0]+135.0*s;
-        let junction=[catalog[2]+8.0*s,catalog[1],layout.catalog[2],catalog[3]];
-        for (rect, title) in [(catalog, "Katalog (P)"),(junction,"Kreuzung bauen"), (layout.tiles, "Neues Tile"), (layout.terrain, "Gelände bearbeiten"),
-            (layout.reload, "Karte neu laden …"), (layout.audit,"Spline-Verbindungen prüfen …"), (layout.toggle, if expanded { "Weniger Befehle" } else { "Alle Befehle" }), (layout.reset, "Links")] {
+        let catalog=layout.catalog;
+        let mut junction=layout.builders;junction[2]=junction[0]+135.0*s;
+        let roundabout=[junction[2]+8.0*s,junction[1],layout.builders[2],junction[3]];
+        for (rect, title) in [(catalog, "Catalogue (P)"),(junction,"Build junction"),(roundabout,"Build roundabout"), (layout.tiles, "New tile"), (layout.terrain, "Edit terrain"),
+            (layout.reload, "Reload map …"), (layout.audit,"Check spline connections …"), (layout.toggle, if expanded { "Fewer commands" } else { "All commands" }), (layout.reset, "Left")] {
             let enabled = rect != layout.toggle || expanded_allowed;
             self.editor_surface(r, scene, rect, 3.0 * s, if !enabled { PANEL_ALT }
                 else if editor_contains(rect, cursor) { LIT } else { CHIP });
@@ -971,6 +977,7 @@ impl Ui {
         self.editor_hint_rect = Some(layout.hints);
         self.catalog_open_rect = Some(catalog);
         self.junction_open_rect = Some(junction);
+        self.roundabout_open_rect = Some(roundabout);
         self.tile_open_rect = Some(layout.tiles);
         self.terrain_open_rect = Some(layout.terrain);
         self.editor_dock_bounds = layout.bounds;
@@ -1014,6 +1021,7 @@ impl Ui {
             .chain(self.tile_open_rect.iter_mut())
             .chain(self.terrain_open_rect.iter_mut())
             .chain(self.junction_open_rect.iter_mut())
+            .chain(self.roundabout_open_rect.iter_mut())
             .chain(self.editor_tools_rect.iter_mut()).chain(self.editor_connection_rect.iter_mut())
             .chain(self.spline_transition_rect.iter_mut()).chain(self.spline_connect_rect.iter_mut()).chain(self.spline_cancel_rect.iter_mut()) {
             rect[0] += dx; rect[2] += dx; rect[1] += dy; rect[3] += dy;
@@ -1051,37 +1059,37 @@ impl Ui {
         let flat=self.text.flat;self.text.flat=true;
         self.editor_surface(r,scene,layout.panel,5.0*s,PANEL);
         self.editor_surface(r,scene,layout.header,5.0*s,PANEL_ALT);
-        self.put(r,scene,"Gelände · hier ziehen",((13.0*s) as u32).max(1)|BOLD,SOFT,x+10.0*s,y+14.0*s);
-        let mut buttons=vec![(rect(10.0,34.0,135.0,26.0),"Zurück zum Bauen".to_string(),Command::Exit,true,false),
-            (rect(10.0,70.0,140.0,26.0),"Höhen".into(),Command::Mode(Mode::Heights),true,terrain.mode==Mode::Heights),
-            (rect(154.0,70.0,140.0,26.0),"Texturen".into(),Command::Mode(Mode::Textures),true,terrain.mode==Mode::Textures)];
+        self.put(r,scene,"Terrain · drag here",((13.0*s) as u32).max(1)|BOLD,SOFT,x+10.0*s,y+14.0*s);
+        let mut buttons=vec![(rect(10.0,34.0,135.0,26.0),"Back to building".to_string(),Command::Exit,true,false),
+            (rect(10.0,70.0,140.0,26.0),"Heights".into(),Command::Mode(Mode::Heights),true,terrain.mode==Mode::Heights),
+            (rect(154.0,70.0,140.0,26.0),"Textures".into(),Command::Mode(Mode::Textures),true,terrain.mode==Mode::Textures)];
         let new_tile=rect(151.0,34.0,143.0,26.0);
         self.editor_surface(r,scene,new_tile,3.0*s,CHIP);
-        self.put(r,scene,"Neues Tile",((12.0*s) as u32).max(1),WHITE,new_tile[0]+8.0*s,(new_tile[1]+new_tile[3])*0.5);
+        self.put(r,scene,"New tile",((12.0*s) as u32).max(1),WHITE,new_tile[0]+8.0*s,(new_tile[1]+new_tile[3])*0.5);
         self.tile_open_rect=Some(new_tile);
         let fields=if terrain.mode==Mode::Heights {
             for (i,tool) in [Tool::Raise,Tool::Lower,Tool::Level,Tool::Smooth,Tool::Height].into_iter().enumerate() {
                 let area=rect(10.0+(i%2) as f32*144.0,106.0+(i/2) as f32*30.0,140.0,26.0);
                 buttons.push((area,tool.title().into(),Command::Tool(tool),true,terrain.tool==tool));
             }
-            buttons.push((rect(154.0,166.0,140.0,26.0),"Fein glätten".into(),Command::FineSmooth,true,terrain.tool==Tool::Smooth&&terrain.strength<=0.2));
+            buttons.push((rect(154.0,166.0,140.0,26.0),"Fine smoothing".into(),Command::FineSmooth,true,terrain.tool==Tool::Smooth&&terrain.strength<=0.2));
             vec![Field::Radius,Field::Strength,Field::Softness,Field::Height,Field::TileStep]
         } else {
-            self.catalog_text(r,scene,&format!("Ebene {} · {}",terrain.texture_layer,if terrain.texture_layer==0 {"Grundtextur"} else {"Bodentextur"}),
+            self.catalog_text(r,scene,&format!("Layer {} · {}",terrain.texture_layer,if terrain.texture_layer==0 {"Base texture"} else {"Ground texture"}),
                 (x+10.0*s,y+109.0*s),284.0*s,12.0*s,SOFT);
             let name=terrain.texture_name.rsplit(['/', '\\']).next().unwrap_or(&terrain.texture_name);
             self.catalog_text(r,scene,name,(x+10.0*s,y+133.0*s),284.0*s,14.0*s,WHITE);
             buttons.extend([
                 (rect(10.0,164.0,36.0,28.0),"←".into(),Command::Layer(-1),true,false),
-                (rect(52.0,164.0,196.0,28.0),"Texturkatalog …".into(),Command::TextureCatalog,true,false),
+                (rect(52.0,164.0,196.0,28.0),"Texture catalogue …".into(),Command::TextureCatalog,true,false),
                 (rect(254.0,164.0,40.0,28.0),"→".into(),Command::Layer(1),true,false),
-                (rect(10.0,204.0,140.0,28.0),"Malen".into(),Command::Erase(false),true,!terrain.texture_erase),
-                (rect(154.0,204.0,140.0,28.0),"Radierer".into(),Command::Erase(true),terrain.texture_layer>0,terrain.texture_erase),
-                (rect(10.0,368.0,284.0,28.0),"Pipette: Textur aufnehmen".into(),Command::SampleTexture,true,terrain.sample_texture),
+                (rect(10.0,204.0,140.0,28.0),"Paint".into(),Command::Erase(false),true,!terrain.texture_erase),
+                (rect(154.0,204.0,140.0,28.0),"Eraser".into(),Command::Erase(true),terrain.texture_layer>0,terrain.texture_erase),
+                (rect(10.0,368.0,284.0,28.0),"Eyedropper: pick texture".into(),Command::SampleTexture,true,terrain.sample_texture),
             ]);
-            self.catalog_text(r,scene,"Links halten und malen",(x+10.0*s,y+416.0*s),284.0*s,13.0*s,SOFT);
-            self.catalog_text(r,scene,"Mausrad: Pinselgröße",(x+10.0*s,y+439.0*s),284.0*s,12.0*s,[142,142,142,255]);
-            self.catalog_text(r,scene,"Grundtextur malen: Aufträge entfernen",(x+10.0*s,y+465.0*s),284.0*s,11.0*s,MUTED);
+            self.catalog_text(r,scene,"Hold left mouse button to paint",(x+10.0*s,y+416.0*s),284.0*s,13.0*s,SOFT);
+            self.catalog_text(r,scene,"Mouse wheel: brush size",(x+10.0*s,y+439.0*s),284.0*s,12.0*s,[142,142,142,255]);
+            self.catalog_text(r,scene,"Paint base texture: remove overlays",(x+10.0*s,y+465.0*s),284.0*s,11.0*s,MUTED);
             vec![Field::Radius,Field::Strength,Field::Softness]
         };
         let start=if terrain.mode==Mode::Heights {204.0} else {250.0};
@@ -1097,20 +1105,20 @@ impl Ui {
         }
         if terrain.mode==Mode::Heights {
             buttons.extend([
-                (rect(10.0,374.0,140.0,28.0),"Höhe aufnehmen".into(),Command::SampleHeight,true,terrain.sample_height),
-                (rect(154.0,374.0,140.0,28.0),"Tile auswählen".into(),Command::PickTile,true,terrain.pick_tile),
-                (rect(10.0,432.0,140.0,28.0),"Tile tiefer".into(),Command::TileMove(-1.0),terrain.tile.is_some(),false),
-                (rect(154.0,432.0,140.0,28.0),"Tile höher".into(),Command::TileMove(1.0),terrain.tile.is_some(),false),
-                (rect(10.0,464.0,284.0,28.0),"Ganzes Tile auf Zielhöhe setzen".into(),Command::TileLevel,terrain.tile.is_some(),false),
-                (rect(10.0,496.0,284.0,26.0),if terrain.blend {"Übergang zu Nachbarn: 20 m"} else {"Übergang AUS · mögliche Absätze"}.into(),Command::Blend,true,terrain.blend),
+                (rect(10.0,374.0,140.0,28.0),"Sample height".into(),Command::SampleHeight,true,terrain.sample_height),
+                (rect(154.0,374.0,140.0,28.0),"Select tile".into(),Command::PickTile,true,terrain.pick_tile),
+                (rect(10.0,432.0,140.0,28.0),"Lower tile".into(),Command::TileMove(-1.0),terrain.tile.is_some(),false),
+                (rect(154.0,432.0,140.0,28.0),"Raise tile".into(),Command::TileMove(1.0),terrain.tile.is_some(),false),
+                (rect(10.0,464.0,284.0,28.0),"Set entire tile to target height".into(),Command::TileLevel,terrain.tile.is_some(),false),
+                (rect(10.0,496.0,284.0,26.0),if terrain.blend {"Blend with neighbours: 20 m"} else {"Blending OFF · possible steps"}.into(),Command::Blend,true,terrain.blend),
             ]);
-            let selected=terrain.tile.map(|k|format!("Gewähltes Tile: ({}, {})",k.0,k.1)).unwrap_or_else(||"Noch kein Tile ausgewählt".into());
+            let selected=terrain.tile.map(|k|format!("Selected tile: ({}, {})",k.0,k.1)).unwrap_or_else(||"No tile selected yet".into());
             self.catalog_text(r,scene,&selected,(x+10.0*s,y+408.0*s),284.0*s,12.0*s,SOFT);
         }
         buttons.extend([
-            (rect(10.0,528.0,140.0,28.0),"Rückgängig".into(),Command::Undo,terrain.can_undo(),false),
-            (rect(154.0,528.0,140.0,28.0),"Wiederholen".into(),Command::Redo,terrain.can_redo(),false),
-            (rect(10.0,562.0,140.0,28.0),"Speichern (Strg+S)".into(),Command::Save,true,false),
+            (rect(10.0,528.0,140.0,28.0),"Undo".into(),Command::Undo,terrain.can_undo(),false),
+            (rect(154.0,528.0,140.0,28.0),"Redo".into(),Command::Redo,terrain.can_redo(),false),
+            (rect(10.0,562.0,140.0,28.0),"Save (Ctrl+S)".into(),Command::Save,true,false),
         ]);
         for (area,title,command,enabled,selected) in buttons {
             let primary = matches!(&command, Command::Save);
@@ -1122,16 +1130,16 @@ impl Ui {
         }
         let reload=rect(154.0,562.0,140.0,28.0);
         self.editor_surface(r,scene,reload,3.0*s,CHIP);
-        self.catalog_text(r,scene,"Karte neu laden …",(reload[0]+5.0*s,reload[1]+6.0*s),130.0*s,12.0*s,WHITE);
+        self.catalog_text(r,scene,"Reload map …",(reload[0]+5.0*s,reload[1]+6.0*s),130.0*s,12.0*s,WHITE);
         self.editor_reload_rect=Some(reload);
         let audit=rect(10.0,596.0,284.0,28.0);
         self.editor_surface(r,scene,audit,3.0*s,CHIP);
-        self.catalog_text(r,scene,"Spline-Verbindungen prüfen …",(audit[0]+5.0*s,audit[1]+6.0*s),274.0*s,12.0*s,WHITE);
+        self.catalog_text(r,scene,"Check spline connections …",(audit[0]+5.0*s,audit[1]+6.0*s),274.0*s,12.0*s,WHITE);
         self.editor_audit_rect=Some(audit);
         let reset=rect(234.0,0.0,60.0,28.0);
         self.editor_surface(r,scene,reset,3.0*s,CHIP);
-        self.put(r,scene,"Links",((12.0*s) as u32).max(1),WHITE,reset[0]+8.0*s,(reset[1]+reset[3])*0.5);
-        let message=if terrain.input.is_some() {"Zahl tippen · Enter übernehmen · Esc abbrechen"} else {&terrain.message};
+        self.put(r,scene,"Left",((12.0*s) as u32).max(1),WHITE,reset[0]+8.0*s,(reset[1]+reset[3])*0.5);
+        let message=if terrain.input.is_some() {"Type number · Enter applies · Esc cancels"} else {&terrain.message};
         for (i,line) in wrap(&self.text,message,11.0*s,284.0*s).iter().take(2).enumerate() {
             self.catalog_text(r,scene,line,(x+10.0*s,y+(634.0+i as f32*15.0)*s),284.0*s,11.0*s,SOFT);
         }
@@ -1143,14 +1151,14 @@ impl Ui {
         use crate::editor::Action;
         let Some((copy,paste,last,repeat,placing))=state else {return;};let [x,y]=origin;
         self.editor_surface(r,scene,[x,y,x+284.0*s,y+192.0*s],3.0*s,PANEL);
-        self.catalog_text(r,scene,"Objekte kopieren / einsetzen",(x+8.0*s,y+5.0*s),268.0*s,13.0*s,MUTED);
+        self.catalog_text(r,scene,"Copy / place objects",(x+8.0*s,y+5.0*s),268.0*s,13.0*s,MUTED);
         for (a,b,w,title,action,enabled) in [
-            (6.0,26.0,132.0,"Kopieren (Strg+C)",Action::ClipboardCopy,copy),
-            (144.0,26.0,134.0,"Einfügen (Strg+V)",Action::Paste,paste),
-            (6.0,58.0,272.0,"Letztes Objekt nochmals setzen (Strg+R)",Action::RepeatObject,last),
-            (6.0,90.0,272.0,if repeat {"Mehrfachsetzen: AN"} else {"Mehrfachsetzen: AUS"},Action::PlacementRepeat,true),
-            (6.0,122.0,272.0,"Einsetzen beenden (Esc)",Action::CancelPlacement,placing),
-            (6.0,154.0,272.0,"Beschriftung bearbeiten …",Action::ObjectText,copy),
+            (6.0,26.0,132.0,"Copy (Ctrl+C)",Action::ClipboardCopy,copy),
+            (144.0,26.0,134.0,"Paste (Ctrl+V)",Action::Paste,paste),
+            (6.0,58.0,272.0,"Place last object again (Ctrl+R)",Action::RepeatObject,last),
+            (6.0,90.0,272.0,if repeat {"Repeat placement: ON"} else {"Repeat placement: OFF"},Action::PlacementRepeat,true),
+            (6.0,122.0,272.0,"Finish placement (Esc)",Action::CancelPlacement,placing),
+            (6.0,154.0,272.0,"Edit text …",Action::ObjectText,copy),
         ] {
             let rect=[x+a*s,y+b*s,x+(a+w)*s,y+(b+26.0)*s];
             self.editor_surface(r,scene,rect,3.0*s,if !enabled {PANEL_ALT} else if editor_contains(rect,cursor) {LIT} else {CHIP});
@@ -1168,14 +1176,14 @@ impl Ui {
         let panel = [x, y, x + 284.0 * s, y + 192.0 * s];
         self.editor_tools_rect = Some(panel);
         self.editor_surface(r, scene, panel, 3.0 * s, PANEL);
-        self.catalog_text(r, scene, if enabled { "Straßenränder / Gelände" } else { "Zuerst Straße anklicken" },
+        self.catalog_text(r, scene, if enabled { "Road shoulders / terrain" } else { "Select a road first" },
             (x + 8.0 * s, y + 5.0 * s), 268.0 * s, 13.0 * s, MUTED);
         for (row, (action, title)) in [
-            (Action::SmoothRoad(false), "Rand glätten (F8)"),
-            (Action::SmoothRoad(true), "Breiter glätten (Umschalt+F8)"),
-            (Action::FitTerrain, "An Boden anpassen (F6)"),
-            (Action::RoadsideWindow, "Objekte entlang der Straße"),
-            (Action::SidewalkWindow, "Gehweg entlang der Straße"),
+            (Action::SmoothRoad(false), "Smooth shoulder (F8)"),
+            (Action::SmoothRoad(true), "Smooth wider (Shift+F8)"),
+            (Action::FitTerrain, "Fit to ground (F6)"),
+            (Action::RoadsideWindow, "Objects along the road"),
+            (Action::SidewalkWindow, "Sidewalk along the road"),
         ].into_iter().enumerate() {
             let top = y + (27.0 + row as f32 * 32.0) * s;
             let rect = [x + 6.0 * s, top, x + 278.0 * s, top + 27.0 * s];
@@ -1206,23 +1214,23 @@ impl Ui {
         self.editor_dock_header = Some(rect(0.0, 0.0, 360.0, 28.0));
         self.editor_dock_bounds = [min_x, min_y, max_x, max_y];
         self.editor_help_rect = None; self.editor_dock_reset = None; self.editor_hint_rect = None;
-        self.catalog_open_rect = None; self.tile_open_rect = None; self.terrain_open_rect = None; self.junction_open_rect = None;
+        self.catalog_open_rect = None; self.tile_open_rect = None; self.terrain_open_rect = None; self.junction_open_rect = None; self.roundabout_open_rect = None;
         self.editor_tools_rect = None; self.editor_connection_rect = None; self.spline_connect_rect = None; self.spline_transition_rect = None; self.spline_cancel_rect = None;
         self.spline_tool_rects.clear(); self.terrain_tool_rects.clear();
         let flat = self.text.flat; self.text.flat = true;
         self.editor_surface(r, scene, self.editor_dock_rect.unwrap(), 5.0 * s, PANEL);
         self.editor_surface(r, scene, self.editor_dock_header.unwrap(), 5.0 * s, PANEL_ALT);
-        self.put(r, scene, "Objekte entlang der Straße · hier ziehen", ((13.0 * s) as u32).max(1) | BOLD,
+        self.put(r, scene, "Objects along the road · drag here", ((13.0 * s) as u32).max(1) | BOLD,
             SOFT, x + 10.0 * s, y + 14.0 * s);
-        let mut buttons = vec![(rect(10.0, 36.0, 340.0, 28.0), "Objekt im Katalog wählen …".to_string(), Command::Catalog, true, false)];
+        let mut buttons = vec![(rect(10.0, 36.0, 340.0, 28.0), "Choose object in catalogue …".to_string(), Command::Catalog, true, false)];
         let name = window.file.rsplit(['/', '\\']).next().unwrap_or(&window.file);
         self.catalog_text(r, scene, name, (x + 12.0 * s, y + 70.0 * s), 332.0 * s, 12.0 * s, MUTED);
-        for (i, (sides, title)) in [(1, "Links"), (2, "Rechts"), (3, "Beide Seiten")].into_iter().enumerate() {
+        for (i, (sides, title)) in [(1, "Left"), (2, "Right"), (3, "Both sides")].into_iter().enumerate() {
             buttons.push((rect(10.0 + i as f32 * 115.0, 94.0, 110.0, 28.0), title.into(), Command::Sides(sides), true, window.settings.sides == sides));
         }
         buttons.extend([
-            (rect(10.0, 130.0, 165.0, 28.0), "Gewählter Spline".into(), Command::Connected(false), true, !window.settings.connected),
-            (rect(185.0, 130.0, 165.0, 28.0), "Verbundene Straße".into(), Command::Connected(true), true, window.settings.connected),
+            (rect(10.0, 130.0, 165.0, 28.0), "Selected spline".into(), Command::Connected(false), true, !window.settings.connected),
+            (rect(185.0, 130.0, 165.0, 28.0), "Connected road".into(), Command::Connected(true), true, window.settings.connected),
         ]);
         for (i, field) in [Field::Interval, Field::Margin, Field::Start, Field::Range, Field::Height, Field::Rotation, Field::JunctionGap].into_iter().enumerate() {
             let row = 166.0 + i as f32 * 34.0;
@@ -1235,23 +1243,23 @@ impl Ui {
             buttons.push((rect(242.0, row, 76.0, 28.0), title, Command::Edit(field), true, input.is_some()));
         }
         buttons.extend([
-            (rect(10.0, 412.0, 165.0, 28.0), "Höhe: Straße".into(), Command::Ground(false), true, !window.settings.ground),
-            (rect(185.0, 412.0, 165.0, 28.0), "Höhe: Gelände".into(), Command::Ground(true), true, window.settings.ground),
-            (rect(10.0, 448.0, 165.0, 28.0), "Zufahrt aussparen".into(), Command::PickGap, true, window.gap_pick.is_some()),
-            (rect(185.0, 448.0, 165.0, 28.0), "Eigene Lücken löschen".into(), Command::ClearGaps, !window.settings.manual_gaps.is_empty() || window.gap_pick.is_some(), false),
-            (rect(10.0, 532.0, 222.0, 32.0), "Vorschau einsetzen".into(), Command::Apply,
+            (rect(10.0, 412.0, 165.0, 28.0), "Height: road".into(), Command::Ground(false), true, !window.settings.ground),
+            (rect(185.0, 412.0, 165.0, 28.0), "Height: terrain".into(), Command::Ground(true), true, window.settings.ground),
+            (rect(10.0, 448.0, 165.0, 28.0), "Leave driveway clear".into(), Command::PickGap, true, window.gap_pick.is_some()),
+            (rect(185.0, 448.0, 165.0, 28.0), "Clear custom gaps".into(), Command::ClearGaps, !window.settings.manual_gaps.is_empty() || window.gap_pick.is_some(), false),
+            (rect(10.0, 532.0, 222.0, 32.0), "Place preview".into(), Command::Apply,
                 window.error.is_none() && !window.preview.points.is_empty() && window.input.is_none() && window.gap_pick.is_none(), false),
-            (rect(242.0, 532.0, 108.0, 32.0), "Aktualisieren".into(), Command::Preview, true, false),
-            (rect(10.0, 572.0, 165.0, 28.0), "Rückgängig (Strg+Z)".into(), Command::Undo, window.can_undo, false),
-            (rect(185.0, 572.0, 165.0, 28.0), "Eigene Reihe entfernen".into(), Command::Remove, window.start.is_some(), false),
-            (rect(10.0, 608.0, 165.0, 28.0), "Speichern (Strg+S)".into(), Command::Save, true, false),
-            (rect(185.0, 608.0, 165.0, 28.0), "Schließen (Esc)".into(), Command::Close, true, false),
+            (rect(242.0, 532.0, 108.0, 32.0), "Refresh".into(), Command::Preview, true, false),
+            (rect(10.0, 572.0, 165.0, 28.0), "Undo (Ctrl+Z)".into(), Command::Undo, window.can_undo, false),
+            (rect(185.0, 572.0, 165.0, 28.0), "Remove own row".into(), Command::Remove, window.start.is_some(), false),
+            (rect(10.0, 608.0, 165.0, 28.0), "Save (Ctrl+S)".into(), Command::Save, true, false),
+            (rect(185.0, 608.0, 165.0, 28.0), "Close (Esc)".into(), Command::Close, true, false),
         ]);
-        let summary = format!("{} Objekte · {:.1} m · {} Splines", window.preview.points.len(), window.preview.length, window.preview.segments);
-        let skipped = format!("{} Positionen frei / schon belegt · {} Lücken", window.preview.skipped, window.preview.gaps.len());
+        let summary = format!("{} objects · {:.1} m · {} splines", window.preview.points.len(), window.preview.length, window.preview.segments);
+        let skipped = format!("{} positions free / already occupied · {} gaps", window.preview.skipped, window.preview.gaps.len());
         self.catalog_text(r, scene, &summary, (x + 12.0 * s, y + 486.0 * s), 336.0 * s, 12.0 * s, MUTED);
         self.catalog_text(r, scene, &skipped, (x + 12.0 * s, y + 504.0 * s), 336.0 * s, 11.0 * s, MUTED);
-        let message = if window.input.is_some() { "Zahl eingeben · Enter übernimmt · Esc bricht die Eingabe ab" }
+        let message = if window.input.is_some() { "Enter a number · Enter applies · Esc cancels input" }
             else { window.error.as_deref().unwrap_or(&window.message) };
         for (i, line) in wrap(&self.text, message, 12.0 * s, 336.0 * s).iter().take(4).enumerate() {
             self.catalog_text(r, scene, line, (x + 12.0 * s, y + (650.0 + i as f32 * 15.0) * s), 336.0 * s, 12.0 * s, SOFT);
@@ -1284,23 +1292,23 @@ impl Ui {
         self.editor_dock_header = Some(rect(0.0, 0.0, 360.0, 28.0));
         self.editor_dock_bounds = [min_x, min_y, max_x, max_y];
         self.editor_help_rect = None; self.editor_dock_reset = None; self.editor_hint_rect = None;
-        self.catalog_open_rect = None; self.tile_open_rect = None; self.terrain_open_rect = None; self.junction_open_rect = None;
+        self.catalog_open_rect = None; self.tile_open_rect = None; self.terrain_open_rect = None; self.junction_open_rect = None; self.roundabout_open_rect = None;
         self.editor_tools_rect = None; self.editor_connection_rect = None; self.spline_connect_rect = None; self.spline_transition_rect = None; self.spline_cancel_rect = None;
         self.spline_tool_rects.clear(); self.terrain_tool_rects.clear();
         let flat = self.text.flat; self.text.flat = true;
         self.editor_surface(r, scene, self.editor_dock_rect.unwrap(), 5.0 * s, PANEL);
         self.editor_surface(r, scene, self.editor_dock_header.unwrap(), 5.0 * s, PANEL_ALT);
-        self.put(r, scene, "Gehweg entlang Straße · hier ziehen", ((13.0 * s) as u32).max(1) | BOLD,
+        self.put(r, scene, "Sidewalk along road · drag here", ((13.0 * s) as u32).max(1) | BOLD,
             SOFT, x + 10.0 * s, y + 14.0 * s);
-        let mut buttons = vec![(rect(10.0, 36.0, 340.0, 28.0), "Gehwegprofil im Katalog wählen …".to_string(), Command::Catalog, true, false)];
+        let mut buttons = vec![(rect(10.0, 36.0, 340.0, 28.0), "Choose sidewalk profile in catalogue …".to_string(), Command::Catalog, true, false)];
         let name = window.file.rsplit(['/', '\\']).next().unwrap_or(&window.file);
         self.catalog_text(r, scene, name, (x + 12.0 * s, y + 70.0 * s), 332.0 * s, 12.0 * s, MUTED);
-        for (i, (sides, title)) in [(1, "Links"), (2, "Rechts"), (3, "Beide Seiten")].into_iter().enumerate() {
+        for (i, (sides, title)) in [(1, "Left"), (2, "Right"), (3, "Both sides")].into_iter().enumerate() {
             buttons.push((rect(10.0 + i as f32 * 115.0, 94.0, 110.0, 28.0), title.into(), Command::Sides(sides), true, window.settings.sides == sides));
         }
         buttons.extend([
-            (rect(10.0, 130.0, 165.0, 28.0), "Gewählter Spline".into(), Command::Connected(false), true, !window.settings.connected),
-            (rect(185.0, 130.0, 165.0, 28.0), "Verbundene Straße".into(), Command::Connected(true), true, window.settings.connected),
+            (rect(10.0, 130.0, 165.0, 28.0), "Selected spline".into(), Command::Connected(false), true, !window.settings.connected),
+            (rect(185.0, 130.0, 165.0, 28.0), "Connected road".into(), Command::Connected(true), true, window.settings.connected),
         ]);
         for (i, field) in [Field::Start, Field::Length, Field::Margin, Field::Height].into_iter().enumerate() {
             let row = 166.0 + i as f32 * 34.0;
@@ -1313,24 +1321,24 @@ impl Ui {
             buttons.push((rect(242.0, row, 76.0, 28.0), title, Command::Edit(field), true, input.is_some()));
         }
         buttons.extend([
-            (rect(10.0,310.0,340.0,28.0),"Profil spiegeln".into(),Command::Mirror,true,window.settings.mirror),
-            (rect(10.0,348.0,165.0,28.0),"Straße wählen".into(),Command::PickRoad,true,window.picking==1),
-            (rect(185.0,348.0,165.0,28.0),"Gehweg anklicken".into(),Command::Existing,true,window.picking==2),
-            (rect(10.0,388.0,340.0,28.0),"Als neuen Gehweg erzeugen".into(),Command::New,true,window.existing.is_none()),
-            (rect(10.0,422.0,340.0,28.0),"Alte Gehweg-Anschlüsse lösen".into(),Command::Detach,window.existing.is_some(),window.settings.detach),
-            (rect(10.0,532.0,222.0,32.0),if window.existing.is_some(){"Gehweg ausrichten"}else{"Vorschau einsetzen"}.into(),Command::Apply,
+            (rect(10.0,310.0,340.0,28.0),"Mirror profile".into(),Command::Mirror,true,window.settings.mirror),
+            (rect(10.0,348.0,165.0,28.0),"Choose road".into(),Command::PickRoad,true,window.picking==1),
+            (rect(185.0,348.0,165.0,28.0),"Select sidewalk".into(),Command::Existing,true,window.picking==2),
+            (rect(10.0,388.0,340.0,28.0),"Create as new sidewalk".into(),Command::New,true,window.existing.is_none()),
+            (rect(10.0,422.0,340.0,28.0),"Disconnect old sidewalk links".into(),Command::Detach,window.existing.is_some(),window.settings.detach),
+            (rect(10.0,532.0,222.0,32.0),if window.existing.is_some(){"Align sidewalk"}else{"Place preview"}.into(),Command::Apply,
                 window.error.is_none()&&!window.preview.pieces.is_empty()&&window.input.is_none()&&window.picking==0,false),
-            (rect(242.0,532.0,108.0,32.0),"Aktualisieren".into(),Command::Preview,true,false),
-            (rect(10.0,572.0,340.0,28.0),"Rückgängig (Strg+Z)".into(),Command::Undo,window.can_undo,false),
-            (rect(10.0,608.0,165.0,28.0),"Speichern (Strg+S)".into(),Command::Save,true,false),
-            (rect(185.0,608.0,165.0,28.0),"Schließen (Esc)".into(),Command::Close,true,false),
+            (rect(242.0,532.0,108.0,32.0),"Refresh".into(),Command::Preview,true,false),
+            (rect(10.0,572.0,340.0,28.0),"Undo (Ctrl+Z)".into(),Command::Undo,window.can_undo,false),
+            (rect(10.0,608.0,165.0,28.0),"Save (Ctrl+S)".into(),Command::Save,true,false),
+            (rect(185.0,608.0,165.0,28.0),"Close (Esc)".into(),Command::Close,true,false),
         ]);
-        let summary=format!("{} Abschnitte · Gehweg gesamt {:.1} m",window.preview.pieces.len(),window.preview.actual);
+        let summary=format!("{} sections · Total sidewalk length {:.1} m",window.preview.pieces.len(),window.preview.actual);
         self.catalog_text(r,scene,&summary,(x+12.0*s,y+460.0*s),336.0*s,12.0*s,[142,142,142,255]);
-        self.catalog_text(r,scene,&format!("Bezugsstraße: {:.1} m · Texturen aus Gehwegprofil",window.preview.total),(x+12.0*s,y+478.0*s),336.0*s,11.0*s,MUTED);
-        self.catalog_text(r,scene,"Grün = Start · Orange = Ende · zum Verstellen ziehen",(x+12.0*s,y+498.0*s),336.0*s,11.0*s,MUTED);
-        self.catalog_text(r,scene,if window.existing.is_some(){"Vorhandener Gehweg wird beim Bestätigen ersetzt"}else{"Neue Gehwege · keine Straßenänderung"},(x+12.0*s,y+514.0*s),336.0*s,11.0*s,MUTED);
-        let message = if window.input.is_some() { "Zahl eingeben · Enter übernimmt · Esc bricht die Eingabe ab" }
+        self.catalog_text(r,scene,&format!("Reference road: {:.1} m · Textures from sidewalk profile",window.preview.total),(x+12.0*s,y+478.0*s),336.0*s,11.0*s,MUTED);
+        self.catalog_text(r,scene,"Green = start · Orange = end · Drag to adjust",(x+12.0*s,y+498.0*s),336.0*s,11.0*s,MUTED);
+        self.catalog_text(r,scene,if window.existing.is_some(){"Existing sidewalk will be replaced when confirmed"}else{"New sidewalks · Road unchanged"},(x+12.0*s,y+514.0*s),336.0*s,11.0*s,MUTED);
+        let message = if window.input.is_some() { "Enter a number · Enter applies · Esc cancels input" }
             else if window.picking!=0 {&window.message} else { window.error.as_deref().unwrap_or(&window.message) };
         for (i, line) in wrap(&self.text, message, 12.0 * s, 336.0 * s).iter().take(4).enumerate() {
             self.catalog_text(r, scene, line, (x + 12.0 * s, y + (650.0 + i as f32 * 15.0) * s), 336.0 * s, 12.0 * s, SOFT);
@@ -1355,7 +1363,7 @@ impl Ui {
         let flat = self.text.flat; self.text.flat = true;
         self.catalog_plate(r,scene,[0, 0, 0, 150],[viewport[0],viewport[1],viewport[0]+viewport[2],viewport[1]+viewport[3]]);
         self.editor_surface(r,scene,rect(0.0,0.0,704.0,548.0),6.0*s,PANEL);
-        self.catalog_text(r,scene,"Beschriftung bearbeiten",(x+24.0*s,y+18.0*s),550.0*s,23.0*s,WHITE);
+        self.catalog_text(r,scene,"Edit object text",(x+24.0*s,y+18.0*s),550.0*s,23.0*s,WHITE);
         self.catalog_text(r,scene,&window.name,(x+24.0*s,y+53.0*s),650.0*s,14.0*s,MUTED);
         let page = window.page();
         for (row, index) in (page*6..window.fields.len().min(page*6+6)).enumerate() {
@@ -1363,22 +1371,22 @@ impl Ui {
             self.catalog_text(r,scene,title,(x+24.0*s,y+top*s),648.0*s,12.0*s,[142,142,142,255]);
             let area = rect(24.0,top+17.0,656.0,29.0); let active = window.active == index;
             self.editor_surface(r,scene,area,3.0*s,if active && window.replace {LIT} else if active {SELECTED} else {PANEL_ALT});
-            let value = &window.values[*slot]; let text = if value.is_empty() { "(leer)" } else { value.as_str() };
+            let value = &window.values[*slot]; let text = if value.is_empty() { "(empty)" } else { value.as_str() };
             self.catalog_text(r,scene,text,(area[0]+9.0*s,area[1]+6.0*s),638.0*s,15.0*s,WHITE);
             window.rects.push((area,Command::Field(index)));
         }
         for (area,title,command,enabled) in [
-            (rect(24.0,400.0,105.0,28.0),"Zurück",Command::Page(-1),page>0),
-            (rect(575.0,400.0,105.0,28.0),"Weiter",Command::Page(1),(page+1)*6<window.fields.len()),
-            (rect(24.0,501.0,190.0,30.0),"Text rückgängig",Command::Undo,true),
-            (rect(225.0,501.0,170.0,30.0),"Schließen (Esc)",Command::Close,true),
-            (rect(407.0,501.0,273.0,30.0),"Übernehmen (Enter)",Command::Apply,true),
+            (rect(24.0,400.0,105.0,28.0),"Back",Command::Page(-1),page>0),
+            (rect(575.0,400.0,105.0,28.0),"Next",Command::Page(1),(page+1)*6<window.fields.len()),
+            (rect(24.0,501.0,190.0,30.0),"Undo text",Command::Undo,true),
+            (rect(225.0,501.0,170.0,30.0),"Close (Esc)",Command::Close,true),
+            (rect(407.0,501.0,273.0,30.0),"Apply (Enter)",Command::Apply,true),
         ] {
             self.editor_surface(r,scene,area,3.0*s,if enabled {CHIP} else {TRACK_OFF});
             self.catalog_text(r,scene,title,(area[0]+9.0*s,area[1]+6.0*s),area[2]-area[0]-18.0*s,13.0*s,WHITE);
             if enabled { window.rects.push((area,command)); }
         }
-        self.catalog_text(r,scene,&format!("Seite {} / {} · Tab: nächstes Feld",page+1,window.fields.len().div_ceil(6)),
+        self.catalog_text(r,scene,&format!("Page {} / {} · Tab: next field",page+1,window.fields.len().div_ceil(6)),
             (x+149.0*s,y+406.0*s),410.0*s,13.0*s,MUTED);
         for (row,line) in wrap(&self.text,&window.message,13.0*s,650.0*s).iter().take(3).enumerate() {
             self.catalog_text(r,scene,line,(x+24.0*s,y+(443.0+row as f32*16.0)*s),650.0*s,13.0*s,SOFT);
@@ -1398,10 +1406,10 @@ impl Ui {
         let flat = self.text.flat; self.text.flat = true;
         self.catalog_plate(r,scene,[0, 0, 0, 150],[viewport[0],viewport[1],viewport[0]+viewport[2],viewport[1]+viewport[3]]);
         self.editor_surface(r,scene,rect(0.0,0.0,776.0,516.0),6.0*s,PANEL);
-        self.catalog_text(r,scene,"Karte erweitern",(x+24.0*s,y+18.0*s),510.0*s,23.0*s,WHITE);
-        self.catalog_text(r,scene,&format!("Blickrichtung: {} · Raster: {:.0} × {:.0} m",window.bearing,
+        self.catalog_text(r,scene,"Extend map",(x+24.0*s,y+18.0*s),510.0*s,23.0*s,WHITE);
+        self.catalog_text(r,scene,&format!("View direction: {} · Grid: {:.0} × {:.0} m",window.bearing,
             omsi_map::tile_size(),omsi_map::tile_size()),(x+24.0*s,y+53.0*s),710.0*s,14.0*s,MUTED);
-        self.catalog_text(r,scene,"Nord ↑  ·  West ←  ·  Ost →  ·  Süd ↓",(x+24.0*s,y+80.0*s),350.0*s,12.0*s,SOFT);
+        self.catalog_text(r,scene,"North ↑  ·  West ←  ·  East →  ·  South ↓",(x+24.0*s,y+80.0*s),350.0*s,12.0*s,SOFT);
         for row in 0..5 { for col in 0..5 {
             let key = (window.center.0+col-2, window.center.1+2-row);
             let known = window.known.contains(&key);
@@ -1413,23 +1421,23 @@ impl Ui {
             self.editor_surface(r,scene,cell,3.0*s,color);
             if key == window.camera {
                 self.editor_surface(r,scene,[cell[0]+3.0*s,cell[1]+3.0*s,cell[2]-3.0*s,cell[1]+17.0*s],2.0*s,[142,142,142,255]);
-                self.put(r,scene,"Kamera",((10.0*s) as u32).max(1),[0, 0, 0, 150],cell[0]+7.0*s,cell[1]+10.0*s);
+                self.put(r,scene,"Camera",((10.0*s) as u32).max(1),[0, 0, 0, 150],cell[0]+7.0*s,cell[1]+10.0*s);
             }
             self.catalog_text(r,scene,&format!("{}, {}",key.0,key.1),(cell[0]+3.0*s,cell[1]+21.0*s),58.0*s,11.0*s,WHITE);
-            self.catalog_text(r,scene,if known { "vorhanden" } else if available { "frei" } else { "—" },
+            self.catalog_text(r,scene,if known { "existing" } else if available { "free" } else { "—" },
                 (cell[0]+3.0*s,cell[1]+37.0*s),58.0*s,10.0*s,SOFT);
             window.rects.push((cell,Command::Select(key)));
         } }
-        let detail = window.selected.map(|k| format!("Neues Tile ({}, {})",k.0,k.1)).unwrap_or_else(|| "Freies Nachbarfeld anklicken".into());
+        let detail = window.selected.map(|k| format!("New tile ({}, {})",k.0,k.1)).unwrap_or_else(|| "Click a free neighbouring cell".into());
         self.catalog_text(r,scene,&detail,(x+390.0*s,y+118.0*s),360.0*s,18.0*s,WHITE);
-        for (area,title,own) in [(rect(390.0,154.0,180.0,28.0),"Randhöhen übernehmen",false),
-            (rect(576.0,154.0,178.0,28.0),"Eigene Höhe",true)] {
+        for (area,title,own) in [(rect(390.0,154.0,180.0,28.0),"Use edge heights",false),
+            (rect(576.0,154.0,178.0,28.0),"Custom height",true)] {
             self.editor_surface(r,scene,area,3.0*s,if window.own_height==own {SELECTED} else {CHIP});
             self.put(r,scene,title,((12.0*s) as u32).max(1),WHITE,area[0]+8.0*s,(area[1]+area[3])*0.5);
             window.rects.push((area,Command::HeightMode(own)));
         }
         if window.own_height {
-            let value=window.height_edit.as_ref().map(|v|format!("{v}│")).unwrap_or_else(||format!("Höhe: {:.2} m",window.height));
+            let value=window.height_edit.as_ref().map(|v|format!("{v}│")).unwrap_or_else(||format!("Height: {:.2} m",window.height));
             for (area,title,command) in [(rect(390.0,192.0,45.0,30.0),"− 1".into(),Command::HeightAdjust(-1.0)),
                 (rect(441.0,192.0,262.0,30.0),value,Command::EditHeight),
                 (rect(709.0,192.0,45.0,30.0),"+ 1".into(),Command::HeightAdjust(1.0))] {
@@ -1438,8 +1446,8 @@ impl Ui {
                 window.rects.push((area,command));
             }
         }
-        for (i,line) in [if window.own_height {"Eigenes ebenes Gelände · Zahlfeld anklicken"} else {"Gelände übernimmt die Nachbar-Randhöhen"},
-            if window.own_height {"Kann an Kartenrändern Höhenabsätze erzeugen"} else {"Randprofil weich über das neue Feld fortführen"}].iter().enumerate() {
+        for (i,line) in [if window.own_height {"Flat terrain at custom height · Click number field"} else {"Terrain uses neighbouring edge heights"},
+            if window.own_height {"May create height steps at map edges"} else {"Extend edge profile smoothly across the new tile"}].iter().enumerate() {
             self.catalog_text(r,scene,line,(x+390.0*s,y+(234.0+i as f32*22.0)*s),362.0*s,13.0*s,SOFT);
         }
         let lines = wrap(&self.text,&window.message,13.0*s,360.0*s);
@@ -1447,20 +1455,20 @@ impl Ui {
             self.catalog_text(r,scene,line,(x+390.0*s,y+(282.0+i as f32*20.0)*s),360.0*s,13.0*s,WHITE);
         }
         for (area,title,command,enabled) in [
-            (rect(664.0,16.0,90.0,30.0),"Schließen",Command::Close,true),
+            (rect(664.0,16.0,90.0,30.0),"Close",Command::Close,true),
             (rect(24.0,413.0,79.0,30.0),"← West",Command::Pan((-1,0)),true),
-            (rect(109.0,413.0,79.0,30.0),"Nord ↑",Command::Pan((0,1)),true),
-            (rect(194.0,413.0,79.0,30.0),"Süd ↓",Command::Pan((0,-1)),true),
-            (rect(279.0,413.0,79.0,30.0),"Ost →",Command::Pan((1,0)),true),
-            (rect(390.0,420.0,364.0,40.0),"Tile anlegen",Command::Create,window.can_create()),
+            (rect(109.0,413.0,79.0,30.0),"North ↑",Command::Pan((0,1)),true),
+            (rect(194.0,413.0,79.0,30.0),"South ↓",Command::Pan((0,-1)),true),
+            (rect(279.0,413.0,79.0,30.0),"East →",Command::Pan((1,0)),true),
+            (rect(390.0,420.0,364.0,40.0),"Create tile",Command::Create,window.can_create()),
         ] {
             self.editor_surface(r,scene,area,3.0*s,if !enabled { PANEL_ALT }
                 else if editor_contains(area,cursor) { LIT } else { CHIP });
             self.put(r,scene,title,((13.0*s) as u32).max(1),WHITE,area[0]+9.0*s,(area[1]+area[3])*0.5);
             if enabled { window.rects.push((area,command)); }
         }
-        self.catalog_text(r,scene,"Grün: eingetragen · Blau: Auswahl · Grau: frei",(x+24.0*s,y+464.0*s),720.0*s,12.0*s,[142,142,142,255]);
-        self.catalog_text(r,scene,"Pfeiltasten: Kartenausschnitt · Enter: anlegen · Esc: schließen",(x+24.0*s,y+487.0*s),720.0*s,12.0*s,[142,142,142,255]);
+        self.catalog_text(r,scene,"Green: existing · Blue: selected · Grey: free",(x+24.0*s,y+464.0*s),720.0*s,12.0*s,[142,142,142,255]);
+        self.catalog_text(r,scene,"Arrow keys: map view · Enter: create · Esc: close",(x+24.0*s,y+487.0*s),720.0*s,12.0*s,[142,142,142,255]);
         self.text.flat = flat;
     }
 
@@ -1497,34 +1505,34 @@ impl Ui {
         scene.overlays.push((dim, [viewport[0], viewport[1], viewport[0] + viewport[2], viewport[1] + viewport[3]]));
         self.catalog_plate(r, scene, PANEL, rect(0.0, 0.0, 1000.0, 720.0));
         if catalog.info_open {
-            self.catalog_text(r,scene,"Spline-Texturen",(x+24.0*s,y+20.0*s),740.0*s,24.0*s,WHITE);
+            self.catalog_text(r,scene,"Spline textures",(x+24.0*s,y+20.0*s),740.0*s,24.0*s,WHITE);
             let file=catalog.chosen().map(|a|a.path.display().to_string()).unwrap_or_default();
             let mut lines=vec![file];
             if let Some(d)=detail {
-                lines.extend([format!("Textur {} / {}: {}",catalog.info_slot+1,info.map_or(0,Vec::len),d.name),d.usage.clone(),d.path.clone()]);
+                lines.extend([format!("Texture {} / {}: {}",catalog.info_slot+1,info.map_or(0,Vec::len),d.name),d.usage.clone(),d.path.clone()]);
                 if let Err(e)=&d.image {lines.push(e.clone());}
                 if let (Some(&tex),Ok(image))=(self.catalog_images.get(&detail_key),&d.image) {
                     let k=360.0/(image.width.max(image.height) as f32).max(1.0);
                     scene.overlays.push((tex,rect(28.0,210.0,image.width as f32*k,image.height as f32*k)));
                 }
-            } else {lines.push(if info.is_some() {"Keine Texturen im Profil"} else {"Texturinfos werden geladen …"}.into());}
+            } else {lines.push(if info.is_some() {"No textures in profile"} else {"Loading texture information …"}.into());}
             // Hard wrapping also keeps long paths without spaces fully readable.
             let lines:Vec<String>=lines.into_iter().flat_map(|l|l.chars().collect::<Vec<_>>().chunks(66)
                 .map(|c|c.iter().collect::<String>()).collect::<Vec<_>>()).collect();
             for (i,line) in lines.iter().enumerate() {
                 self.catalog_text(r,scene,line,(x+410.0*s,y+(90.0+i as f32*20.0)*s),564.0*s,12.0*s,WHITE);
             }
-            for (area,label,command) in [(rect(28.0,630.0,170.0,36.0),"Vorige Textur",Command::InfoStep(-1)),
-                (rect(218.0,630.0,170.0,36.0),"Nächste Textur",Command::InfoStep(1)),
-                (rect(790.0,630.0,180.0,36.0),"Zurück zum Katalog",Command::TextureInfo)] {
+            for (area,label,command) in [(rect(28.0,630.0,170.0,36.0),"Previous texture",Command::InfoStep(-1)),
+                (rect(218.0,630.0,170.0,36.0),"Next texture",Command::InfoStep(1)),
+                (rect(790.0,630.0,180.0,36.0),"Back to catalogue",Command::TextureInfo)] {
                 self.catalog_plate(r,scene,CHIP,area);
                 self.catalog_text(r,scene,label,(area[0]+8.0*s,area[1]+8.0*s),164.0*s,14.0*s,WHITE);
                 catalog.rects.push((area,command));
             }
             return;
         }
-        self.catalog_text(r, scene, if catalog.texture_only {"Texturkatalog"} else {"Bauteilkatalog"}, (x + 22.0 * s, y + 16.0 * s), 650.0 * s, 25.0 * s, WHITE);
-        for (section, title, left, width) in [(Section::Roads, "Splines & Kreuzungen", 22.0, 220.0), (Section::Objects, "Objekte", 254.0, 104.0),(Section::Textures,"Texturen",370.0,104.0)] {
+        self.catalog_text(r, scene, if catalog.texture_only {"Texture catalogue"} else {"Asset catalogue"}, (x + 22.0 * s, y + 16.0 * s), 650.0 * s, 25.0 * s, WHITE);
+        for (section, title, left, width) in [(Section::Roads, "Splines & junctions", 22.0, 220.0), (Section::Objects, "Objects", 254.0, 104.0),(Section::Textures,"Textures",370.0,104.0)] {
             if catalog.texture_only && section!=Section::Textures {continue;}
             let box_rect = rect(left, 61.0, width, 36.0);
             let color = if catalog.section == section { SELECTED } else { TRACK_OFF };
@@ -1552,20 +1560,20 @@ impl Ui {
         catalog.rects.push((reverse,Command::Reverse));
         let search = rect(22.0, 151.0, 630.0, 36.0);
         self.catalog_plate(r, scene, PANEL_ALT, search);
-        let query = if catalog.query.is_empty() { "Suche: Name oder Pfad tippen …".into() } else { format!("Suche: {}", catalog.query) };
+        let query = if catalog.query.is_empty() { "Search: type name or path …".into() } else { format!("Search: {}", catalog.query) };
         self.catalog_text(r, scene, &query, (search[0] + 12.0 * s, search[1] + 6.0 * s), 606.0 * s, 17.0 * s, WHITE);
-        let mut buttons = vec![(rect(900.0, 16.0, 78.0, 34.0), "Schließen", Command::Close, true),
-            (rect(696.0,16.0,188.0,34.0),"Kreuzung bauen",Command::BuildJunction,!catalog.texture_only),
-            (rect(666.0, 151.0, 106.0, 36.0), "Leeren", Command::Clear, true),
+        let mut buttons = vec![(rect(900.0, 16.0, 78.0, 34.0), "Close", Command::Close, true),
+            (rect(696.0,16.0,188.0,34.0),"Build junction",Command::BuildJunction,!catalog.texture_only),
+            (rect(666.0, 151.0, 106.0, 36.0), "Clear", Command::Clear, true),
             (rect(700.0, 415.0, 85.0, 30.0), "← 90°", Command::Rotate(-1), catalog.chosen().is_some_and(|a|a.kind!=crate::asset_catalog::Kind::Texture)),
-            (rect(793.0, 415.0, 90.0, 30.0), "Automatisch", Command::ResetView, catalog.chosen().is_some_and(|a|a.kind!=crate::asset_catalog::Kind::Texture)),
-            (rect(790.0, 151.0, 188.0, 36.0), if catalog.audit_running() { "Prüfung stoppen" } else { "Alle Vorschauen prüfen" }, Command::Audit, !catalog.scanning),
+            (rect(793.0, 415.0, 90.0, 30.0), "Automatic", Command::ResetView, catalog.chosen().is_some_and(|a|a.kind!=crate::asset_catalog::Kind::Texture)),
+            (rect(790.0, 151.0, 188.0, 36.0), if catalog.audit_running() { "Stop check" } else { "Check all previews" }, Command::Audit, !catalog.scanning),
             (rect(891.0, 415.0, 87.0, 30.0), "90° →", Command::Rotate(1), catalog.chosen().is_some_and(|a|a.kind!=crate::asset_catalog::Kind::Texture)),
-            (rect(700.0, 586.0, 278.0, 44.0), "Auswählen", Command::Choose, catalog.selected.is_some()),
-            (rect(22.0, 672.0, 110.0, 30.0), "Zurück", Command::Page(-1), catalog.page > 0),
-            (rect(542.0, 672.0, 110.0, 30.0), "Weiter", Command::Page(1), catalog.page + 1 < catalog.pages())];
+            (rect(700.0, 586.0, 278.0, 44.0), "Select", Command::Choose, catalog.selected.is_some()),
+            (rect(22.0, 672.0, 110.0, 30.0), "Back", Command::Page(-1), catalog.page > 0),
+            (rect(542.0, 672.0, 110.0, 30.0), "Next", Command::Page(1), catalog.page + 1 < catalog.pages())];
         if catalog.chosen().is_some_and(|a|a.kind==crate::asset_catalog::Kind::Spline) {
-            buttons.push((rect(700.0,632.0,278.0,28.0),"Texturen / Infos …",Command::TextureInfo,true));
+            buttons.push((rect(700.0,632.0,278.0,28.0),"Textures / info …",Command::TextureInfo,true));
         }
         for (cell, &index) in visible.iter().enumerate() {
             let left = 22.0 + (cell % 4) as f32 * 160.0; let top = 204.0 + (cell / 4) as f32 * 152.0;
@@ -1576,7 +1584,7 @@ impl Ui {
             let asset = &catalog.entries[index];
             if let Some(&tex) = self.catalog_images.get(&catalog.image_key(index)) { scene.overlays.push((tex, rect(left + 4.0, top + 4.0, 142.0, 94.67))); }
             else {
-                let status = match catalog.previews.get(&index) { Some(Err(_)) => "Keine Vorschau", _ => "Lade Vorschau …" };
+                let status = match catalog.previews.get(&index) { Some(Err(_)) => "No preview", _ => "Loading preview …" };
                 self.catalog_text(r, scene, status, (tile[0] + 8.0 * s, tile[1] + 42.0 * s), 134.0 * s, 13.0 * s, MUTED);
             }
             self.catalog_text(r, scene, &asset.name, (tile[0] + 7.0 * s, tile[1] + 103.0 * s), 136.0 * s, 14.0 * s, WHITE);
@@ -1591,20 +1599,21 @@ impl Ui {
                 self.catalog_text(r, scene, line, (x + 700.0 * s, y + (481.0 + n as f32 * 18.0) * s), 278.0 * s, 13.0 * s, MUTED);
             }
             let status = match catalog.previews.get(&index) { Some(Err(error)) => error.as_str(),
-                Some(Ok(_)) if asset.category == crate::asset_catalog::Category::Traffic => "Pfad-Vorschau · kein Straßenmodell\nBlau: Straße · Grün: Fußweg\nViolett: Gleis · Gelb: Flugweg",
-                Some(Ok(_)) if asset.kind==crate::asset_catalog::Kind::Texture=>"Texturvorschau · Schachbrett = Transparenz",
-                Some(Ok(_)) => "Statische Vorschau aus dem Modell", None => "Vorschau wird geladen …" };
+                Some(Ok(_)) if asset.category == crate::asset_catalog::Category::Traffic => "Path preview · No road model\nBlue: road · Green: footpath\nPurple: railway · Yellow: flight path",
+                Some(Ok(_)) if asset.kind==crate::asset_catalog::Kind::Texture=>"Texture preview · Checkerboard = transparency",
+                Some(Ok(_)) => "Static preview from model", None => "Preview is loading …" };
+            let status = omsi_ui::tr(status);
             let status_lines: Vec<_> = status.lines().flat_map(|line| wrap(&self.text, line, 13.0 * s, 278.0 * s)).collect();
             for (row, line) in status_lines.iter().take(3).enumerate() {
                 self.catalog_text(r, scene, line, (x + 700.0 * s, y + (539.0 + row as f32 * 14.0) * s), 278.0 * s, 13.0 * s, MUTED);
             }
         }
         if visible.is_empty() {
-            self.catalog_text(r, scene, if catalog.scanning { "Installierte Bauteile werden gesucht …" } else { "Keine passenden Bauteile gefunden" }, (x + 30.0 * s, y + 270.0 * s), 620.0 * s, 19.0 * s, WHITE);
+            self.catalog_text(r, scene, if catalog.scanning { "Searching installed assets …" } else { "No matching assets found" }, (x + 30.0 * s, y + 270.0 * s), 620.0 * s, 19.0 * s, WHITE);
         }
-        let footer = format!("{} Treffer · {} · Seite {} / {}",catalog.filtered.len(),catalog.category.title(),catalog.page+1,catalog.pages());
+        let footer = format!("{} results · {} · Page {} / {}",catalog.filtered.len(),catalog.category.title(),catalog.page+1,catalog.pages());
         self.catalog_text(r, scene, &footer, (x + 153.0 * s, y + 678.0 * s), 375.0 * s, 15.0 * s, SOFT);
-        self.catalog_text(r, scene, if catalog.audit_message.is_empty() { "Enter auswählen · Esc schließen" } else { &catalog.audit_message },
+        self.catalog_text(r, scene, if catalog.audit_message.is_empty() { "Enter selects · Esc closes" } else { &catalog.audit_message },
             (x + 22.0 * s, y + 648.0 * s), 650.0 * s, 13.0 * s, MUTED);
         for (box_rect, text, command, enabled) in buttons.drain(..) {
             let hovered = cursor.0 >= box_rect[0] && cursor.0 <= box_rect[2] && cursor.1 >= box_rect[1] && cursor.1 <= box_rect[3];
@@ -1630,24 +1639,27 @@ impl Ui {
         let flat=self.text.flat;self.text.flat=true;
         self.catalog_plate(r,scene,[0, 0, 0, 150],[viewport[0],viewport[1],viewport[0]+viewport[2],viewport[1]+viewport[3]]);
         self.editor_surface(r,scene,rect(0.0,0.0,1020.0,740.0),7.0*s,PANEL);
-        self.catalog_text(r,scene,"Kreuzungsbaukasten 0.7.6-pre",(x+22.0*s,y+18.0*s),680.0*s,24.0*s,WHITE);
+        let roundabout=window.project.roundabout.is_some();
+        self.catalog_text(r,scene,if roundabout {"Roundabout builder 0.7.9-pre"} else {"Junction builder 0.7.9-pre"},(x+22.0*s,y+18.0*s),680.0*s,24.0*s,WHITE);
         self.catalog_text(r,scene,&window.source_label,(x+22.0*s,y+46.0*s),970.0*s,10.0*s,SOFT);
         self.editor_surface(r,scene,rect(20.0,62.0,358.0,576.0),5.0*s,PANEL);
         let cross=window.project.arms[3].enabled;
-        let mut buttons=vec![(rect(908.0,16.0,90.0,32.0),"Schließen".to_string(),Command::Close,true,false),
-            (rect(32.0,78.0,150.0,30.0),"T-Kreuzung".into(),Command::Shape(false),true,!cross),
-            (rect(194.0,78.0,164.0,30.0),"Vierarmkreuzung".into(),Command::Shape(true),true,cross)];
+        let mut buttons=vec![(rect(908.0,16.0,90.0,32.0),"Close".to_string(),Command::Close,true,false),
+            (rect(32.0,78.0,150.0,30.0),if roundabout {"3 entrances"}else{"T-junction"}.into(),Command::Shape(false),true,!cross),
+            (rect(194.0,78.0,164.0,30.0),if roundabout {"4 entrances"}else{"Four-way junction"}.into(),Command::Shape(true),true,cross)];
         for (i,label) in ["Arm A","Arm B","Arm C","Arm D"].into_iter().enumerate() {
             buttons.push((rect(32.0+i as f32*83.0,120.0,77.0,30.0),label.into(),Command::Arm(i),window.project.arms[i].enabled,window.arm==i));
-            let (status,color)=if window.pending.is_some_and(|(_,arm)|arm==i){("vorbereitet".to_string(),[60,180,255,0])}else if let Some(id)=window.arm_links[i]{(format!("ID {id}"),[75,230,110,0])}else{("frei".to_string(),MUTED)};
+            let (status,color)=if window.pending.is_some_and(|(_,arm)|arm==i){("prepared".to_string(),[60,180,255,0])}else if let Some(id)=window.arm_links[i]{(format!("ID {id}"),[75,230,110,0])}else{("free".to_string(),MUTED)};
             self.catalog_text(r,scene,&status,(x+(32.0+i as f32*83.0)*s,y+153.0*s),77.0*s,8.0*s,color);
         }
         let name=window.input.as_ref().filter(|i|i.field==Field::Name).map(|i|format!("{}│",i.text)).unwrap_or_else(||window.project.name.clone());
         buttons.push((rect(32.0,166.0,326.0,32.0),name,Command::Edit(Field::Name),true,window.input.as_ref().is_some_and(|i|i.field==Field::Name)));
-        for (i,field) in [Field::Width,Field::Length,Field::Angle,Field::Bend,Field::Sidewalk,Field::Corner,Field::TextureMetres].into_iter().enumerate() {
+        let fields=if roundabout {[Field::Width,Field::Length,Field::Angle,Field::IslandRadius,Field::RingWidth,Field::IslandHeight,Field::TextureMetres]}
+            else {[Field::Width,Field::Length,Field::Angle,Field::Bend,Field::Sidewalk,Field::Corner,Field::TextureMetres]};
+        for (i,field) in fields.into_iter().enumerate() {
             let row=208.0+i as f32*36.0;
             self.catalog_text(r,scene,field.title(),(x+32.0*s,y+(row+8.0)*s),168.0*s,12.0*s,SOFT);
-            let step=match field {Field::Angle|Field::Bend=>5.0,_=>0.5};
+            let step=match field {Field::Angle|Field::Bend=>5.0,Field::IslandHeight=>0.05,_=>0.5};
             buttons.push((rect(208.0,row,26.0,30.0),"−".into(),Command::Adjust(field,-step),true,false));
             buttons.push((rect(332.0,row,26.0,30.0),"+".into(),Command::Adjust(field,step),true,false));
             let input=window.input.as_ref().filter(|input|input.field==field);
@@ -1655,21 +1667,21 @@ impl Ui {
             buttons.push((rect(240.0,row,86.0,30.0),text,Command::Edit(field),true,input.is_some()));
         }
         buttons.extend([
-            (rect(32.0,468.0,326.0,30.0),"Breite / Textur vom gewählten Spline".into(),Command::UseSpline,true,false),
-            (rect(32.0,511.0,158.0,30.0),"Asphalt wählen …".into(),Command::RoadTexture,true,!window.project.road_texture.is_empty()),
-            (rect(200.0,511.0,158.0,30.0),"Gehweg wählen …".into(),Command::WalkTexture,true,!window.project.walk_texture.is_empty()),
-            (rect(32.0,551.0,326.0,28.0),if window.project.markings {"Mittellinien: AN"} else {"Mittellinien: AUS"}.into(),Command::Markings,true,window.project.markings),
-            (rect(32.0,591.0,158.0,30.0),"Rückgängig".into(),Command::Undo,!window.undo.is_empty(),false),
-            (rect(200.0,591.0,158.0,30.0),"Wiederholen".into(),Command::Redo,!window.redo.is_empty(),false),
-            (rect(410.0,551.0,184.0,32.0),"KI-Wege anzeigen".into(),Command::ShowPaths,true,window.show_paths),
-            (rect(602.0,551.0,190.0,32.0),"Vorschau drehen".into(),Command::Rotate,true,false),
-            (rect(800.0,551.0,184.0,32.0),"Projekt laden …".into(),Command::Load,true,false),
-            (rect(726.0,680.0,272.0,42.0),if window.target.is_some(){"Platzierte Kreuzung aktualisieren"}else{"Speichern & einsetzen"}.into(),Command::Export,window.error.is_none(),false),
+            (rect(32.0,468.0,326.0,30.0),"Width / texture from selected spline".into(),Command::UseSpline,true,false),
+            (rect(32.0,511.0,158.0,30.0),"Choose asphalt …".into(),Command::RoadTexture,true,!window.project.road_texture.is_empty()),
+            (rect(200.0,511.0,158.0,30.0),if roundabout {"Choose island texture …"}else{"Choose sidewalk …"}.into(),Command::WalkTexture,true,!window.project.walk_texture.is_empty()),
+            (rect(32.0,551.0,326.0,28.0),if roundabout {if window.project.markings {"Island edge line: ON"}else{"Island edge line: OFF"}}else if window.project.markings {"Centre lines: ON"} else {"Centre lines: OFF"}.into(),Command::Markings,true,window.project.markings),
+            (rect(32.0,591.0,158.0,30.0),"Undo".into(),Command::Undo,!window.undo.is_empty(),false),
+            (rect(200.0,591.0,158.0,30.0),"Redo".into(),Command::Redo,!window.redo.is_empty(),false),
+            (rect(410.0,551.0,184.0,32.0),"Show AI paths".into(),Command::ShowPaths,true,window.show_paths),
+            (rect(602.0,551.0,190.0,32.0),"Rotate preview".into(),Command::Rotate,true,false),
+            (rect(800.0,551.0,184.0,32.0),"Load project …".into(),Command::Load,true,false),
+            (rect(726.0,680.0,272.0,42.0),if window.target.is_some(){if roundabout {"Update placed roundabout"}else{"Update placed junction"}}else{"Save & place"}.into(),Command::Export,window.error.is_none(),false),
         ]);
-        if window.target.is_some(){buttons.push((rect(410.0,680.0,302.0,42.0),"Straße an gewählten Arm anbinden".into(),Command::ConnectRoad,window.error.is_none(),window.pending.is_some()));}
+        if window.target.is_some(){buttons.push((rect(410.0,680.0,302.0,42.0),"Connect road to selected arm".into(),Command::ConnectRoad,window.error.is_none(),window.pending.is_some()));}
         self.editor_surface(r,scene,rect(402.0,76.0,596.0,464.0),5.0*s,PANEL_ALT);
-        self.catalog_text(r,scene,"3D-Vorschau · Maße in Metern",(x+416.0*s,y+86.0*s),556.0*s,17.0*s,SOFT);
-        let texture=if window.project.road_texture.is_empty() {"Keine Fahrbahntextur"} else {&window.project.road_texture};
+        self.catalog_text(r,scene,"3D preview · Dimensions in metres",(x+416.0*s,y+86.0*s),556.0*s,17.0*s,SOFT);
+        let texture=if window.project.road_texture.is_empty() {"No road surface texture"} else {&window.project.road_texture};
         self.catalog_text(r,scene,texture,(x+416.0*s,y+108.0*s),556.0*s,10.0*s,SOFT);
         if let Some((_,tex))=self.junction_image {scene.overlays.push((tex,rect(408.0,124.0,584.0,389.33)));}
         else if let Some(error)=&window.error {
@@ -1697,19 +1709,19 @@ impl Ui {
                 let area=[x+(left+35.0)*s+start,y+610.0*s,x+(left+35.0)*s+start+width,y+632.0*s];
                 digit_hits.push((area,Command::Digit(field,power),window.texture_focus==Some(field)&&window.texture_steps[i]==power));
             }
-            let step=if input.is_some_and(|p|!p.replace) {"Schritt nach Eingabe / Enter".to_string()}
-                else {format!("Schritt: {} · Ziffer anklicken",window.texture_step(field))};
+            let step=if input.is_some_and(|p|!p.replace) {"Step after input / Enter".to_string()}
+                else {format!("Step: {} · Click a digit",window.texture_step(field))};
             self.catalog_text(r,scene,&step,(x+left*s,y+637.0*s),180.0*s,10.0*s,AMBER);
             let help=match field {
-                Field::UStart=>["Anfang des Texturausschnitts.","U: 0 bis 1 = eine Bildbreite."],
-                Field::UEnd=>["Ende des Texturausschnitts.","Kleiner als von = gespiegelt."],
-                _=>["Breite des Ausschnitts in m.","Größer = breiter dargestellt."],
+                Field::UStart=>["Start of the texture crop.","U: 0 to 1 = one image width."],
+                Field::UEnd=>["End of the texture crop.","Less than start = mirrored."],
+                _=>["Width of the crop in metres.","Larger = displayed wider."],
             };
             for (line,help) in help.into_iter().enumerate() {
                 self.catalog_text(r,scene,help,(x+left*s,y+(650.0+line as f32*12.0)*s),180.0*s,10.0*s,SOFT);
             }
         }
-        let message=if window.input.is_some() {"Wert eingeben · Enter übernehmen · Esc Eingabe abbrechen"} else {&window.message};
+        let message=if window.input.is_some() {"Enter value · Enter applies · Esc cancels input"} else {&window.message};
         for (i,line) in wrap(&self.text,message,11.0*s,374.0*s).iter().take(6).enumerate() {
             self.catalog_text(r,scene,line,(x+22.0*s,y+(648.0+i as f32*13.0)*s),374.0*s,11.0*s,SOFT);
         }
@@ -1737,8 +1749,9 @@ impl Ui {
         let panel = [x, y, x + width, y + 198.0 * s];
         self.editor_connection_rect = Some(panel);
         self.editor_surface(r, scene, panel, 3.0 * s, PANEL);
-        self.catalog_text(r, scene, "Splines verbinden", (x + 8.0 * s, y + 5.0 * s),
+        self.catalog_text(r, scene, "Connect splines", (x + 8.0 * s, y + 5.0 * s),
             width - 16.0 * s, 13.0 * s, MUTED);
+        let message = omsi_ui::tr(message);
         let lines: Vec<String> = message.lines().flat_map(|line|
             wrap(&self.text, line, 11.0 * s, width - 16.0 * s)).collect();
         for (row, line) in lines.iter().take(7).enumerate() {
@@ -1747,12 +1760,12 @@ impl Ui {
         }
         let toggle = [x + 8.0 * s, y + 130.0 * s, x + width - 8.0 * s, y + 156.0 * s];
         self.editor_surface(r, scene, toggle, 3.0 * s, if transition { [35, 115, 100, 255] } else { TRACK_OFF });
-        self.put(r, scene, if transition { "[x] Profil-/Kurvenübergang (openOMSI)" } else { "[ ] Profil-/Kurvenübergang (openOMSI)" },
+        self.put(r, scene, if transition { "[x] Profile / curve transition (openOMSI)" } else { "[ ] Profile / curve transition (openOMSI)" },
             ((11.0 * s) as u32).max(1), WHITE, toggle[0] + 6.0 * s, y + 143.0 * s);
         self.spline_transition_rect = Some(toggle);
         let button_y = y + 164.0 * s;
         let button_w = (width - 24.0 * s) * 0.5;
-        for (index, title) in [if replace { "Ersetzen" } else { "Verbinden" }, "Abbrechen"].into_iter().enumerate() {
+        for (index, title) in [if replace { "Replace" } else { "Connect" }, "Cancel"].into_iter().enumerate() {
             let bx = x + 8.0 * s + index as f32 * (button_w + 8.0 * s);
             let rect = [bx, button_y, bx + button_w, button_y + 26.0 * s];
             let hovered = editor_contains(rect, cursor);
@@ -3550,6 +3563,8 @@ impl Ui {
 
 /// `text` broken into lines of at most `width` pixels, between words.
 fn wrap(tc: &TextCache, text: &str, px: f32, width: f32) -> Vec<String> {
+    let translated = omsi_ui::tr(text);
+    let text = translated.as_ref();
     let mut out = Vec::new();
     let mut line = String::new();
     for word in text.split_whitespace() {
@@ -3569,7 +3584,10 @@ fn wrap(tc: &TextCache, text: &str, px: f32, width: f32) -> Vec<String> {
 
 /// `text` cut at the end to fit `width` pixels ("…").
 fn clip_to(tc: &TextCache, text: &str, px: f32, width: f32) -> String {
-    if tc.width(text, px) <= width {
+    // Translate the complete key before truncation, otherwise the ellipsis breaks lookup.
+    let translated = omsi_ui::tr(text);
+    let text = translated.as_ref();
+    if tc.width_raw(text, px) <= width {
         return text.to_string();
     }
     let chars: Vec<char> = text.chars().collect();
@@ -3695,6 +3713,8 @@ mod tests {
                                 assert!(dock.panel[2] <= viewport[0] + viewport[2]);
                                 assert!(dock.panel[3] <= viewport[1] + viewport[3]);
                                 assert!(dock.catalog[3] < dock.hints[1]);
+                                assert!(dock.builders[1]>dock.catalog[3]);
+                                assert!(dock.builders[3]<dock.tiles[1]);
                                 assert!(dock.tiles[1] > dock.catalog[3]);
                                 assert!(dock.tiles[3] < dock.toggle[1]);
                                 assert!(dock.hints[3] <= dock.panel[3]);
@@ -3719,6 +3739,7 @@ mod tests {
         ui.editor_dock_rect = Some(dock.panel);
         ui.editor_dock_header = Some(dock.header);
         ui.tile_open_rect = Some(dock.tiles);
+        ui.roundabout_open_rect = Some(dock.builders);
         ui.terrain_open_rect = Some(dock.terrain);
         ui.editor_dock_bounds = dock.bounds;
         ui.catalog_open_rect = Some(dock.catalog);
@@ -3730,8 +3751,10 @@ mod tests {
         assert!(ui.editor_dock_move((10_000.0, -100.0)));
         let moved = ui.editor_dock_rect.unwrap();
         let tile = ui.tile_open_rect.unwrap();
+        let roundabout=ui.roundabout_open_rect.unwrap();
+        assert!((roundabout[1]-moved[1]-64.0).abs()<0.01);
         assert!((tile[0] - moved[0] - 10.0).abs() < 0.01);
-        assert!((tile[1] - moved[1] - 64.0).abs() < 0.01);
+        assert!((tile[1] - moved[1] - 96.0).abs() < 0.01);
         assert_eq!((moved[0], moved[1]), (dock.bounds[2], dock.bounds[1]));
         assert_eq!(ui.editor_hud_rect, Some(hud.panel));
         let dx = moved[0] - dock.panel[0];

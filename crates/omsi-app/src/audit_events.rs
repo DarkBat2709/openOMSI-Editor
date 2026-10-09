@@ -14,8 +14,8 @@ impl Default for Audit {fn default()->Self{Self{visible:true,markers:true,show_g
 impl Audit {
     pub fn busy(&self)->bool{self.receiver.is_some()}
     pub fn poll(&mut self){if let Some(rx)=&self.receiver{match rx.try_recv(){
-        Ok(report)=>{self.report=report;self.receiver=None;self.page=0;self.message="Stand der letzten Prüfung – nach Änderungen erneut prüfen".into();},
-        Err(mpsc::TryRecvError::Disconnected)=>{self.receiver=None;self.message="Prüfung abgebrochen – erneut prüfen".into();},
+        Ok(report)=>{self.report=report;self.receiver=None;self.page=0;self.message="Results of the last check – check again after changes".into();},
+        Err(mpsc::TryRecvError::Disconnected)=>{self.receiver=None;self.message="Check cancelled – check again".into();},
         Err(mpsc::TryRecvError::Empty)=>{}
     }}}
     pub fn indices(&self)->std::ops::Range<usize>{0..self.report.visible_len(self.show_good)}
@@ -72,7 +72,7 @@ fn collect(world:Arc<crate::scene::World>,edits:crate::spline_editor::Edits,obje
 }
 impl crate::app::App {
     pub(crate) fn editor_open_audit(&mut self){
-        if self.world.as_ref().is_none_or(|w|w.global.world_coordinates){self.service_msg=Some(("Spline-Prüfung benötigt eine normale OMSI-Karte".into(),5.0));return;}
+        if self.world.as_ref().is_none_or(|w|w.global.world_coordinates){self.service_msg=Some(("Spline check requires a standard OMSI map".into(),5.0));return;}
         self.editor_terrain_finish();
         let Some(ed)=self.menus.editor.as_mut()else{return;};
         ed.splines.finish_drag();ed.end_object_drag();
@@ -89,9 +89,9 @@ impl crate::app::App {
                 if a.busy(){return;}
                 let edits=world.spline_edits.lock().clone();let object_edits=world.object_edits.lock().clone();
                 let added=ed.added.iter().map(|o|AddedObject{id:o.id,path:o.sco.clone(),at:o.base+o.moved,heading:o.base_heading+o.turned,tilt:o.tilt,deleted:o.deleted}).collect();
-                let world=world.clone();let(tx,rx)=mpsc::channel();a.receiver=Some(rx);a.report=Report::default();a.page=0;a.message="Prüfe alle Tiles im Hintergrund …".into();
+                let world=world.clone();let(tx,rx)=mpsc::channel();a.receiver=Some(rx);a.report=Report::default();a.page=0;a.message="Checking all tiles in the background …".into();
                 if let Err(e)=std::thread::Builder::new().name("spline-audit".into()).spawn(move||{let report=collect(world,edits,object_edits,added,saved);let _=tx.send(report);}){
-                    a.receiver=None;a.message=format!("Prüfung konnte nicht starten: {e}");
+                    a.receiver=None;a.message=format!("Could not start check: {e}");
                 }
             }
             Command::ToggleMarkers=>a.markers=!a.markers,
@@ -104,7 +104,7 @@ impl crate::app::App {
                 if let Some(cam)=self.camera.as_mut(){cam.position=e.at+DVec3::new(0.0,-18.0,20.0);cam.yaw=0.0;cam.pitch=-48.0;cam.roll=0.0;}
                 self.view="free".into();self.cam.ego=false;self.session.on_foot=None;self.input.keys.clear();self.menus.editor_drag=false;self.input.buttons_held=(false,false);
                 ed.spline_mode=true;ed.terrain.active=false;ed.splines.selected=Some(e.key);
-                self.service_msg=Some((format!("Spline {} · {} · {} · {}",e.key.1,if e.end==0{"Start"}else{"Ende"},e.reason,e.file),15.0));
+                self.service_msg=Some((format!("Spline {} · {} · {} · {}",e.key.1,if e.end==0{"Start"}else{"End"},e.reason,e.file),15.0));
             }
         }
     }

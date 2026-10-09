@@ -16,8 +16,8 @@ pub enum Mode { Heights, Textures }
 pub enum Tool { Raise, Lower, Level, Smooth, Height }
 impl Tool {
     pub fn title(self) -> &'static str {
-        match self { Self::Raise => "Berg heben", Self::Lower => "Senke senken", Self::Level => "Begradigen",
-            Self::Smooth => "Glätten", Self::Height => "Höhe zeichnen" }
+        match self { Self::Raise => "Raise hill", Self::Lower => "Lower hollow", Self::Level => "Level",
+            Self::Smooth => "Smooth", Self::Height => "Paint height" }
     }
 }
 
@@ -25,8 +25,8 @@ impl Tool {
 pub enum Field { Radius, Strength, Softness, Height, TileStep }
 impl Field {
     pub fn title(self) -> &'static str {
-        match self { Self::Radius => "Radius (m)", Self::Strength => "Stärke / Sek.", Self::Softness => "Weicher Rand (%)",
-            Self::Height => "Zielhöhe (m)", Self::TileStep => "Tile-Schritt (m)" }
+        match self { Self::Radius => "Radius (m)", Self::Strength => "Strength / sec.", Self::Softness => "Soft edge (%)",
+            Self::Height => "Target height (m)", Self::TileStep => "Tile step (m)" }
     }
     fn limits(self) -> (f64, f64) {
         match self { Self::Radius => (2.5,150.0), Self::Strength => (0.05,10.0), Self::Softness => (0.0,100.0),
@@ -78,16 +78,16 @@ pub struct TerrainEditor {
 }
 
 impl Default for TerrainEditor {
-    fn default() -> Self { Self { active:false, mode:Mode::Heights,texture_layer:0,texture_name:"Grundtextur".into(),
+    fn default() -> Self { Self { active:false, mode:Mode::Heights,texture_layer:0,texture_name:"Base texture".into(),
         texture_erase:false,sample_texture:false,tool:Tool::Raise, radius:10.0, strength:1.0, softness:50.0,
         height:0.0, tile_step:1.0, blend:true, tile:None, cursor:None, sample_height:false, pick_tile:false,
-        input:None, message:"Links halten und zeichnen · Mausrad: Pinselgröße · Strg+S: speichern".into(),
+        input:None, message:"Hold left mouse button to sculpt · Mouse wheel: brush size · Ctrl+S: save".into(),
         stroke:None, undo:Vec::new(), redo:Vec::new(), pending:HashSet::new(), refresh:0.0 } }
 }
 
 pub fn parse_number(text: &str, min: f64, max: f64) -> Result<f64,String> {
     text.trim().replace(',',".").parse::<f64>().ok().filter(|n|n.is_finite() && *n>=min && *n<=max)
-        .ok_or_else(|| format!("Zahl zwischen {min} und {max} eingeben"))
+        .ok_or_else(|| format!("Enter a number between {min} and {max}"))
 }
 
 fn tile_at(p: DVec3) -> Key {
@@ -95,21 +95,21 @@ fn tile_at(p: DVec3) -> Key {
 }
 
 fn read_terrain(world: &World, key: Key) -> Result<Terrain,String> {
-    let src=world.tile_source(key.0,key.1).ok_or("Tile liegt außerhalb der Karte")?;
+    let src=world.tile_source(key.0,key.1).ok_or("Tile lies outside the map")?;
     // This also applies to a whole-tile change with neighbour blending disabled.
     if !world.chrono_dirs.read().is_empty()
         && crate::tiles::read_tile(&src,&world.chrono_dirs.read()).is_some_and(|t|t.terrain_from.is_some()) {
-        return Err("Gelände mit aktiver Chrono-Änderung ist hier nicht bearbeitbar".into());
+        return Err("Terrain with an active Chrono change cannot be edited here".into());
     }
     if let Some(t)=world.editor_terrain_tile(key) { return valid(t,key); }
-    if !omsi_cfg::vfs::is_file(&src) { return Err("Tile-Datei fehlt".into()); }
+    if !omsi_cfg::vfs::is_file(&src) { return Err("Tile file missing".into()); }
     let path=crate::scene::tile_companion(&src,".terrain");
     let terrain=if omsi_cfg::vfs::is_file(&path) { Terrain::load(&path).map_err(|e|e.to_string())? } else { Terrain::flat() };
     valid(terrain,key)
 }
 fn valid(t: Terrain,key: Key) -> Result<Terrain,String> {
     if t.cells==0 || t.cells>256 || t.heights.len()!=t.samples()*t.samples() || t.heights.iter().any(|h|!h.is_finite()) {
-        return Err(format!("Ungültiges Geländeraster in Tile ({},{})",key.0,key.1));
+        return Err(format!("Invalid terrain grid in tile ({},{})",key.0,key.1));
     }
     Ok(t)
 }
@@ -131,7 +131,7 @@ fn footprint(world:&World,at:DVec3,radius:f64) -> Result<HashMap<Key,Terrain>,St
         }
     }
     if let Some(cells)=out.values().next().map(|t|t.cells) {
-        if out.values().any(|t|t.cells!=cells) {return Err("Angrenzende Tiles haben unterschiedliche Geländeraster".into());}
+        if out.values().any(|t|t.cells!=cells) {return Err("Adjacent tiles have different terrain grids".into());}
     }
     Ok(out)
 }
@@ -210,9 +210,9 @@ fn tile_height(before:&HashMap<Key,Terrain>,tile:Key,value:f64,level:bool,blend:
 
 impl TerrainEditor {
     pub fn describe(&self) -> String {
-        if self.mode==Mode::Textures {return format!("Bodentexturen · {} · {} · Radius {:.1} m · {} Rückgängig / {} Wiederholen",
-            self.texture_name,if self.texture_erase {"Radierer"} else {"Malen"},self.radius,self.undo.len(),self.redo.len());}
-        format!("Gelände · {} · Radius {:.1} m · Zielhöhe {:.2} m · {} Rückgängig / {} Wiederholen",
+        if self.mode==Mode::Textures {return format!("Ground textures · {} · {} · Radius {:.1} m · {} undo / {} redo",
+            self.texture_name,if self.texture_erase {"Eraser"} else {"Paint"},self.radius,self.undo.len(),self.redo.len());}
+        format!("Terrain · {} · Radius {:.1} m · Target height {:.2} m · {} undo / {} redo",
             self.tool.title(),self.radius,self.height,self.undo.len(),self.redo.len())
     }
     pub fn can_undo(&self)->bool { !self.undo.is_empty() }
@@ -239,12 +239,12 @@ impl TerrainEditor {
     pub fn begin(&mut self,world:&World,at:DVec3) {
         if self.mode==Mode::Textures && self.sample_texture {
             match crate::ground_paint::sample(world,at) {Ok(layer)=>{self.choose_layer(world,layer);
-                self.message=format!("Textur aufgenommen: {}",self.texture_name);},Err(e)=>self.message=e}
+                self.message=format!("Texture sampled: {}",self.texture_name);},Err(e)=>self.message=e}
             self.sample_texture=false;return;
         }
-        if self.sample_height { self.height=at.z; self.sample_height=false; self.message=format!("Zielhöhe {:.2} m aufgenommen",at.z); return; }
+        if self.sample_height { self.height=at.z; self.sample_height=false; self.message=format!("Target height {:.2} m sampled",at.z); return; }
         self.tile=Some(tile_at(at));
-        if self.pick_tile { self.pick_tile=false; self.message="Tile ausgewählt; Höhenbuttons bearbeiten das ganze Feld".into(); return; }
+        if self.pick_tile { self.pick_tile=false; self.message="Tile selected; height buttons edit the entire cell".into(); return; }
         self.stroke=Some(Stroke { before:HashMap::new(),before_masks:HashMap::new(),paint_tiles:HashSet::new(),last:at,level:at.z,error:None });
         self.dab(world,at,1.0/30.0);
     }
@@ -253,7 +253,7 @@ impl TerrainEditor {
         let before=match footprint(world,at,self.radius+10.0) { Ok(t)=>t,Err(e)=>{self.message=e;return Vec::new();} };
         let after=paint(&before,at,self.radius,self.softness,tool,at.z,amount);
         let keys:Vec<_>=after.keys().copied().collect();
-        if keys.is_empty() {self.message="Keine Höhenänderung; gegebenenfalls den Pinselradius erhöhen".into();}
+        if keys.is_empty() {self.message="No height change; increase brush radius if needed".into();}
         { let mut edits=world.terrain_edits.lock();for (&k,t) in &after {edits.insert(k,t.clone());self.pending.insert(k);} }
         self.remember(before,after); keys
     }
@@ -300,39 +300,39 @@ impl TerrainEditor {
             while self.undo.len()>128 || (self.undo.len()>1 && self.undo.iter().map(Change::bytes).sum::<usize>()>64*1024*1024) {self.undo.remove(0);}
         }
         self.remember(stroke.before,after);
-        if count>0 { self.message=format!("Pinselstrich: {count} Tile(s) · Strg+Z rückgängig · Strg+S speichern"); }
-        else {self.message=if self.mode==Mode::Textures {"Keine Texturänderung"} else {"Keine Höhenänderung; bei kleinem Pinsel gegebenenfalls den Radius erhöhen"}.into();}
+        if count>0 { self.message=format!("Brush stroke: {count} tile(s) · Ctrl+Z to undo · Ctrl+S to save"); }
+        else {self.message=if self.mode==Mode::Textures {"No texture change"} else {"No height change; increase the radius if the brush is small"}.into();}
         if let Some(error)=stroke.error {self.message=if count>0 {format!("{} · {error}",self.message)} else {error};}
-        if self.mode==Mode::Textures {log::info!("Texturpinsel · Ebene {} '{}' · {}",self.texture_layer,self.texture_name,self.message);}
+        if self.mode==Mode::Textures {log::info!("Texture brush · Layer {} '{}' · {}",self.texture_layer,self.texture_name,self.message);}
     }
     pub fn change_tile(&mut self,world:&World,value:f64,level:bool) {
         self.finish(world);
-        let Some(key)=self.tile else { self.message="Zuerst Tile auswählen".into(); return; };
+        let Some(key)=self.tile else { self.message="Select tile first".into(); return; };
         let s=omsi_map::tile_size(); let at=DVec3::new((key.0 as f64+0.5)*s,(key.1 as f64+0.5)*s,0.0);
         let before=if self.blend {
             match footprint(world,at,s/std::f64::consts::SQRT_2+21.0) { Ok(t)=>t,Err(e)=>{self.message=e;return;} }
         } else {match read_terrain(world,key) {Ok(t)=>[(key,t)].into_iter().collect(),Err(e)=>{self.message=e;return;}}};
-        if !before.contains_key(&key) { self.message="Gewähltes Tile ist nicht verfügbar".into();return; }
+        if !before.contains_key(&key) { self.message="Selected tile is unavailable".into();return; }
         let after=tile_height(&before,key,value,level,self.blend);
         { let mut edits=world.terrain_edits.lock(); for (&k,t) in &after { edits.insert(k,t.clone());self.pending.insert(k); } }
         self.remember(before,after);
-        self.message=if level { format!("Tile ({},{}) auf {:.2} m gesetzt",key.0,key.1,value) }
-            else { format!("Tile ({},{}) um {value:+.2} m verschoben",key.0,key.1) };
+        self.message=if level { format!("Tile ({},{}) set to {:.2} m",key.0,key.1,value) }
+            else { format!("Tile ({},{}) moved by {value:+.2} m",key.0,key.1) };
     }
     pub fn undo_redo(&mut self,world:&World,redo:bool) {
         self.finish(world);
         let stack=if redo { &self.redo } else { &self.undo };
-        let Some(change)=stack.last() else { self.message="Keine Geländeänderung verfügbar".into(); return; };
+        let Some(change)=stack.last() else { self.message="No terrain change available".into(); return; };
         let expected=if redo { &change.before } else { &change.after };
         for (key,t) in expected {
             if read_terrain(world,*key).as_ref()!=Ok(t) {
-                self.message="Neuere Geländeänderung aus anderem Werkzeug: diese zuerst dort rückgängig machen".into();return;
+                self.message="Newer terrain change from another tool: undo it there first".into();return;
             }
         }
         let expected_masks=if redo {&change.before_masks} else {&change.after_masks};
         for (key,mask) in expected_masks {
             if crate::ground_paint::read(world,*key).as_ref()!=Ok(mask) {
-                self.message="Bodentexturen wurden zwischenzeitlich geändert; nichts rückgängig gemacht".into();return;
+                self.message="Ground textures have changed; nothing undone".into();return;
             }
         }
         let change=if redo { self.redo.pop().unwrap() } else { self.undo.pop().unwrap() };
@@ -341,7 +341,7 @@ impl TerrainEditor {
         let masks=if redo {&change.after_masks} else {&change.before_masks};
         {let mut edits=world.ground_paint_edits.lock();for (&key,mask) in masks {edits.insert(key,mask.clone());self.pending.insert(key.0);}}
         if redo { self.undo.push(change); } else { self.redo.push(change); }
-        self.message=if redo { "Geländeänderung wiederholt" } else { "Geländeänderung rückgängig" }.into();
+        self.message=if redo { "Terrain change redone" } else { "Terrain change undone" }.into();
     }
     pub fn choose_layer(&mut self,world:&World,layer:usize) {
         let defs=crate::ground_paint::layers(world);if let Some(def)=defs.get(layer) {

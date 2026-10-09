@@ -174,14 +174,14 @@ impl SplineEditor {
     pub fn describe(&self, world: &World) -> String {
         if let Some((message, _)) = self.connection_status() { return message.replace('\n', " · "); }
         if let Some((p, _)) = &self.start {
-            return format!("Start {:.2}/{:.2}/{:.2}: Ziel anvisieren und Umschalt+G drücken · B bricht ab", p.x, p.y, p.z);
+            return format!("Start {:.2}/{:.2}/{:.2}: point at target and press Shift+G · B cancels", p.x, p.y, p.z);
         }
         let Some((key, s)) = self.selected.and_then(|k| world.spline_edits.lock().current(k).map(|s| (k, s))) else {
-            return "Keine Straße ausgewählt".into();
+            return "No road selected".into();
         };
-        if s.deleted { return format!("Spline {} gelöscht · Strg+Z stellt ihn wieder her", key.1); }
+        if s.deleted { return format!("Spline {} deleted · Ctrl+Z restores it", key.1); }
         let name = s.file.rsplit(['/', '\\']).next().unwrap_or(&s.file);
-        format!("Spline {} · {} · Tile ({},{}) · Länge {:.2} m · Radius {:.2} m · Steigung {:.2}/{:.2}% · Höhe {:.2} m",
+        format!("Spline {} · {} · Tile ({},{}) · Length {:.2} m · Radius {:.2} m · Gradient {:.2}/{:.2}% · Height {:.2} m",
             key.1, name, key.0.0, key.0.1, s.length, s.radius, s.grad_start, s.grad_end, s.pos[2])
     }
 
@@ -202,7 +202,7 @@ impl SplineEditor {
     }
 
     pub fn replace_connection(&mut self, world: &World) -> String {
-        if !self.connection_can_replace() { return "Zuerst zwei Splines mit belegtem Anschluss auswählen".into(); }
+        if !self.connection_can_replace() { return "Select two splines with an occupied connection first".into(); }
         world.collect_editor_splines();
         self.connection.as_mut().unwrap().replace_links = true;
         self.refresh_connection(world);
@@ -223,12 +223,12 @@ impl SplineEditor {
         let connection = self.connection.as_ref()?;
         match (connection.target, &connection.preview, &connection.error) {
             (Some(target), Some(preview), _) => Some((format!(
-                "Spline {} ↔ {} · Abstand {:.2} m\n{}\nVerbinden anklicken oder G/Enter drücken",
+                "Spline {} ↔ {} · Distance {:.2} m\n{}\nClick Connect or press G/Enter",
                 connection.source.1, target.1, preview.gap,
-                if connection.replace_links { "Alte Anschlüsse werden ersetzt · Strg+Z rückgängig" } else { "Beide Randpunkte geprüft · Vorschau hellblau" }), true)),
+                if connection.replace_links { "Old connections will be replaced · Ctrl+Z to undo" } else { "Both edge points checked · Preview in light blue" }), true)),
             (Some(target), _, Some(error)) => Some((format!("Spline {} ↔ {}\n{error}\n{}", connection.source.1, target.1,
-                if self.connection_can_replace() { "Anschluss ersetzen anklicken oder Strg+G drücken" } else { "Anderen Spline wählen oder abbrechen" }), false)),
-            _ => Some((format!("Spline {} ist blau markiert\nJetzt den zweiten Spline anklicken", connection.source.1), false)),
+                if self.connection_can_replace() { "Click Replace connection or press Ctrl+G" } else { "Choose another spline or cancel" }), false)),
+            _ => Some((format!("Spline {} is marked in blue\nNow click the second spline", connection.source.1), false)),
         }
     }
 
@@ -239,7 +239,7 @@ impl SplineEditor {
             return self.confirm_connection(world);
         }
         let Some(source) = self.selected.filter(|key| world.spline_edits.lock().current(*key).is_some_and(|s| !s.deleted)) else {
-            return "Ersten Spline anklicken, dann G für Verbinden drücken".into();
+            return "Click the first spline, then press G to connect".into();
         };
         self.start = None;
         self.finish_drag();
@@ -262,25 +262,25 @@ impl SplineEditor {
         let result = target.map(|target| {
             let mut preview = {
                 let edits = world.spline_edits.lock();
-                let (Some(a), Some(b)) = (edits.current(source), edits.current(target)) else { return Err("Spline nicht mehr verfügbar".into()) };
+                let (Some(a), Some(b)) = (edits.current(source), edits.current(target)) else { return Err("Spline no longer available".into()) };
                 let (x, y, _) = closest_ends(source.0, &a, target.0, &b);
                 occupied = (x.link(&a) != 0 && x.link(&a) != b.id) || (y.link(&b) != 0 && y.link(&b) != a.id);
                 connection_plan(&edits, &loaded, index.as_deref(), source, target, replace_links, allow_transition)?
             };
-            let original = world.spline_edits.lock().current(source).ok_or("Spline nicht mehr verfügbar")?;
-            let source_type = world.spline_type(&original.file).ok_or("Quellprofil nicht gefunden")?;
-            let target_type = world.spline_type(&preview.target.file).ok_or("Zielprofil nicht gefunden")?;
+            let original = world.spline_edits.lock().current(source).ok_or("Spline no longer available")?;
+            let source_type = world.spline_type(&original.file).ok_or("Source profile not found")?;
+            let target_type = world.spline_type(&preview.target.file).ok_or("Target profile not found")?;
             align_connection_edges(source.0, &original, &source_type.def, target.0, &target_type.def, &mut preview, allow_transition)?;
             for tile in connection_tiles(source, target, &preview.source) {
                 // The renderer already supports roads over tile edges. Keep their record
                 // and attachment index in the original tile, and rebuild both sides.
                 if (tile.0 - source.0.0).abs() > 1 || (tile.1 - source.0.1).abs() > 1 {
-                    return Err("Anschluss reicht zu weit; nähere Spline-Enden wählen".into());
+                    return Err("Connection too long; choose closer spline ends".into());
                 }
                 if world.tile_source(tile.0, tile.1).is_none() {
-                    return Err("Anschluss verlässt die Karte".into());
+                    return Err("Connection leaves the map".into());
                 }
-                if !loaded.contains(&tile) { return Err("Beide Splines und den Zwischenraum zuerst laden".into()); }
+                if !loaded.contains(&tile) { return Err("Load both splines and the space between them first".into()); }
             }
             Ok(preview)
         });
@@ -300,9 +300,9 @@ impl SplineEditor {
 
     pub fn confirm_connection(&mut self, world: &World) -> String {
         self.refresh_connection(world);
-        let Some(mut connection) = self.connection.take() else { return "Zuerst G auf dem ersten Spline drücken".into() };
+        let Some(mut connection) = self.connection.take() else { return "Press G on the first spline first".into() };
         let (Some(target), Some(preview)) = (connection.target, connection.preview.take()) else {
-            let message = connection.error.clone().unwrap_or_else(|| "Zweiten Spline anklicken, dann Verbinden wählen".into());
+            let message = connection.error.clone().unwrap_or_else(|| "Click second spline, then choose Connect".into());
             self.connection = Some(connection);
             return message;
         };
@@ -310,17 +310,17 @@ impl SplineEditor {
         let before = {
             let edits = world.spline_edits.lock();
             let (Some(a), Some(b)) = (edits.current(source), edits.current(target)) else {
-                return "Spline nicht mehr verfügbar; Verbindung abgebrochen".into();
+                return "Spline no longer available; connection cancelled".into();
             };
             let mut before = vec![(source, a), (target, b)];
             for (key, _) in &preview.neighbors {
-                let Some(old) = edits.current(*key) else { return "Alter Nachbar nicht mehr verfügbar; Verbindung abgebrochen".into() };
+                let Some(old) = edits.current(*key) else { return "Old neighbour no longer available; connection cancelled".into() };
                 before.push((*key, old));
             }
             before
         };
         if before[0].1 == preview.source && before[1].1 == preview.target && preview.neighbors.is_empty() {
-            return "Diese Spline-Enden sind bereits verbunden".into();
+            return "These spline ends are already connected".into();
         }
         self.remember(before);
         let tiles = connection_tiles(source, target, &preview.source);
@@ -333,7 +333,7 @@ impl SplineEditor {
         edits.dirty_tiles.extend(tiles);
         edits.dirty = true;
         self.selected = Some(source);
-        format!("Splines {} und {} verbunden · Strg+Z rückgängig · Strg+S speichern", source.1, target.1)
+        format!("Splines {} and {} connected · Ctrl+Z to undo · Ctrl+S to save", source.1, target.1)
     }
 
     pub fn connection_markers(&self, world: &World) -> Vec<(DVec3, [f32; 3], f32)> {
@@ -362,7 +362,7 @@ impl SplineEditor {
     }
 
     fn set(&mut self, world: &World, key: Key, s: MapSpline) -> Option<String> {
-        if !s.deleted && !inside_tile(&s) { return Some("Diese Bearbeitung überschreitet die Tile-Grenze. G verbindet Enden; Umschalt+G erzeugt eine eigene Strecke".into()); }
+        if !s.deleted && !inside_tile(&s) { return Some("This edit crosses the tile boundary. G connects ends; Shift+G creates a separate road".into()); }
         let old = world.spline_edits.lock().current(key)?;
         if old == s { return Some(self.describe(world)); }
         if self.drag_offset.is_none() { self.remember(vec![(key, old)]); }
@@ -378,9 +378,9 @@ impl SplineEditor {
     pub fn apply(&mut self, world: &World, action: &Action) -> Option<String> {
         if self.connection_active() && matches!(action, Action::Straight | Action::SplineUndo) {
             self.cancel_connection();
-            return Some("Verbindung abgebrochen; nichts verändert".into());
+            return Some("Connection cancelled; nothing changed".into());
         }
-        if self.connection_active() { return Some("Erst Verbinden oder Abbrechen wählen".into()); }
+        if self.connection_active() { return Some("Choose Connect or Cancel first".into()); }
         if matches!(action, Action::SplineUndo) { return Some(self.undo(world)); }
         if matches!(action, Action::Straight) && self.start.take().is_some() {
             return Some("Spline creation cancelled".into());
@@ -431,7 +431,7 @@ impl SplineEditor {
                 let next = (1..=files.len()).map(|n| &files[(i + n) % files.len()])
                     .find(|f| world.spline_type(f).is_some_and(|t| !t.def.only_editor && !t.def.profiles.is_empty()));
                 if s.profile_transitions.iter().any(Option::is_some) {
-                    return Some("Profilwechsel: Übergangsverbindung zuerst rückgängig machen".into());
+                    return Some("Profile change: undo the transition connection first".into());
                 }
                 s.file = next?.clone();
             }
@@ -458,15 +458,15 @@ impl SplineEditor {
     pub(crate) fn can_undo(&self)->bool{!self.undo.is_empty()}
 
     pub fn undo(&mut self, world: &World) -> String {
-        if self.cancel_connection() { return "Verbindung abgebrochen; nichts verändert".into(); }
+        if self.cancel_connection() { return "Connection cancelled; nothing changed".into(); }
         self.start = None;
         if let Some(before) = self.undo.last() {
             let terrain = world.terrain_edits.lock();
             if before.terrain_after.iter().any(|(key,t)|terrain.get(key)!=Some(t)) {
-                return "Neuere Gelände-Pinseländerung zuerst im Gelände-Modus rückgängig machen".into();
+                return "Undo the newer terrain brush change in terrain mode first".into();
             }
         }
-        let Some(before) = self.undo.pop() else { return "Keine Aktion zum Rückgängigmachen".into() };
+        let Some(before) = self.undo.pop() else { return "No action to undo".into() };
         let selection = before.splines.first().map(|(key, _)| *key).or(self.selected);
         self.drag_offset = None;
         let terrain_keys: Vec<_> = before.terrain.iter().map(|(key, _)| *key).collect();
@@ -488,14 +488,14 @@ impl SplineEditor {
     }
 
     pub fn split(&mut self, world: &World, at: Option<DVec3>) -> String {
-        let Some(at) = at else { return "Auf die Teilungsstelle zeigen, dann F7 drücken".into() };
+        let Some(at) = at else { return "Point at the split location, then press F7".into() };
         let Some((key, s)) = self.selected.and_then(|k| world.spline_edits.lock().current(k).filter(|s| !s.deleted).map(|s| (k, s))) else {
-            return "Zuerst einen Spline auswählen".into();
+            return "Select a spline first".into();
         };
         let c = curve(key.0, &s);
         let distance = nearest_station(&c, at);
         if distance < 0.5 || s.length - distance < 0.5 || (c.point_at(distance).truncate() - at.truncate()).length() > 15.0 {
-            return "Teilungsstelle muss auf dem Spline und mindestens 0,5 m von seinen Enden liegen".into();
+            return "Split location must lie on the spline, at least 0.5 m from its ends".into();
         }
         let Some(id) = world.allocate_editor_id() else { return "No free map ID".into() };
         let mut first = curve_part(&s, 0.0, distance);
@@ -512,7 +512,7 @@ impl SplineEditor {
                     if (curve(k.0, &p).point_at(0.0) - c.end_point()).length() < 2.0 { neighbor = Some((*k, p)); break; }
                 }
             }
-            if neighbor.is_none() { return "Nachbar-Spline zuerst laden; nichts verändert".into(); }
+            if neighbor.is_none() { return "Load neighbouring spline first; nothing changed".into(); }
         }
         let mut deleted = second.clone(); deleted.deleted = true;
         let mut before = vec![(key, s), ((key.0, id), deleted)];
@@ -531,28 +531,28 @@ impl SplineEditor {
         }
         edits.dirty = true;
         edits.dirty_tiles.insert(key.0);
-        "Spline geteilt; Verlauf und Höhe erhalten · Strg+Z macht beide Teile rückgängig".into()
+        "Spline split; shape and height kept · Ctrl+Z undoes both parts".into()
     }
 
     /// Fit short, connected cubic sections to the unmodified terrain. Horizontal
     /// curves, texture distance, attachment indices and the original first ID survive.
     pub fn fit_terrain(&mut self, world: &World) -> String {
-        let Some(key) = self.selected else { return "Zuerst einen Spline auswählen".into() };
+        let Some(key) = self.selected else { return "Select a spline first".into() };
         let Some(s) = world.spline_edits.lock().current(key).filter(|s| !s.deleted) else {
-            return "Zuerst einen Spline auswählen".into();
+            return "Select a spline first".into();
         };
         let c = curve(key.0, &s);
         let count = (s.length / 5.0).ceil().clamp(1.0, 256.0) as usize;
-        let Some(ty) = world.spline_type(&s.file) else { return "Straßenprofil nicht gefunden".into(); };
+        let Some(ty) = world.spline_type(&s.file) else { return "Road profile not found".into(); };
         let o = origin(key.0).extend(0.0);
         let mut profile = Roadbed::default();
         profile.add_mesh(&omsi_geometry::build_spline_mesh(&ty.def, &c, s.mirror, o), o);
-        if profile.faces.is_empty() { return "Straßenprofil hat keine sichtbare Fläche".into(); }
+        if profile.faces.is_empty() { return "Road profile has no visible surface".into(); }
         let mut heights = Vec::new();
         for i in 0..=count {
             let p = c.point_at(s.length * i as f64 / count as f64);
             let Some(h) = world.editor_terrain_height(p.x, p.y) else {
-                return "Gelände nicht vollständig geladen; nichts verändert".into();
+                return "Terrain not fully loaded; nothing changed".into();
             };
             heights.push(fitted_height(h, p, &profile));
         }
@@ -566,7 +566,7 @@ impl SplineEditor {
             pieces[i].next_id = if i + 1 == pieces.len() { s.next_id } else { pieces[i + 1].id };
         }
         if pieces.iter().any(|p| !inside_tile(p)) {
-            return "Abschnitt verlässt sein Tile; zuerst kürzere Stücke erzeugen".into();
+            return "Section leaves its tile; create shorter sections first".into();
         }
         let roadbed = match self.prepare_terrain(world, &pieces.iter().map(|s| (key.0, s.clone())).collect::<Vec<_>>(), 2.0) {
             Ok(plan) => plan,
@@ -584,7 +584,7 @@ impl SplineEditor {
                     }
                 }
             }
-            if neighbor.is_none() { return "Nachbar-Spline zuerst laden; nichts verändert".into(); }
+            if neighbor.is_none() { return "Load neighbouring spline first; nothing changed".into(); }
         }
         let mut before = vec![(key, s)];
         for part in pieces.iter().skip(1) {
@@ -612,37 +612,37 @@ impl SplineEditor {
         edits.dirty_tiles.insert(key.0);
         drop(edits);
         self.commit_terrain(world, roadbed.after);
-        format!("Höhe und Straßenränder angepasst: {} Abschnitte · F8 Rand glätten, Umschalt+F8 breiter · Strg+Z rückgängig", pieces.len())
+        format!("Height and road edges adjusted: {} sections · F8 smooths shoulder, Shift+F8 wider · Ctrl+Z to undo", pieces.len())
     }
 
     /// Shape the terrain under the actual rendered surface, including its profile,
     /// cant, mirror and skew. Terrain fitting creates a group so smoothing also covers its subdivisions.
     pub fn smooth_road(&mut self, world: &World, wide: bool) -> String {
-        let Some(selected) = self.selected else { return "Zuerst eine Straße auswählen, dann F8 drücken oder Rand glätten anklicken".into() };
+        let Some(selected) = self.selected else { return "Select a road first, then press F8 or click Smooth shoulder".into() };
         let keys = if self.fitted_group.contains(&selected) { self.fitted_group.clone() } else { vec![selected] };
         let roads: Vec<_> = {
             let edits = world.spline_edits.lock();
             keys.iter().filter_map(|key| edits.current(*key).filter(|s| !s.deleted).map(|s| (key.0, s))).collect()
         };
-        if roads.is_empty() { return "Zuerst eine vorhandene Straße auswählen".into(); }
+        if roads.is_empty() { return "Select an existing road first".into(); }
         let shoulder = if wide { 6.0 } else { 2.0 };
         let plan = match self.prepare_terrain(world, &roads, shoulder) { Ok(plan) => plan, Err(error) => return error };
-        if plan.after.is_empty() { return "Straßenränder sind bereits angepasst".into(); }
+        if plan.after.is_empty() { return "Road edges are already adjusted".into(); }
         let count = plan.after.len();
         self.remember_with_terrain(Vec::new(), plan.before);
         self.commit_terrain(world, plan.after);
-        format!("Straßenrand geglättet: {} Abschnitt(e), {shoulder:.0} m weicher Übergang, {count} Tile(s) · Strg+Z rückgängig · Strg+S speichern", roads.len())
+        format!("Road shoulder smoothed: {} section(s), {shoulder:.0} m blend, {count} tile(s) · Ctrl+Z to undo · Ctrl+S to save", roads.len())
     }
 
     fn prepare_terrain(&self, world: &World, roads: &[((i32, i32), MapSpline)], shoulder: f64) -> Result<TerrainPlan, String> {
         let mut bed = Roadbed::default();
         for (tile, road) in roads {
-            let ty = world.spline_type(&road.file).ok_or_else(|| format!("Straßenprofil nicht gefunden: {}", road.file))?;
+            let ty = world.spline_type(&road.file).ok_or_else(|| format!("Road profile not found: {}", road.file))?;
             let o = origin(*tile).extend(0.0);
             let mesh = omsi_geometry::build_spline_mesh(&ty.def, &curve(*tile, road), road.mirror, o);
             bed.add_mesh(&mesh, o);
         }
-        if bed.faces.is_empty() { return Err("Straßenprofil hat keine Fläche zum Glätten".into()); }
+        if bed.faces.is_empty() { return Err("Road profile has no surface to smooth".into()); }
         let loaded: HashMap<_, _> = world.loaded_tiles().into_iter().filter_map(|key| world.editor_terrain_tile(key).map(|t| (key, t))).collect();
         let guard = loaded.values().map(|t| omsi_map::tile_size() / t.cells.max(1) as f64).fold(0.0f64, f64::max) * std::f64::consts::SQRT_2;
         let reach = guard + shoulder;
@@ -653,14 +653,14 @@ impl SplineEditor {
             for ty in ((bounds[1] - reach) / size).floor() as i32..=((bounds[3] + reach) / size).floor() as i32 {
                 let key = (tx, ty);
                 if !bed.touches_tile(key, reach) || world.tile_source(tx, ty).is_none() { continue; }
-                let t = loaded.get(&key).ok_or_else(|| format!("Straße und Rand-Tile ({tx},{ty}) zuerst laden; nichts verändert"))?;
+                let t = loaded.get(&key).ok_or_else(|| format!("Load road and edge tile ({tx},{ty}) first; nothing changed"))?;
                 if t.cells == 0 || t.heights.len() != t.samples() * t.samples() || t.heights.iter().any(|h| !h.is_finite()) {
-                    return Err(format!("Gelände von Tile ({tx},{ty}) enthält ungültige Höhen; nichts verändert"));
+                    return Err(format!("Terrain of tile ({tx},{ty}) contains invalid heights; nothing changed"));
                 }
                 terrain.insert(key, t.clone());
             }
         }
-        if terrain.is_empty() { return Err("Gelände zuerst laden; nichts verändert".into()); }
+        if terrain.is_empty() { return Err("Load terrain first; nothing changed".into()); }
         Ok(terrain_plan(&bed, &terrain, guard, shoulder))
     }
 
@@ -679,16 +679,16 @@ impl SplineEditor {
     /// Branch from the selected curved road at the point the camera aims at. Use its
     /// actual profile edge and local tangent, rather than the road's start heading.
     pub fn branch(&mut self, world: &World, at: Option<DVec3>, side: f64) -> String {
-        let Some(at) = at else { return "Auf die Anschlussstelle zeigen, dann R drücken".into() };
+        let Some(at) = at else { return "Point at the connection location, then press R".into() };
         let Some((key, s)) = self.selected.and_then(|k| world.spline_edits.lock().current(k).filter(|s| !s.deleted).map(|s| (k, s))) else {
-            return "Zuerst die vorhandene Straße auswählen".into();
+            return "Select the existing road first".into();
         };
         let c = curve(key.0, &s);
         let station = nearest_station(&c, at);
         if (c.point_at(station).truncate() - at.truncate()).length() > 15.0 {
-            return "Auf einen Punkt der ausgewählten Straße zeigen".into();
+            return "Point at a location on the selected road".into();
         }
-        let Some(ty) = world.spline_type(&s.file) else { return "Straßenart nicht gefunden".into() };
+        let Some(ty) = world.spline_type(&s.file) else { return "Road type not found".into() };
         let (left, right) = profile_edges(&ty.def);
         let edge = if side < 0.0 { left } else { right };
         let start = c.offset_point(station, edge.0, edge.1);
@@ -697,7 +697,7 @@ impl SplineEditor {
         end.z = world.editor_terrain_height(end.x, end.y).map(|h| h + 0.05).unwrap_or(start.z);
         let result = self.add(world, &s.file, start, end, 0.0);
         if result.starts_with("New spline") {
-            format!("{result} · seitlicher Anschluss; für eine T-Kreuzung mit KI ein Kreuzungsobjekt einsetzen")
+            format!("{result} · Side connection; place a junction object for a T-junction with AI")
         } else { result }
     }
 
@@ -714,9 +714,9 @@ impl SplineEditor {
     /// Snap the free end to another road's endpoint or profile edge. A circular arc
     /// preserves the start tangent; it is a geometry tool, not an AI junction builder.
     pub fn snap_end(&mut self, world: &World, at: Option<DVec3>) -> String {
-        let Some(at) = at else { return "Auf die Zielstraße zeigen, dann H drücken".into() };
+        let Some(at) = at else { return "Point at the target road, then press H".into() };
         let Some((key, s)) = self.selected.and_then(|k| world.spline_edits.lock().current(k).filter(|s| !s.deleted).map(|s| (k, s))) else {
-            return "Zuerst den anzuschließenden Spline auswählen".into();
+            return "Select the spline to connect first".into();
         };
         world.collect_editor_splines();
         let loaded = world.loaded_tiles();
@@ -742,7 +742,7 @@ impl SplineEditor {
             let distance = (target.truncate() - at.truncate()).length();
             if distance < 12.0 && best.as_ref().is_none_or(|(d, _)| distance < *d) { best = Some((distance, target)); }
         }
-        let Some((_, target)) = best else { return "Keine andere Straße an der Zielstelle gefunden".into() };
+        let Some((_, target)) = best else { return "No other road found at the target".into() };
         match arc_to(&s, key.0, target) {
             Ok(part) => self.set(world, key, part).unwrap_or_default(),
             Err(e) => e,
@@ -752,7 +752,7 @@ impl SplineEditor {
     pub fn generate(&mut self, world: &World, at: Option<DVec3>) -> String {
         self.cancel_connection();
         self.finish_drag();
-        let Some(mut at) = at else { return "Auf das Gelände zeigen und Umschalt+G drücken".into() };
+        let Some(mut at) = at else { return "Point at the terrain and press Shift+G".into() };
         at.z = world.editor_terrain_height(at.x, at.y).unwrap_or(at.z) + 0.05;
         if let Some((start, file)) = self.start.clone() {
             let msg = self.add(world, &file, start, at, 0.0);
@@ -760,7 +760,7 @@ impl SplineEditor {
             return msg;
         }
         let file = self.selected.and_then(|k| world.spline_edits.lock().current(k)).map(|s| s.file).or_else(|| self.catalog_file.clone());
-        let Some(file) = file else { return "P öffnet den Straßenkatalog; alternativ vorhandenen Spline auswählen".into(); };
+        let Some(file) = file else { return "P opens the road catalogue; alternatively select an existing spline".into(); };
         self.start = Some((at, file));
         self.describe(world)
     }
@@ -773,7 +773,7 @@ impl SplineEditor {
     pub fn cancel_generation(&mut self) { self.start = None; }
 
     pub(crate) fn junction_plan(&self,world:&World,key:Key,id:i64,point:DVec3,heading:f64,def:&omsi_scenery::Spline)->Result<MapSpline,String>{
-        let mut original=world.spline_edits.lock().current(key).ok_or("Straße nicht mehr geladen")?;
+        let mut original=world.spline_edits.lock().current(key).ok_or("Road no longer loaded")?;
         // Only a uniquely resolved, explicitly deleted spline may release this end.
         // Missing IDs may belong to live objects or unloaded neighbours.
         let c=curve(key.0,&original);let end=if c.start.distance(point)<c.end_point().distance(point){End::Start}else{End::Finish};
@@ -783,9 +783,9 @@ impl SplineEditor {
             let matches:Vec<_>=keys.into_iter().filter_map(|k|edits.current(k)).collect();
             if deleted_junction_neighbor(link,id,&matches){end.set_link(&mut original,0);log::info!("junction connection: spline {} releases deleted neighbour {}",key.1,link);}
         }
-        let ty=world.spline_type(&original.file).ok_or("Straßenprofil fehlt")?;
+        let ty=world.spline_type(&original.file).ok_or("Road profile missing")?;
         let fitted=junction_fit(key.0,&original,&ty.def,id,point,heading,def)?;
-        for tile in connection_tiles(key,key,&fitted){if world.tile_source(tile.0,tile.1).is_none(){return Err("Anschluss verlässt die Karte".into());}}
+        for tile in connection_tiles(key,key,&fitted){if world.tile_source(tile.0,tile.1).is_none(){return Err("Connection leaves the map".into());}}
         Ok(fitted)
     }
     pub(crate) fn junction_preview(world:&World,parts:&[(Key,MapSpline)])->Vec<[DVec3;2]>{
@@ -801,15 +801,15 @@ impl SplineEditor {
     }
 
     pub(crate) fn apply_sidewalk(&mut self,world:&World,mut pieces:Vec<((i32,i32),MapSpline)>,existing:Option<Key>,detach:bool)->Result<usize,String>{
-        if world.global.world_coordinates{return Err("Gehwege brauchen eine normale OMSI-Karte".into());}
-        if pieces.is_empty()||pieces.len()>4000{return Err("Ungültige Gehwegvorschau".into());}
+        if world.global.world_coordinates{return Err("Sidewalks require a standard OMSI map".into());}
+        if pieces.is_empty()||pieces.len()>4000{return Err("Invalid sidewalk preview".into());}
         let original=if let Some(key)=existing {
-            let s=world.spline_edits.lock().current(key).ok_or("Gehweg nicht mehr vorhanden")?;
-            if s.deleted{return Err("Gehweg wurde gelöscht".into());}
-            if !detach&&(s.prev_id!=0||s.next_id!=0){return Err("Gehweg ist verbunden. Zum Neuausrichten ausdrücklich Alte Gehweg-Anschlüsse lösen einschalten".into());}
-            if pieces[0].0!=key.0{return Err("Der Anfang des vorhandenen Gehwegs würde das Tile wechseln; als neuen Gehweg erzeugen".into());}
+            let s=world.spline_edits.lock().current(key).ok_or("Sidewalk no longer exists")?;
+            if s.deleted{return Err("Sidewalk has been deleted".into());}
+            if !detach&&(s.prev_id!=0||s.next_id!=0){return Err("Sidewalk is connected. Enable Disconnect old sidewalk links to realign it".into());}
+            if pieces[0].0!=key.0{return Err("Existing sidewalk start would change tiles; create as a new sidewalk".into());}
             let (tile,_)=world.editor_row_source(key.0)?;let ordinal=tile.splines.iter().position(|p|p.id==key.1);
-            if ordinal.is_some_and(|i|tile.spline_attachments.iter().any(|a|a.spline_index==i as i32)) {return Err("Gehweg besitzt angehängte Objekte; als neuen Gehweg erzeugen, damit deren Bezug erhalten bleibt".into());}
+            if ordinal.is_some_and(|i|tile.spline_attachments.iter().any(|a|a.spline_index==i as i32)) {return Err("Sidewalk has attached objects; create as new sidewalk to keep their references".into());}
             Some((key,s))
         }else{None};
         let mut neighbors:Vec<(Key,MapSpline,MapSpline)>=Vec::new();
@@ -818,20 +818,20 @@ impl SplineEditor {
             for id in links {let mut found=Vec::new();
                 for (_,tx,ty,_) in world.map_tiles(){let(mut tile,_)=world.editor_row_source((tx,ty))?;world.spline_edits.lock().overlay((tx,ty),&mut tile);
                     for s in tile.splines.into_iter().filter(|s|s.id==id&&!s.deleted){found.push((((tx,ty),id),s));}}
-                if found.len()!=1{return Err(format!("Alter Gehweg-Anschluss {id} fehlt oder ist mehrdeutig; unverändert"));}
+                if found.len()!=1{return Err(format!("Old sidewalk connection {id} missing or ambiguous; unchanged"));}
                 let(k,before)=found.pop().unwrap();let mut after=before.clone();
                 if after.prev_id==key.1{after.prev_id=0;}if after.next_id==key.1{after.next_id=0;}neighbors.push((k,before,after));
             }
         }}
         let mut checked=HashSet::new();
         for (tile,s) in &pieces {
-            if !valid_spline(s){return Err("Ungültige Gehweggeometrie".into());}
+            if !valid_spline(s){return Err("Invalid sidewalk geometry".into());}
             let c=curve(*tile,s);for i in 0..=8 {let t=tile_at(c.point_at(s.length*i as f64/8.0));
-                if checked.insert(t){let path=world.tile_source(t.0,t.1).ok_or("Gehweg verlässt die vorhandene Karte")?;let data=Tile::load(&path).map_err(|e|e.to_string())?;
-                    if data.version!=0&&data.version<14{return Err("Gehweg benötigt Tile-Version 14".into());}}
+                if checked.insert(t){let path=world.tile_source(t.0,t.1).ok_or("Sidewalk leaves the existing map")?;let data=Tile::load(&path).map_err(|e|e.to_string())?;
+                    if data.version!=0&&data.version<14{return Err("Sidewalk requires tile version 14".into());}}
             }
         }
-        for (i,(_,s)) in pieces.iter_mut().enumerate(){s.id=if i==0 {original.as_ref().map(|(k,_)|k.1).or_else(||world.allocate_editor_id())}else{world.allocate_editor_id()}.ok_or("Keine freie Spline-ID")?;
+        for (i,(_,s)) in pieces.iter_mut().enumerate(){s.id=if i==0 {original.as_ref().map(|(k,_)|k.1).or_else(||world.allocate_editor_id())}else{world.allocate_editor_id()}.ok_or("No free spline ID")?;
             if let Some((_,old))=&original{s.rules=old.rules.clone();}}
         let mut previous=0;
         for i in 0..pieces.len(){let end=pieces[i].1.next_id==-1;pieces[i].1.prev_id=previous;pieces[i].1.next_id=if end||i+1==pieces.len(){0}else{pieces[i+1].1.id};previous=if end{0}else{pieces[i].1.id};}
@@ -848,15 +848,15 @@ impl SplineEditor {
         if ty.def.only_editor || ty.def.profiles.is_empty() { return "Choose a visible road type".into(); }
         if omsi_map::world_coordinates() { return "Spline editing on world-coordinate maps is not supported yet".into(); }
         let length = (end - start).truncate().length();
-        if !length.is_finite() || !(0.5..=500.0).contains(&length) { return "Abstand muss 0,5 bis 500 m betragen".into(); }
+        if !length.is_finite() || !(0.5..=500.0).contains(&length) { return "Distance must be 0.5 to 500 m".into(); }
         let cuts = straight_tile_cuts(start, end);
         let mut sections = Vec::new();
         for pair in cuts.windows(2) {
             let a = start.lerp(end, pair[0]);
             let b = start.lerp(end, pair[1]);
             let tile = tile_at((a + b) * 0.5);
-            let Some(source) = world.tile_source(tile.0, tile.1) else { return "Die Strecke verlässt die Karte; nichts erzeugt".into() };
-            let Ok(base) = Tile::load(&source) else { return "Tile kann nicht gelesen werden".into() };
+            let Some(source) = world.tile_source(tile.0, tile.1) else { return "The road leaves the map; nothing created".into() };
+            let Ok(base) = Tile::load(&source) else { return "Cannot read tile".into() };
             if base.version != 0 && base.version < 14 { return "Spline editing needs a version 14 tile".into(); }
             let Some(id) = world.allocate_editor_id() else { return "No free map ID".into() };
             sections.push((tile, between(file, id, tile, a, b, offset + length * pair[0])));
@@ -881,7 +881,7 @@ impl SplineEditor {
         }
         edits.dirty = true;
         drop(edits);
-        format!("New spline: {count} Abschnitt(e) · Strg+S speichern · Karte danach neu laden")
+        format!("New spline: {count} section(s) · Ctrl+S to save · Then reload map")
     }
 
     pub fn begin_drag(&mut self, world: &World, ground: DVec3) {
@@ -1207,14 +1207,14 @@ fn align_connection_edges(source_tile: (i32, i32), original: &MapSpline, source_
     let width = source_edges[1].0 - source_edges[0].0;
     let target_width = target_edges[1].0 - target_edges[0].0;
     if !width.is_finite() || !target_width.is_finite() || width < 0.01 || target_width < 0.01 {
-        return Err("Beide Profile brauchen zwei sichtbare Seitenränder".into());
+        return Err("Both profiles need two visible side edges".into());
     }
     if (width - target_width).abs() > 0.01 && !allow_transition {
-        return Err(format!("Breiten {width:.2}/{target_width:.2} m: Profilübergang optional einschalten"));
+        return Err(format!("Widths {width:.2}/{target_width:.2} m: optionally enable profile transition"));
     }
     let reverse = preview.source_end == preview.target_end;
     if !compatible_sections(source_def, preview.source.mirror, target_def, preview.target.mirror, reverse) {
-        return Err("Profilformen passen nicht (z.B. anderer Bordstein). Passendes Übergangsprofil nötig".into());
+        return Err("Profile shapes do not match (e.g. different kerb). A matching transition profile is required".into());
     }
     // Recompute from the undeformed end, so repeated connect is idempotent.
     preview.source.profile_transitions[end] = None;
@@ -1230,13 +1230,13 @@ fn align_connection_edges(source_tile: (i32, i32), original: &MapSpline, source_
     });
     let lateral = offsets.iter().map(|d| d[0].abs()).fold(0.0f64, f64::max);
     let correction = offsets.iter().flatten().map(|v| v.abs()).fold(0.0f64, f64::max);
-    if correction > 50.0 || !correction.is_finite() { return Err("Profilübergang wäre zu groß".into()); }
+    if correction > 50.0 || !correction.is_finite() { return Err("Profile transition would be too large".into()); }
     if correction > 1e-7 {
         let available = preview.source.length * 0.5;
         let longitudinal=offsets.iter().map(|d|d[1].abs()).fold(0.0f64,f64::max);
         let required = (lateral * 5.0).max(longitudinal * 3.0).max(0.5);
         if required > available + 1e-6 {
-            return Err(format!("Für diesen Übergang mindestens {:.1} m langen Quell-Spline verwenden", required * 2.0));
+            return Err(format!("Use a source spline at least {:.1} m long for this transition", required * 2.0));
         }
         preview.source.profile_transitions[end] = Some(omsi_map::ProfileTransition {
             station: if end == 0 { 0.0 } else { preview.source.length },
@@ -1246,7 +1246,7 @@ fn align_connection_edges(source_tile: (i32, i32), original: &MapSpline, source_
     }
     let fitted = edge_points(source_tile, &preview.source, source_def, preview.source_end);
     if fitted.iter().zip(goal).any(|(a, b)| a.distance(b) > 0.001) {
-        return Err("Randpunkte konnten nicht bündig ausgerichtet werden".into());
+        return Err("Could not align edge points flush".into());
     }
     // Edges alone do not prove that the asphalt/curb vertices between them meet.
     // Check those too, including the renderer's cant clipping and skewed curves.
@@ -1269,7 +1269,7 @@ fn align_connection_edges(source_tile: (i32, i32), original: &MapSpline, source_
             let f = ((source_point - points[0]).dot(v) / v.length_squared().max(1e-12)).clamp(0.0, 1.0);
             source_point.distance(points[0] + v * f) <= 0.02
         });
-        if !matches { return Err("Innenprofil oder Querneigung passt nicht; passendes Übergangsprofil nötig".into()); }
+        if !matches { return Err("Inner profile or crossfall does not match; a matching transition profile is required".into()); }
     }
     // Existing connections at the far end must not be torn apart by a new fit.
     let far = if end == 0 { End::Finish } else { End::Start };
@@ -1277,7 +1277,7 @@ fn align_connection_edges(source_tile: (i32, i32), original: &MapSpline, source_
         let old = edge_points(source_tile, original, source_def, far);
         let new = edge_points(source_tile, &preview.source, source_def, far);
         if old.iter().zip(new).any(|(a, b)| a.distance(b) > 0.005) {
-            return Err("Der andere Anschluss würde sich lösen; zuerst einen freien Abschnitt verwenden".into());
+            return Err("The other connection would detach; use a free section first".into());
         }
     }
     Ok(())
@@ -1300,14 +1300,14 @@ fn arc_to(s: &MapSpline, tile: (i32, i32), target: DVec3) -> Result<MapSpline, S
     let d = (target - start).truncate();
     let forward = d.dot(dir);
     let side = d.dot(DVec2::new(dir.y, -dir.x));
-    if forward < 0.5 { return Err("Ziel liegt hinter dem Start; zuerst mit N/M ausrichten".into()); }
+    if forward < 0.5 { return Err("Target lies behind the start; align using N/M first".into()); }
     let (radius, length) = if side.abs() < 1e-6 { (0.0, forward) } else {
         let r = d.length_squared() / (2.0 * side);
-        if r.abs() < 20.0 { return Err("Kurve wäre enger als 20 m; Start verschieben oder drehen".into()); }
+        if r.abs() < 20.0 { return Err("Curve radius would be below 20 m; move or rotate start".into()); }
         let angle = (forward / r).atan2(1.0 - side / r);
         (r, r * angle)
     };
-    if !(0.5..=500.0).contains(&length) { return Err("Anschluss muss 0,5 bis 500 m lang sein".into()); }
+    if !(0.5..=500.0).contains(&length) { return Err("Connection must be 0.5 to 500 m long".into()); }
     let mut out = s.clone();
     out.radius = radius;
     out.length = length;
@@ -1328,7 +1328,7 @@ fn closest_ends(source_tile: (i32, i32), source: &MapSpline, target_tile: (i32, 
 /// carried with the pair so confirmation and undo commit them as one operation.
 fn connection_plan(edits: &Edits, loaded: &[(i32, i32)], index: Option<&crate::tiles::MapIndex>, source_key: Key, target_key: Key, replace: bool, allow_transition: bool) -> Result<ConnectionGeometry, String> {
     let (Some(source), Some(target)) = (edits.current(source_key), edits.current(target_key)) else {
-        return Err("Spline nicht mehr verfügbar".into());
+        return Err("Spline no longer available".into());
     };
     let mut preview = if !replace && !allow_transition {connection_geometry(source_key.0,&source,target_key.0,&target)?}
         else {connection_geometry_impl(source_key.0, &source, target_key.0, &target, replace, allow_transition)?};
@@ -1337,24 +1337,24 @@ fn connection_plan(edits: &Edits, loaded: &[(i32, i32)], index: Option<&crate::t
         let old_id = end.link(owner);
         if old_id == 0 || old_id == other_id { continue; }
         let keys: HashSet<_> = edits.originals.keys().chain(edits.added.keys()).filter(|key| key.1 == old_id).copied().collect();
-        if keys.len() > 1 { return Err(format!("Alter Anschluss {old_id} ist nicht eindeutig; unverändert")); }
+        if keys.len() > 1 { return Err(format!("Old connection {old_id} is ambiguous; unchanged")); }
         let Some(key) = keys.into_iter().next() else {
-            let Some(index) = index else { return Err("Alten Anschluss zuerst prüfen".into()) };
+            let Some(index) = index else { return Err("Check old connection first".into()) };
             if index.splines.contains_key(&old_id) {
-                return Err(format!("Alten Nachbar-Spline {old_id} zuerst zum Bearbeiten laden"));
+                return Err(format!("Load old neighbouring spline {old_id} for editing first"));
             }
             if index.tiles_failed != 0 {
-                return Err("Karte nicht vollständig gelesen; alten Anschluss unverändert lassen".into());
+                return Err("Map not fully read; leave old connection unchanged".into());
             }
             // Missing is established by the whole-map index, never by the cache
             // of loaded tiles alone. The user still has to confirm replacement.
             continue;
         };
         if key == source_key || key == target_key { continue; }
-        if !loaded.contains(&key.0) { return Err(format!("Alten Nachbar-Spline {old_id} zuerst laden")); }
-        let mut neighbor = neighbors.get(&key).cloned().or_else(|| edits.current(key)).ok_or_else(|| format!("Alter Nachbar-Spline {old_id} nicht verfügbar"))?;
+        if !loaded.contains(&key.0) { return Err(format!("Load old neighbouring spline {old_id} first")); }
+        let mut neighbor = neighbors.get(&key).cloned().or_else(|| edits.current(key)).ok_or_else(|| format!("Old neighbouring spline {old_id} unavailable"))?;
         let reciprocal: Vec<_> = [End::Start, End::Finish].into_iter().filter(|end| end.link(&neighbor) == owner.id).collect();
-        if reciprocal.len() > 1 { return Err(format!("Nachbar {old_id} hat zwei Rückanschlüsse; Verbindung nicht eindeutig")); }
+        if reciprocal.len() > 1 { return Err(format!("Neighbour {old_id} has two return links; connection ambiguous")); }
         if let Some(end) = reciprocal.first() {
             end.set_link(&mut neighbor, 0);
             neighbors.insert(key, neighbor);
@@ -1373,17 +1373,17 @@ fn connection_geometry(source_tile: (i32, i32), source: &MapSpline, target_tile:
 
 fn connection_geometry_impl(source_tile: (i32, i32), source: &MapSpline, target_tile: (i32, i32), target: &MapSpline, replace: bool, allow_transition: bool) -> Result<ConnectionGeometry, String> {
     if source.deleted || target.deleted || !valid_spline(source) || !valid_spline(target) {
-        return Err("Beide Splines müssen vorhanden und gültig sein".into());
+        return Err("Both splines must exist and be valid".into());
     }
-    if source.id == target.id { return Err("Zwei verschiedene Splines auswählen".into()); }
+    if source.id == target.id { return Err("Select two different splines".into()); }
     let b = curve(target_tile, target);
     let (source_end, target_end, gap) = closest_ends(source_tile, source, target_tile, target);
-    if gap > 50.0 { return Err("Spline-Enden sind mehr als 50 m auseinander".into()); }
+    if gap > 50.0 { return Err("Spline ends are more than 50 m apart".into()); }
     if !replace {
         for (spline, end, other_id) in [(source, source_end, target.id), (target, target_end, source.id)] {
             if ![0, other_id].contains(&end.link(spline)) {
-                return Err(format!("Spline {} {} belegt durch {}", spline.id,
-                    if end == End::Start { "Start" } else { "Ende" }, end.link(spline)));
+                return Err(format!("Spline {} {} occupied by {}", spline.id,
+                    if end == End::Start { "Start" } else { "End" }, end.link(spline)));
             }
         }
     }
@@ -1397,10 +1397,10 @@ fn connection_geometry_impl(source_tile: (i32, i32), source: &MapSpline, target_
     let desired_heading = target_end.heading(&b) + if same_end { 180.0 } else { 0.0 };
     let difference = (source_end.heading(&curve(source_tile, &fitted)) - desired_heading + 180.0).rem_euclid(360.0) - 180.0;
     if difference.abs() > if allow_transition {30.0} else {2.0} {
-        return Err(if allow_transition {"Endrichtungen weichen mehr als 30° ab; zusätzlichen Kurvenabschnitt einsetzen"}
-            else {"Endrichtungen passen nicht; Profil-/Kurvenübergang einschalten"}.into());
+        return Err(if allow_transition {"End directions differ by more than 30°; insert an additional curve section"}
+            else {"End directions do not match; enable profile / curve transition"}.into());
     }
-    if !valid_spline(&fitted) { return Err("Anschluss hat ungültige Werte".into()); }
+    if !valid_spline(&fitted) { return Err("Connection has invalid values".into()); }
     let mut linked_target = target.clone();
     source_end.set_link(&mut fitted, target.id);
     target_end.set_link(&mut linked_target, source.id);
@@ -1450,19 +1450,19 @@ fn deleted_junction_neighbor(link:i64,junction:i64,matches:&[MapSpline])->bool{
     link!=0&&link!=junction&&matches.len()==1&&matches[0].id==link&&matches[0].deleted
 }
 fn junction_fit(tile:(i32,i32),source:&MapSpline,source_def:&omsi_scenery::Spline,id:i64,point:DVec3,outward:f64,target_def:&omsi_scenery::Spline)->Result<MapSpline,String>{
-    if source.deleted||!valid_spline(source){return Err("Ungültige Straße".into());}
+    if source.deleted||!valid_spline(source){return Err("Invalid road".into());}
     let c=curve(tile,source);let end=if c.start.distance(point)<c.end_point().distance(point){End::Start}else{End::Finish};
-    let gap=end.point(&c).distance(point);if gap>50.0{return Err(format!("Straße {}: {:.2} m Abstand zum Arm (max. 50 m). Passende Straße auswählen",source.id,gap));}
-    if ![0,id].contains(&end.link(source)){return Err(format!("Straße {}: {} belegt durch ID {}. Aktiven Anschluss nicht überschrieben",source.id,if end==End::Start{"Start"}else{"Ende"},end.link(source)));}
+    let gap=end.point(&c).distance(point);if gap>50.0{return Err(format!("Road {}: {:.2} m distance to arm (max. 50 m). Select a matching road",source.id,gap));}
+    if ![0,id].contains(&end.link(source)){return Err(format!("Road {}: {} occupied by ID {}. Active connection not overwritten",source.id,if end==End::Start{"Start"}else{"End"},end.link(source)));}
     let mut fitted=fit_connection_endpoint(tile,source,end,point,0.0,0.0)?;
     let desired=outward+if end==End::Finish{180.0}else{0.0};
     let delta=(end.heading(&curve(tile,&fitted))-desired+180.0).rem_euclid(360.0)-180.0;
-    if delta.abs()>30.0{return Err("Anschlusswinkel über 30°; Straße oder Kreuzungsarm zunächst ausrichten".into());}
+    if delta.abs()>30.0{return Err("Connection angle above 30°; align road or junction arm first".into());}
     end.set_link(&mut fitted,id);
     let o=origin(tile);let target=MapSpline{id,pos:[point.x-o.x,point.y-o.y,point.z],heading:(outward+180.0).rem_euclid(360.0),length:1.0,..Default::default()};
     let mut preview=ConnectionGeometry{source:fitted,target,source_end:end,target_end:End::Start,gap,neighbors:Vec::new()};
     align_connection_edges(tile,source,source_def,tile,target_def,&mut preview,true)?;
-    if !valid_spline(&preview.source){return Err("Ungültiger Kreuzungsanschluss".into());}Ok(preview.source)
+    if !valid_spline(&preview.source){return Err("Invalid junction connection".into());}Ok(preview.source)
 }
 
 fn connection_tiles(source: Key, target: Key, fitted: &MapSpline) -> HashSet<(i32, i32)> {
@@ -1636,7 +1636,7 @@ pub fn rewrite(text: &str, edits: &HashMap<i64, MapSpline>, added: &[i64]) -> Re
         if lines.get(i).is_some_and(|l| body(l).trim().eq_ignore_ascii_case("[openomsi_editor_deleted]")) { i += 1; }
         while lines.get(i).is_some_and(|l| body(l).trim().eq_ignore_ascii_case("[openomsi_profile_transition]")) {
             if i + 12 > lines.len() || (1..=11).any(|n| body(lines[i + n]).trim().parse::<f64>().is_err()) {
-                return Err("Ungültiger gespeicherter Profilübergang; nichts geschrieben".into());
+                return Err("Invalid saved profile transition; nothing written".into());
             }
             i += 12;
         }
@@ -1874,10 +1874,10 @@ mod tests {
         let mut source = between("road.sli", 1, (0, 0), DVec3::new(50.0, 50.0, 0.0), DVec3::new(50.0, 60.0, 0.0), 0.0);
         let target = between("road.sli", 2, (0, 0), DVec3::new(50.0, 60.3, 0.0), DVec3::new(50.0, 80.0, 0.0), 0.0);
         source.next_id = 99;
-        assert!(connection_geometry((0, 0), &source, (0, 0), &target).unwrap_err().contains("belegt"));
+        assert!(connection_geometry((0, 0), &source, (0, 0), &target).unwrap_err().contains("occupied"));
         source.next_id = 0;
         let side = between("road.sli", 3, (0, 0), DVec3::new(50.0, 60.3, 0.0), DVec3::new(70.0, 60.3, 0.0), 0.0);
-        assert!(connection_geometry((0, 0), &source, (0, 0), &side).unwrap_err().contains("Endrichtungen"));
+        assert!(connection_geometry((0, 0), &source, (0, 0), &side).unwrap_err().contains("End directions"));
         assert_eq!(source.next_id, 0);
         assert_eq!(target.prev_id, 0);
     }
@@ -1983,7 +1983,7 @@ mod tests {
     #[test]
     fn replacement_previews_both_reciprocal_links_without_mutating_the_map() {
         let edits = replacement_fixture();
-        assert!(connection_plan(&edits, &[(0, 0)], None, ((0, 0), 1), ((0, 0), 2), false, false).unwrap_err().contains("belegt durch 9"));
+        assert!(connection_plan(&edits, &[(0, 0)], None, ((0, 0), 1), ((0, 0), 2), false, false).unwrap_err().contains("occupied by 9"));
         let preview = connection_plan(&edits, &[(0, 0)], None, ((0, 0), 1), ((0, 0), 2), true, false).unwrap();
         assert_eq!((preview.source.prev_id, preview.source.next_id), (8, 2));
         assert_eq!((preview.target.prev_id, preview.target.next_id), (1, 11));
@@ -2009,16 +2009,16 @@ mod tests {
         edits.originals.get_mut(&((0, 0), 2)).unwrap().prev_id = 0;
         let mut index = crate::tiles::MapIndex::default();
         index.splines.insert(99, crate::tiles::IndexedSpline { length: 10.0, map_chain_offset: None, prev: 1, next: 0 });
-        assert!(connection_plan(&edits, &[(0, 0)], Some(&index), ((0, 0), 1), ((0, 0), 2), true, false).unwrap_err().contains("99 zuerst"));
+        assert!(connection_plan(&edits, &[(0, 0)], Some(&index), ((0, 0), 1), ((0, 0), 2), true, false).unwrap_err().contains("99 for editing first"));
         index.splines.remove(&99);
         let preview = connection_plan(&edits, &[(0, 0)], Some(&index), ((0, 0), 1), ((0, 0), 2), true, false).unwrap();
         assert_eq!(preview.source.next_id, 2);
         assert!(preview.neighbors.is_empty());
         index.tiles_failed = 1;
-        assert!(connection_plan(&edits, &[(0, 0)], Some(&index), ((0, 0), 1), ((0, 0), 2), true, false).unwrap_err().contains("nicht vollständig"));
+        assert!(connection_plan(&edits, &[(0, 0)], Some(&index), ((0, 0), 1), ((0, 0), 2), true, false).unwrap_err().contains("not fully"));
         let mut neighbor = edits.current(((0, 0), 9)).unwrap(); neighbor.id = 99;
         edits.originals.insert(((1, 0), 99), neighbor);
-        assert!(connection_plan(&edits, &[(0, 0)], Some(&index), ((0, 0), 1), ((0, 0), 2), true, false).unwrap_err().contains("99 zuerst laden"));
+        assert!(connection_plan(&edits, &[(0, 0)], Some(&index), ((0, 0), 1), ((0, 0), 2), true, false).unwrap_err().contains("99 first"));
         assert_eq!(edits.current(((0, 0), 1)).unwrap().next_id, 99);
     }
 

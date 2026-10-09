@@ -11,15 +11,15 @@ pub(super) fn scenery_asset_path(root: &Path, reference: &str) -> PathBuf {
 
 pub(crate) fn scenery_definition(root: &Path, reference: &str) -> std::result::Result<(SceneryObject, PathBuf, Model, PathBuf), String> {
     let path = scenery_asset_path(root, reference);
-    if !omsi_cfg::vfs::is_file(&path) { return Err(format!("SCO-Datei fehlt: {}", path.display())); }
-    let sco = SceneryObject::load(&path).map_err(|e| format!("SCO-Datei {}: {e:#}", path.display()))?;
-    let sco_dir = path.parent().ok_or_else(|| format!("Ungültiger Objektpfad: {}", path.display()))?.to_path_buf();
+    if !omsi_cfg::vfs::is_file(&path) { return Err(format!("SCO file missing: {}", path.display())); }
+    let sco = SceneryObject::load(&path).map_err(|e| format!("SCO file {}: {e:#}", path.display()))?;
+    let sco_dir = path.parent().ok_or_else(|| format!("Invalid object path: {}", path.display()))?.to_path_buf();
     let (model, model_dir) = match &sco.model_file {
         Some(file) => {
             let path = omsi_cfg::resolve_path(&sco_dir, file);
-            if !omsi_cfg::vfs::is_file(&path) { return Err(format!("Modelldefinition fehlt: {}", path.display())); }
-            let model = Model::load(&path).map_err(|e| format!("Modelldefinition {}: {e:#}", path.display()))?;
-            let dir = path.parent().ok_or_else(|| format!("Ungültiger Modellpfad: {}", path.display()))?.to_path_buf();
+            if !omsi_cfg::vfs::is_file(&path) { return Err(format!("Model definition missing: {}", path.display())); }
+            let model = Model::load(&path).map_err(|e| format!("Model definition {}: {e:#}", path.display()))?;
+            let dir = path.parent().ok_or_else(|| format!("Invalid model path: {}", path.display()))?.to_path_buf();
             (model, dir)
         }
         None => (sco.model.clone(), sco_dir.clone()),

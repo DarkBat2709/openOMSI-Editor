@@ -39,13 +39,13 @@ impl Settings {
             (self.start, 0.0, 100000.0), (self.range, 0.0, 100000.0),
             (self.height, -20.0, 20.0), (self.rotation, -360.0, 360.0), (self.junction_gap, 0.0, 100.0)] {
             if !value.is_finite() || !(low..=high).contains(&value) {
-                return Err("Abstand oder Höhe liegt außerhalb des erlaubten Bereichs".into());
+                return Err("Spacing or height is outside the allowed range".into());
             }
         }
-        if !(1..=3).contains(&self.sides) { return Err("Mindestens eine Straßenseite wählen".into()); }
+        if !(1..=3).contains(&self.sides) { return Err("Choose at least one side of the road".into()); }
         for [a, b] in &self.manual_gaps {
             if !a.is_finite() || !b.is_finite() || *a < 0.0 || *b <= *a || *b > 100000.0 {
-                return Err("Ungültiger ausgesparter Bereich".into());
+                return Err("Invalid excluded area".into());
             }
         }
         Ok(())
@@ -111,7 +111,7 @@ fn same_file(a: &str, b: &str) -> bool { a.replace('\\', "/").eq_ignore_ascii_ca
 /// Recipes are loaded once. Never hold this lock while reserving IDs or loading assets.
 pub fn initialize(world: &World) -> Result<(), String> {
     if world.roadside_edits.lock().initialized { return Ok(()); }
-    if world.global.world_coordinates { return Err("Objektreihen brauchen eine normale OMSI-Karte".into()); }
+    if world.global.world_coordinates { return Err("Object rows require a standard OMSI map".into()); }
     let mut sources = HashMap::new(); let mut groups = Vec::new();
     for (_, x, y, path) in world.map_tiles() {
         if !omsi_cfg::vfs::is_file(&path) { continue; }
@@ -121,15 +121,15 @@ pub fn initialize(world: &World) -> Result<(), String> {
         let text = crate::editor::decode(&bytes).0;
         for group in read_groups(&text)? {
             group.settings.validate()?;
-            if group.start.0 != (x, y) { return Err("Objektreihe gehört zu einem anderen Tile".into()); }
-            if groups.iter().any(|g: &Group| g.id == group.id) { return Err("Doppelte Kennung einer Objektreihe".into()); }
+            if group.start.0 != (x, y) { return Err("Object row belongs to another tile".into()); }
+            if groups.iter().any(|g: &Group| g.id == group.id) { return Err("Duplicate object row ID".into()); }
             groups.push(group);
         }
         sources.insert((x, y), Source { tile: Arc::new(tile), editable: Arc::new(editable) });
     }
     let mut owned = HashSet::new();
     for group in &groups {
-        if group.rows.len() > LIMIT { return Err("Gespeicherte Objektreihe hat zu viele Einträge".into()); }
+        if group.rows.len() > LIMIT { return Err("Saved object row has too many entries".into()); }
         for row in &group.rows {
             let valid = sources.get(&row.tile).is_some_and(|source| source.tile.spline_attachments.iter().any(|native| {
                 native.id == row.id && same_file(&native.file, &group.file) && native.repeater.is_none()
@@ -137,7 +137,7 @@ pub fn initialize(world: &World) -> Result<(), String> {
                     && source.tile.splines.get(native.spline_index as usize).is_some_and(|s| s.id == row.spline)
             }));
             if !valid || !owned.insert((row.tile, row.id)) {
-                return Err(format!("Objektreihe {}: Anhang {} fehlt oder ist nicht eindeutig", group.id, row.id));
+                return Err(format!("Object row {}: attachment {} missing or ambiguous", group.id, row.id));
             }
         }
     }
@@ -209,17 +209,17 @@ fn walk(start: Segment, roads: &HashMap<Key, Segment>) -> Result<(Vec<Segment>, 
         }
         next.sort_by(|a, b| a.0.total_cmp(&b.0));
         if next.len() > 1 && (next[0].0 - next[1].0).abs() < 1e-5 {
-            return Err("Mehrdeutiger Straßenanschluss: zuerst die Verbindung prüfen".into());
+            return Err("Ambiguous road connection: check the connection first".into());
         }
         let Some((_, next)) = next.into_iter().next() else { break; };
         if !seen.insert(next.key) { return Ok((route, true)); }
-        if route.len() >= 500 { return Err("Mehr als 500 Splines: einen kürzeren Bereich wählen".into()); }
+        if route.len() >= 500 { return Err("More than 500 splines: choose a shorter range".into()); }
         route.push(next);
     }
     Ok((route, false))
 }
 fn route(start: Key, connected: bool, roads: &HashMap<Key, Segment>) -> Result<Vec<Segment>, String> {
-    let first = roads.get(&start).cloned().ok_or("Eine bearbeitbare Straße mit Fahrbahnwegen auswählen, keine Markierung")?;
+    let first = roads.get(&start).cloned().ok_or("Select an editable road with driving paths, not a marking")?;
     if !connected { return Ok(vec![first]); }
     let (forward, circle) = walk(first.clone(), roads)?;
     if circle { return Ok(forward); }
@@ -329,9 +329,9 @@ fn junction_gaps(route: &[Segment], roads: &HashMap<Key, Segment>, settings: &Se
 pub fn gap_station(world: &World, start: Key, settings: &Settings, point: DVec3) -> Result<f64, String> {
     initialize(world)?; let roads = road_segments(world, &current_tiles(world));
     let route = route(start, settings.connected, &roads)?;
-    let (station, distance, index, _) = Projection::new(&route).project(point.truncate(), 54.0).ok_or("Straße nicht gefunden")?;
+    let (station, distance, index, _) = Projection::new(&route).project(point.truncate(), 54.0).ok_or("Road not found")?;
     if distance > (route[index].edges.1 - route[index].edges.0) * 0.5 + 4.0 {
-        return Err("Die Lücke direkt auf der gewählten Straße markieren".into());
+        return Err("Mark the gap directly on the selected road".into());
     }
     Ok(station)
 }
@@ -352,15 +352,15 @@ fn existing_positions(world: &World, tiles: &HashMap<TileKey, Source>, file: &st
 fn station_points(route: &[Segment], settings: &Settings, file: &str, chain_offsets: &HashMap<Key, f64>) -> Result<Plan, String> {
     settings.validate()?;
     if route.is_empty() || route.iter().any(|s| !s.spline.length.is_finite() || s.spline.length <= 0.0) {
-        return Err("Straße hat keine gültige Länge".into());
+        return Err("Road has no valid length".into());
     }
     let length: f64 = route.iter().map(|s| s.spline.length).sum();
-    if !length.is_finite() { return Err("Straße hat keine gültige Länge".into()); }
+    if !length.is_finite() { return Err("Road has no valid length".into()); }
     let end = if settings.range > 0.0 { (settings.start + settings.range).min(length) } else { length };
-    if settings.start > end + 1e-6 { return Err("Startversatz liegt hinter dem Ende der Straße".into()); }
+    if settings.start > end + 1e-6 { return Err("Start offset is beyond the end of the road".into()); }
     let count = ((end - settings.start) / settings.interval + 1e-8).floor().max(0.0) as usize + 1;
     let sides = if settings.sides == 3 { 2 } else { 1 };
-    if count.saturating_mul(sides) > LIMIT { return Err("Mehr als 4000 Objekte: Abstand erhöhen oder Bereich verkürzen".into()); }
+    if count.saturating_mul(sides) > LIMIT { return Err("More than 4000 objects: increase spacing or shorten range".into()); }
     let mut plan = Plan { length, segments: route.len(), ..Default::default() };
     let (mut segment, mut distance) = (0, 0.0);
     for ordinal in 0..count {
@@ -410,7 +410,7 @@ pub fn plan(world: &World, start: Key, settings: &Settings, file: &str, excluded
     plan.skipped = before - plan.points.len();
     if settings.ground {
         for point in &mut plan.points {
-            let ground = world.editor_terrain_height(point.pos.x, point.pos.y).ok_or("Gelände für die Pfostenhöhe nicht verfügbar")?;
+            let ground = world.editor_terrain_height(point.pos.x, point.pos.y).ok_or("Terrain for post height not available")?;
             let new_height = ground + settings.height;
             point.row.offset[1] += new_height - point.pos.z; point.pos.z = new_height;
         }
@@ -423,7 +423,7 @@ fn install_plan(world: &World, group: &mut Group, plan: Plan) -> Result<(), Stri
     let existing: HashMap<_, _> = group.rows.iter().map(|r| ((r.ordinal, r.side), r.id)).collect();
     for mut point in plan.points {
         let id = existing.get(&(point.ordinal, point.side)).copied()
-            .or_else(|| world.allocate_editor_id()).ok_or("Keine freie Objektkennung")?;
+            .or_else(|| world.allocate_editor_id()).ok_or("No free object ID")?;
         point.row.id = id;
         rows.push(RowId { id, tile: point.key.0, spline: point.key.1, ordinal: point.ordinal, side: point.side });
         replacements.push((point.key.0, id, RowEdit { spline: point.key.1, row: point.row }));
@@ -450,10 +450,10 @@ pub fn apply(world: &World, start: Key, settings: Settings, file: String) -> Res
         .find(|g| g.start == start && same_file(&g.file, &file)).cloned();
     let excluded = existing.as_ref().map(|g| g.rows.iter().map(|r| r.id).collect()).unwrap_or_default();
     let preview = plan(world, start, &settings, &file, &excluded)?;
-    if preview.points.is_empty() && existing.is_none() { return Err("Keine freien Positionen: Lücken, Startversatz und vorhandene Objekte prüfen".into()); }
+    if preview.points.is_empty() && existing.is_none() { return Err("No free positions: check gaps, start offset and existing objects".into()); }
     let count = preview.points.len();
     let mut group = match existing { Some(mut group) => { group.settings = settings; group.file = file; group },
-        None => Group { id: world.allocate_editor_id().ok_or("Keine freie Reihenkennung")?, start, file, settings, rows: Vec::new() } };
+        None => Group { id: world.allocate_editor_id().ok_or("No free row ID")?, start, file, settings, rows: Vec::new() } };
     let id = group.id;
     let before = world.roadside_edits.lock().groups.clone();
     install_plan(world, &mut group, preview)?;
@@ -461,7 +461,7 @@ pub fn apply(world: &World, start: Key, settings: Settings, file: String) -> Res
     if let Some(old) = edits.groups.iter_mut().find(|g| g.id == id) { *old = group; } else { edits.groups.push(group); }
     // Changed settings alone also need a rewritten recipe, even when all native positions agree.
     mark(&mut edits, start.0);
-    log::info!("Objektreihe {id}: {count} Objekte eingesetzt"); Ok(count)
+    log::info!("Object row {id}: {count} objects placed"); Ok(count)
 }
 /// Rebuild the native records after road edits; never reset unrelated scenery objects.
 pub fn refresh(world: &World) -> Result<(), String> {
@@ -496,7 +496,7 @@ pub fn undo(world: &World) -> Result<(), String> {
     let rollback = world.roadside_edits.lock().clone();
     let (previous, current) = {
         let mut edits = world.roadside_edits.lock();
-        (edits.undo.pop().ok_or("Keine neue Objektreihe zum Rückgängigmachen")?, edits.groups.clone())
+        (edits.undo.pop().ok_or("No new object row to undo")?, edits.groups.clone())
     };
     {
         let mut edits = world.roadside_edits.lock();
@@ -512,7 +512,7 @@ pub fn undo(world: &World) -> Result<(), String> {
 pub fn remove(world: &World, selected: Key) -> Result<(), String> {
     initialize(world)?;
     let mut edits = world.roadside_edits.lock();
-    let group = edits.groups.iter().rposition(|g| g.start == selected || g.rows.iter().any(|r| r.tile == selected.0 && r.spline == selected.1)).ok_or("Auf dieser Straße wurde noch keine eigene Objektreihe angelegt")?;
+    let group = edits.groups.iter().rposition(|g| g.start == selected || g.rows.iter().any(|r| r.tile == selected.0 && r.spline == selected.1)).ok_or("No custom object row has been created on this road yet")?;
     let previous = edits.groups.clone(); edits.undo.push(previous);
     let group = edits.groups.remove(group);
     for row in group.rows { edits.changes.entry(row.tile).or_default().insert(row.id, None); mark(&mut edits, row.tile); }
@@ -524,14 +524,14 @@ fn read_groups(text: &str) -> Result<Vec<Group>, String> {
         let tag = lines[i].trim().to_ascii_lowercase();
         if tag == "[splineattachement]" || tag == "[splineattachement_repeater]" {
             let shift = if tag.ends_with("_repeater]") { 2 } else { 0 };
-            let count = lines.get(i + 14 + shift).and_then(|s| s.trim().parse::<usize>().ok()).ok_or("Objektbeschriftungen fehlen")?;
-            i = (i + 15 + shift).checked_add(count).ok_or("Zu viele Objektbeschriftungen")?;
-            if i > lines.len() { return Err("Unvollständiger Objekt-Anhang".into()); }
+            let count = lines.get(i + 14 + shift).and_then(|s| s.trim().parse::<usize>().ok()).ok_or("Object text fields missing")?;
+            i = (i + 15 + shift).checked_add(count).ok_or("Too many object text fields")?;
+            if i > lines.len() { return Err("Incomplete object attachment".into()); }
             continue;
         }
         if tag == META {
-            let data = lines.get(i + 1).ok_or("Unvollständige Objektreihe")?;
-            groups.push(serde_json::from_str(data).map_err(|e| format!("Objektreihe nicht lesbar: {e}"))?);
+            let data = lines.get(i + 1).ok_or("Incomplete object row")?;
+            groups.push(serde_json::from_str(data).map_err(|e| format!("Cannot read object row: {e}"))?);
             i += 2; continue;
         }
         i += 1;
@@ -548,21 +548,21 @@ pub fn rewrite(text: &str, key: TileKey, edits: &Edits) -> Result<(String, usize
     while i < lines.len() {
         let tag = lines[i].trim().to_ascii_lowercase();
         if tag == "[spline]" || tag == "[spline_h]" {
-            let id = lines.get(i + 3).and_then(|s| s.trim().parse::<i64>().ok()).ok_or("Spline-Kennung fehlt")?;
+            let id = lines.get(i + 3).and_then(|s| s.trim().parse::<i64>().ok()).ok_or("Spline ID missing")?;
             splines.push(id);
         }
         if tag == META {
-            if i + 1 >= lines.len() { return Err("Unvollständige Objektreihe".into()); }
+            if i + 1 >= lines.len() { return Err("Incomplete object row".into()); }
             if out.ends_with(&format!("{newline}{newline}")) { out.truncate(out.len() - newline.len()); }
             i += 2; continue;
         }
         if tag == "[splineattachement]" || tag == "[splineattachement_repeater]" {
             let shift = if tag.ends_with("_repeater]") { 2 } else { 0 };
-            let id = lines.get(i + 3 + shift).and_then(|s| s.trim().parse::<i64>().ok()).ok_or("Objektkennung fehlt")?;
+            let id = lines.get(i + 3 + shift).and_then(|s| s.trim().parse::<i64>().ok()).ok_or("Object ID missing")?;
             let count_line = i + 14 + shift;
-            let count = lines.get(count_line).and_then(|s| s.trim().parse::<usize>().ok()).ok_or("Objektbeschriftungen fehlen")?;
-            let end = count_line.checked_add(1).and_then(|n| n.checked_add(count)).ok_or("Zu viele Objektbeschriftungen")?;
-            if end > lines.len() { return Err("Unvollständiger Objekt-Anhang".into()); }
+            let count = lines.get(count_line).and_then(|s| s.trim().parse::<usize>().ok()).ok_or("Object text fields missing")?;
+            let end = count_line.checked_add(1).and_then(|n| n.checked_add(count)).ok_or("Too many object text fields")?;
+            if end > lines.len() { return Err("Incomplete object attachment".into()); }
             if changes.is_some_and(|c| c.contains_key(&id)) {
                 if out.ends_with(&format!("{newline}{newline}")) { out.truncate(out.len() - newline.len()); }
             } else { for line in &lines[i..end] { out.push_str(line); } }
@@ -575,7 +575,7 @@ pub fn rewrite(text: &str, key: TileKey, edits: &Edits) -> Result<(String, usize
     if let Some(changes) = changes {
         let mut rows: Vec<_> = changes.values().flatten().collect(); rows.sort_by_key(|e| e.row.id);
         for edit in rows {
-            let index = splines.iter().position(|id| *id == edit.spline).ok_or("Straße der Objektreihe fehlt beim Speichern")?;
+            let index = splines.iter().position(|id| *id == edit.spline).ok_or("Road of object row missing when saving")?;
             let row = &edit.row;
             let fields = vec!["[splineAttachement]".to_string(), "0".into(), row.file.clone(), row.id.to_string(), index.to_string(),
                 format!("{:.12}", row.offset[0]), format!("{:.12}", row.offset[1]), format!("{:.12}", row.offset[2]),
@@ -594,8 +594,8 @@ pub fn rewrite(text: &str, key: TileKey, edits: &Edits) -> Result<(String, usize
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum Field { Interval, Margin, Start, Range, Height, Rotation, JunctionGap }
 impl Field {
-    pub fn title(self) -> &'static str { match self { Self::Interval => "Abstand (m)", Self::Margin => "Abstand zum Rand (m)",
-        Self::Start => "Startversatz (m)", Self::Range => "Bereich (m; 0 = ganz)", Self::Height => "Höhenversatz (m)", Self::Rotation => "Drehung (Grad)", Self::JunctionGap => "Abstand zur Einmündung (m)" } }
+    pub fn title(self) -> &'static str { match self { Self::Interval => "Spacing (m)", Self::Margin => "Distance from edge (m)",
+        Self::Start => "Start offset (m)", Self::Range => "Range (m; 0 = all)", Self::Height => "Height offset (m)", Self::Rotation => "Rotation (degrees)", Self::JunctionGap => "Distance from junction (m)" } }
 }
 #[derive(Clone, Copy)]
 pub enum Command { Close, Catalog, Edit(Field), Adjust(Field, f64), Sides(u8), Connected(bool), Ground(bool), Preview, Apply, Undo, Remove, Save, PickGap, ClearGaps }
@@ -608,7 +608,7 @@ pub struct Window {
 impl Window {
     pub fn new(start: Option<Key>) -> Self {
         Self { start, file: DEFAULT_OBJECT.into(), settings: Settings::default(), input: None,
-            message: "Straße anklicken · Blau = geplante Objekte · Einsetzen übernimmt die Vorschau".into(), error: None,
+            message: "Click road · Blue = planned objects · Place applies the preview".into(), error: None,
             preview: Plan::default(), rects: Vec::new(), rect: None, can_undo: false, gap_pick: None }
     }
     pub fn hit(&self, p: (f32, f32)) -> Option<Command> { self.rects.iter().rev().find(|(r, _)| p.0 >= r[0] && p.0 <= r[2] && p.1 >= r[1] && p.1 <= r[3]).map(|(_, c)| *c) }
@@ -624,7 +624,7 @@ impl Window {
     }
     pub fn commit(&mut self) -> bool {
         let Some(input) = self.input.take() else { return true; };
-        let value = input.text.trim().replace(',', ".").parse::<f64>().map_err(|_| "Eine Zahl eingeben".to_string());
+        let value = input.text.trim().replace(',', ".").parse::<f64>().map_err(|_| "Enter a number".to_string());
         match value.and_then(|value| self.set(input.field, value)) { Ok(()) => true,
             Err(error) => { self.message = error; self.input = Some(input); false } }
     }
@@ -634,7 +634,7 @@ impl Window {
             if let Some(group) = world.roadside_edits.lock().groups.iter().rev().find(|g| Some(g.start) == start
                 || g.rows.iter().any(|r| Some((r.tile, r.spline)) == start)).cloned() {
                 self.start = Some(group.start); self.file = group.file; self.settings = group.settings;
-                self.message = "Gespeicherte Reihe gewählt · Einstellungen ändern und Vorschau einsetzen".into();
+                self.message = "Saved row selected · Adjust settings and place preview".into();
             }
         }
         self.refresh(world);
@@ -644,7 +644,7 @@ impl Window {
         let excluded = world.roadside_edits.lock().groups.iter().rev()
             .find(|g| Some(g.start) == self.start && same_file(&g.file, &self.file))
             .map(|g| g.rows.iter().map(|r| r.id).collect()).unwrap_or_default();
-        let result = world.editor_object_type(&self.file).and_then(|_| self.start.ok_or_else(|| "Zuerst eine Straße anklicken".to_string())
+        let result = world.editor_object_type(&self.file).and_then(|_| self.start.ok_or_else(|| "Click a road first".to_string())
             .and_then(|start| plan(world, start, &self.settings, &self.file, &excluded)));
         match result { Ok(plan) => { self.preview = plan; self.error = None; },
             Err(error) => { self.preview = Plan::default(); self.error = Some(error); } }

@@ -14,10 +14,10 @@ pub struct Plan {pub pieces:Vec<((i32,i32),MapSpline)>,pub markers:Vec<DVec3>,pu
 pub fn bounds(def:&omsi_scenery::Spline,mirror:bool)->Result<[(f64,f64);2],String> {
     let mut lo=(f64::INFINITY,0.0f64);let mut hi=(f64::NEG_INFINITY,0.0f64);
     for p in def.profiles.iter().flat_map(|p|&p.points) {let x=p.x as f64*if mirror {-1.0} else {1.0};let z=p.z as f64;
-        if !x.is_finite()||!z.is_finite() {return Err("Ungültiges Spline-Profil".into());}
+        if !x.is_finite()||!z.is_finite() {return Err("Invalid spline profile".into());}
         if x<lo.0 || (x==lo.0 && z<lo.1) {lo=(x,z);}if x>hi.0 || (x==hi.0 && z<hi.1) {hi=(x,z);}
     }
-    if hi.0-lo.0<0.05 || hi.0-lo.0>50.0 || !lo.0.is_finite()||!hi.0.is_finite() {return Err("Profil braucht zwei sichtbare Seitenränder".into());}Ok([lo,hi])
+    if hi.0-lo.0<0.05 || hi.0-lo.0>50.0 || !lo.0.is_finite()||!hi.0.is_finite() {return Err("Profile needs two visible side edges".into());}Ok([lo,hi])
 }
 fn curve(road:&Road)->SplineCurve {SplineCurve::from_map(&road.spline,DVec2::new(road.key.0.0 as f64,road.key.0.1 as f64)*omsi_map::tile_size()).with_sli(&road.def)}
 fn frame(road:&Road,s:f64,side:u8,margin:f64,height:f64)->Result<(DVec3,DVec2),String> {
@@ -33,11 +33,11 @@ fn tile(p:DVec3)->(i32,i32) {let size=omsi_map::tile_size();((p.x/size).floor() 
 /// Construct exact parallel circular arcs for ordinary splines. For skewed or tapered roads,
 /// short sections get endpoint corrections from the same profile geometry as the renderer.
 pub fn build(roads:&[Road],def:&omsi_scenery::Spline,file:&str,settings:&Settings,texture_offset:f64)->Result<Plan,String> {
-    if file.is_empty() || def.only_editor {return Err("Sichtbares Gehwegprofil auswählen".into());}
+    if file.is_empty() || def.only_editor {return Err("Select a visible sidewalk profile".into());}
     if !(1..=3).contains(&settings.sides) || ![settings.start,settings.length,settings.margin,settings.height,texture_offset].iter().all(|v|v.is_finite())
-        || settings.start<0.0 || settings.length<0.5 || !(0.0..=20.0).contains(&settings.margin) || settings.height.abs()>10.0 {return Err("Start, Länge, Randabstand oder Höhe ungültig".into());}
+        || settings.start<0.0 || settings.length<0.5 || !(0.0..=20.0).contains(&settings.margin) || settings.height.abs()>10.0 {return Err("Invalid start, length, edge distance or height".into());}
     let total=roads.iter().map(|r|r.spline.length).sum::<f64>();
-    if !total.is_finite() || settings.start+settings.length>total+1e-6 {return Err(format!("Bereich endet hinter der Straße ({total:.2} m); Start/Länge verkleinern"));}
+    if !total.is_finite() || settings.start+settings.length>total+1e-6 {return Err(format!("Range ends beyond the road ({total:.2} m); reduce start/length"));}
     let mut plan=Plan {total,..Default::default()};
     for side in [1,2] {if settings.sides&side==0 {continue;}
         let mirrored=settings.mirror^(side==1);let wb=bounds(def,mirrored)?;
@@ -46,26 +46,26 @@ pub fn build(roads:&[Road],def:&omsi_scenery::Spline,file:&str,settings:&Setting
         for road in roads {
             let from=(settings.start-accumulated).max(0.0);let to=(settings.start+settings.length-accumulated).min(road.spline.length);
             accumulated+=road.spline.length;if to<=from {continue;}
-            if !road.spline.length.is_finite() || road.spline.length<=0.0 {return Err("Straßenlänge ungültig".into());}
+            if !road.spline.length.is_finite() || road.spline.length<=0.0 {return Err("Invalid road length".into());}
             let eb=bounds(&road.def,road.spline.mirror)?;
             let ex=eb[if (side==1)^road.backwards {0} else {1}].0*if road.backwards {-1.0} else {1.0};
             let lateral=ex+settings.margin*if side==1 {-1.0} else {1.0}-near.0;
             let radius=road.spline.radius*if road.backwards {-1.0} else {1.0};
             let factor=if radius.abs()<1e-8 {1.0} else {1.0-lateral/radius};
-            if !factor.is_finite() || factor<0.1 || (radius.abs()>1e-8 && (radius-lateral).abs()<(wb[1].0-wb[0].0)+1.0) {return Err("Innenkurve zu eng für dieses Gehwegprofil".into());}
+            if !factor.is_finite() || factor<0.1 || (radius.abs()>1e-8 && (radius-lateral).abs()<(wb[1].0-wb[0].0)+1.0) {return Err("Inner curve too tight for this sidewalk profile".into());}
             let ordinary=road.spline.profile_transitions.iter().all(Option::is_none)&&road.spline.skew_start.abs()<1e-8&&road.spline.skew_end.abs()<1e-8;
             let step=if ordinary {20.0f64.min(10.0/factor)} else {0.5};
             let n=((to-from)/step).ceil().max(1.0) as usize;
-            if plan.pieces.len()+n>4000 {return Err("Mehr als 4000 Teilstücke; Gehwegbereich kürzen".into());}
+            if plan.pieces.len()+n>4000 {return Err("More than 4000 sections; shorten sidewalk range".into());}
             for i in 0..n {
                 let a=from+(to-from)*i as f64/n as f64;let b=from+(to-from)*(i+1) as f64/n as f64;
                 let at=|s:f64|->Result<(DVec3,DVec2),String>{let (p,right)=frame(road,s,side,settings.margin,settings.height)?;Ok((p-right.extend(0.0)*near.0-DVec3::Z*near.1,right))};
                 let (p,ra)=at(a)?;let (q,rb)=at(b)?;
                 let anchor_a=p+ra.extend(0.0)*near.0+DVec3::Z*near.1;
-                if let Some(prev)=previous {if prev.distance(anchor_a)>0.025 {return Err("Straßenränder treffen an einem Anschluss nicht zusammen; Straße zuerst verbinden".into());}}
+                if let Some(prev)=previous {if prev.distance(anchor_a)>0.025 {return Err("Road edges do not meet at a connection; connect the road first".into());}}
                 let owner=tile(at((a+b)*0.5)?.0);let o=DVec2::new(owner.0 as f64,owner.1 as f64)*omsi_map::tile_size();
                 let length=if ordinary {(b-a)*factor} else {(q-p).truncate().length()};
-                if length<0.001 {return Err("Gehwegabschnitt zu kurz".into());}
+                if length<0.001 {return Err("Sidewalk section too short".into());}
                 let heading=if ordinary {(-ra.y).atan2(ra.x).to_degrees()} else {(q.x-p.x).atan2(q.y-p.y).to_degrees()};
                 let dz=|s:f64|->Result<f64,String>{let lo=(s-0.01).max(0.0);let hi=(s+0.01).min(road.spline.length);Ok((at(hi)?.0.z-at(lo)?.0.z)/(hi-lo).max(1e-9)/factor*100.0)};
                 let mut part=MapSpline {file:file.into(),pos:[p.x-o.x,p.y-o.y,p.z],heading:heading.rem_euclid(360.0),length,
@@ -78,13 +78,13 @@ pub fn build(roads:&[Road],def:&omsi_scenery::Spline,file:&str,settings:&Setting
                         let offsets=wb.map(|(x,z)| {let goal=pos+right.extend(0.0)*x+DVec3::Z*z;
                             let actual=omsi_geometry::spline_profile_point(def,&pc,false,station,x,z);let d=goal-actual;
                             [d.truncate().dot(local_right),d.truncate().dot(forward),d.z]});
-                        let t=omsi_map::ProfileTransition {station,span:length,x:[wb[0].0,wb[1].0],offsets};if !t.valid() {return Err("Randkorrektur außerhalb des gültigen Bereichs".into());}part.profile_transitions[e]=Some(t);
+                        let t=omsi_map::ProfileTransition {station,span:length,x:[wb[0].0,wb[1].0],offsets};if !t.valid() {return Err("Edge correction outside valid range".into());}part.profile_transitions[e]=Some(t);
                     }
                 }
                 let pc=SplineCurve::from_map(&part,o);
                 for t in [0.25,0.5,0.75]{let (centre,right)=at(a+(b-a)*t)?;
                     for (x,z) in wb {let want=centre+right.extend(0.0)*x+DVec3::Z*z;let got=omsi_geometry::spline_profile_point(def,&pc,false,length*t,x,z);
-                        if want.distance(got)>0.025{return Err("Straßenübergang zu stark verformt; einen kürzeren oder glatteren Straßenbereich wählen".into());}}
+                        if want.distance(got)>0.025{return Err("Road transition too distorted; choose a shorter or smoother road range".into());}}
                 }
                 let count=(length/2.0).ceil().max(1.0) as usize;
                 for j in 0..=count {for (x,z) in wb {plan.markers.push(omsi_geometry::spline_profile_point(def,&pc,false,length*j as f64/count as f64,x,z));}}
@@ -97,11 +97,11 @@ pub fn build(roads:&[Road],def:&omsi_scenery::Spline,file:&str,settings:&Setting
         // Mark side-chain boundaries until IDs are allocated during confirmation.
         if let Some((_,last))=plan.pieces.last_mut() {last.next_id=-1;}
     }
-    if plan.pieces.is_empty() {return Err("Kein Gehwegbereich gewählt".into());}Ok(plan)
+    if plan.pieces.is_empty() {return Err("No sidewalk range selected".into());}Ok(plan)
 }
 pub fn roads(world:&World,start:Key,connected:bool)->Result<Vec<Road>,String> {
     crate::roadside_objects::sidewalk_route(world,start,connected)?.into_iter().map(|(key,spline,backwards)|{
-        let def=world.spline_type(&spline.file).ok_or("Straßenprofil fehlt")?.def.clone();Ok(Road {key,spline,backwards,def})}).collect()
+        let def=world.spline_type(&spline.file).ok_or("Road profile missing")?.def.clone();Ok(Road {key,spline,backwards,def})}).collect()
 }
 pub fn project_station(roads:&[Road],point:DVec3)->Option<f64> {
     let mut base=0.0;let mut best=(f64::INFINITY,0.0);
@@ -114,32 +114,32 @@ pub fn project_station(roads:&[Road],point:DVec3)->Option<f64> {
     }(best.0<2500.0).then_some(best.1)
 }
 #[derive(Clone,Copy,PartialEq)] pub enum Field {Start,Length,Margin,Height}
-impl Field {pub fn title(self)->&'static str {match self {Self::Start=>"Start auf Straße (m)",Self::Length=>"Länge entlang Straße (m)",Self::Margin=>"Abstand zum Rand (m)",Self::Height=>"Höhenversatz (m)"}}}
+impl Field {pub fn title(self)->&'static str {match self {Self::Start=>"Start on road (m)",Self::Length=>"Length along road (m)",Self::Margin=>"Distance from edge (m)",Self::Height=>"Height offset (m)"}}}
 #[derive(Clone,Copy)] pub enum Command {Close,Catalog,Existing,New,PickRoad,Edit(Field),Adjust(Field,f64),Sides(u8),Connected(bool),Mirror,Detach,Preview,Apply,Undo,Save}
 pub struct Input {pub field:Field,pub text:String,pub replace:bool}
 pub struct Window {pub start:Option<Key>,pub existing:Option<Key>,pub file:String,pub settings:Settings,pub input:Option<Input>,pub message:String,pub error:Option<String>,pub preview:Plan,pub route:Vec<Road>,pub rects:Vec<([f32;4],Command)>,pub rect:Option<[f32;4]>,pub picking:u8,pub drag:Option<bool>,pub can_undo:bool}
 impl Window {
-    pub fn new(start:Option<Key>)->Self {Self {start,existing:None,file:String::new(),settings:Settings::default(),input:None,message:"Gehwegprofil wählen oder vorhandenen Gehweg anklicken. Start/Ende der blauen Vorschau lassen sich ziehen.".into(),error:None,preview:Plan::default(),route:Vec::new(),rects:Vec::new(),rect:None,picking:0,drag:None,can_undo:false}}
+    pub fn new(start:Option<Key>)->Self {Self {start,existing:None,file:String::new(),settings:Settings::default(),input:None,message:"Choose a sidewalk profile or click an existing sidewalk. Drag the start/end of the blue preview.".into(),error:None,preview:Plan::default(),route:Vec::new(),rects:Vec::new(),rect:None,picking:0,drag:None,can_undo:false}}
     pub fn hit(&self,p:(f32,f32))->Option<Command>{self.rects.iter().rev().find(|(r,_)|p.0>=r[0]&&p.0<=r[2]&&p.1>=r[1]&&p.1<=r[3]).map(|(_,c)|*c)}
     pub fn contains(&self,p:(f32,f32))->bool{self.rect.is_some_and(|r|p.0>=r[0]&&p.0<=r[2]&&p.1>=r[1]&&p.1<=r[3])}
     pub fn value(&self,f:Field)->f64{match f{Field::Start=>self.settings.start,Field::Length=>self.settings.length,Field::Margin=>self.settings.margin,Field::Height=>self.settings.height}}
     pub fn edit(&mut self,f:Field){self.input=Some(Input {field:f,text:format!("{:.2}",self.value(f)),replace:true});}
     pub fn set(&mut self,f:Field,v:f64)->Result<(),String>{let(lo,hi)=match f{Field::Start=>(0.0,100000.0),Field::Length=>(0.5,100000.0),Field::Margin=>(0.0,20.0),Field::Height=>(-10.0,10.0)};
-        if !v.is_finite()||v<lo||v>hi{return Err(format!("Wert muss zwischen {lo} und {hi} liegen"));}match f{Field::Start=>self.settings.start=v,Field::Length=>self.settings.length=v,Field::Margin=>self.settings.margin=v,Field::Height=>self.settings.height=v}Ok(())}
-    pub fn commit(&mut self)->bool {let Some(i)=&self.input else{return true;};let f=i.field;let v=i.text.replace(',',".").parse::<f64>();match v.map_err(|_|"Ungültige Zahl".to_string()).and_then(|v|self.set(f,v)){Ok(())=>{self.input=None;true},Err(e)=>{self.message=e;false}}}
+        if !v.is_finite()||v<lo||v>hi{return Err(format!("Value must be between {lo} and {hi}"));}match f{Field::Start=>self.settings.start=v,Field::Length=>self.settings.length=v,Field::Margin=>self.settings.margin=v,Field::Height=>self.settings.height=v}Ok(())}
+    pub fn commit(&mut self)->bool {let Some(i)=&self.input else{return true;};let f=i.field;let v=i.text.replace(',',".").parse::<f64>();match v.map_err(|_|"Invalid number".to_string()).and_then(|v|self.set(f,v)){Ok(())=>{self.input=None;true},Err(e)=>{self.message=e;false}}}
     pub fn drag_to(&mut self,station:f64){
         if !station.is_finite(){return;}
         if self.drag==Some(true){let end=self.settings.start+self.settings.length;self.settings.start=station.clamp(0.0,(end-0.5).max(0.0));self.settings.length=end-self.settings.start;}
         else if self.drag==Some(false){self.settings.length=(station-self.settings.start).clamp(0.5,(self.preview.total-self.settings.start).max(0.5));}
     }
     pub fn refresh(&mut self,world:&World){self.preview=Plan::default();self.route.clear();let result=(||{
-        let start=self.start.ok_or("Straße auswählen")?;self.route=roads(world,start,self.settings.connected)?;
+        let start=self.start.ok_or("Select road")?;self.route=roads(world,start,self.settings.connected)?;
         let total=self.route.iter().map(|r|r.spline.length).sum();self.preview.total=total;
-        let def=world.spline_type(&self.file).ok_or("Gehwegprofil im Katalog oder vorhandenen Gehweg wählen")?;
+        let def=world.spline_type(&self.file).ok_or("Choose sidewalk profile in catalogue or an existing sidewalk")?;
         let original=self.existing.and_then(|k|world.spline_edits.lock().current(k));
-        if self.existing.is_some() && original.is_none(){return Err("Vorhandener Gehweg nicht mehr verfügbar".into());}
-        if self.existing.is_some() && self.settings.sides==3{return Err("Vorhandenen Gehweg auf genau einer Seite ausrichten".into());}
-        if self.existing.is_some_and(|key|self.route.iter().any(|r|r.key==key)){return Err("Gehweg und Bezugsstraße müssen verschieden sein".into());}
+        if self.existing.is_some() && original.is_none(){return Err("Existing sidewalk no longer available".into());}
+        if self.existing.is_some() && self.settings.sides==3{return Err("Align existing sidewalk on exactly one side".into());}
+        if self.existing.is_some_and(|key|self.route.iter().any(|r|r.key==key)){return Err("Sidewalk and reference road must differ".into());}
         self.preview=build(&self.route,&def.def,&self.file,&self.settings,original.map_or(0.0,|s|s.tex_offset))?;Ok::<(),String>(())})();self.error=result.err();}
 }
 

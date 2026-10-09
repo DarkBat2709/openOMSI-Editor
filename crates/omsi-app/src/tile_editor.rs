@@ -41,10 +41,10 @@ impl Window {
             }).unwrap_or(camera) };
         let fraction = if start == camera { (eye.x / ts - camera.0 as f64, eye.y / ts - camera.1 as f64) } else { (0.5, 0.5) };
         let selected = suggest(&known, start, yaw, fraction);
-        let names = ["Nord", "Nordost", "Ost", "Südost", "Süd", "Südwest", "West", "Nordwest"];
+        let names = ["North", "Northeast", "East", "Southeast", "South", "Southwest", "West", "Northwest"];
         Self { center: selected.unwrap_or(start), selected, known, camera,
             bearing: names[((yaw.rem_euclid(360.0) + 22.5) / 45.0) as usize % 8].into(),
-            message: "Freies Nachbarfeld wählen. Grün = vorhanden, Blau = Auswahl.".into(), rects: Vec::new(),
+            message: "Choose a free neighbouring cell. Green = existing, blue = selected.".into(), rects: Vec::new(),
             own_height:false,height:world.editor_terrain_height(eye.x,eye.y).unwrap_or(0.0),height_edit:None,height_replace:true }
     }
 
@@ -60,13 +60,13 @@ impl Window {
     pub fn select(&mut self, key: Key) {
         if self.known.contains(&key) {
             self.selected = None;
-            self.message = format!("Tile ({}, {}) ist bereits eingetragen.", key.0, key.1);
+            self.message = format!("Tile ({}, {}) is already registered.", key.0, key.1);
         } else if !adjacent(&self.known, key) {
             self.selected = None;
-            self.message = "Das neue Feld muss eine gemeinsame Kante mit der Karte haben.".into();
+            self.message = "The new cell must share an edge with the map.".into();
         } else {
             self.selected = Some(key);
-            self.message = if self.own_height {"Eigene Höhe einstellen; das neue Tile wird eben auf dieser Höhe angelegt."} else {"Gelände übernimmt die Ränder der Nachbar-Tiles. Sofort gespeichert."}.into();
+            self.message = if self.own_height {"Set custom height; the new tile will be flat at this height."} else {"Terrain uses neighbouring tile edges. Saved immediately."}.into();
         }
     }
 }
@@ -90,14 +90,14 @@ fn suggest(known: &HashSet<Key>, start: Key, yaw: f32, fraction: (f64, f64)) -> 
 /// Fixed boundaries from neighbours; free boundaries have zero outward slope. The
 /// interior is harmonic, so it adds no height extrema beyond the existing boundaries.
 fn joined_terrain(neighbours: &[Option<Terrain>; 4]) -> Result<Terrain, String> {
-    let cells = neighbours.iter().flatten().next().ok_or("Kein Gelände-Nachbar gefunden")?.cells;
-    if cells == 0 || cells > 256 { return Err("Geländeraster wird nicht unterstützt (1–256 Zellen)".into()); }
+    let cells = neighbours.iter().flatten().next().ok_or("No terrain neighbour found")?.cells;
+    if cells == 0 || cells > 256 { return Err("Terrain grid not supported (1–256 cells)".into()); }
     let n = cells + 1;
     let mut fixed = vec![None::<f32>; n * n];
     for (side, terrain) in neighbours.iter().enumerate() {
         let Some(t) = terrain else { continue; };
         if t.cells != cells || t.heights.len() != n * n || t.heights.iter().any(|h| !h.is_finite()) {
-            return Err("Nachbar-Tiles haben unterschiedliche oder beschädigte Geländeraster".into());
+            return Err("Neighbouring tiles have different or damaged terrain grids".into());
         }
         for j in 0..n {
             let (to, from) = match side {
@@ -108,7 +108,7 @@ fn joined_terrain(neighbours: &[Option<Terrain>; 4]) -> Result<Terrain, String> 
             };
             let h = t.heights[from];
             if fixed[to].is_some_and(|old| (old - h).abs() > 0.01) {
-                return Err("Nachbar-Gelände hat widersprüchliche Eckhöhen; zuerst die gemeinsame Ecke glätten und speichern".into());
+                return Err("Neighbouring terrain has conflicting corner heights; smooth and save the shared corner first".into());
             }
             fixed[to].get_or_insert(h);
         }
@@ -150,9 +150,9 @@ fn joined_terrain(neighbours: &[Option<Terrain>; 4]) -> Result<Terrain, String> 
 fn append_global(bytes: &[u8], key: Key, file: &str) -> Result<(Vec<u8>, usize), String> {
     let (mut text, enc) = crate::editor::decode(bytes);
     let cfg = omsi_map::GlobalCfg::parse(&omsi_cfg::CfgFile::from_str("global.cfg", text.trim_start_matches('\u{feff}')));
-    if cfg.world_coordinates { return Err("Neue Tiles werden bisher nur für normale OMSI-Karten unterstützt".into()); }
+    if cfg.world_coordinates { return Err("New tiles are currently supported only for standard OMSI maps".into()); }
     if cfg.raw_tiles.contains(&key) || cfg.tiles.iter().any(|t| t.file.eq_ignore_ascii_case(file)) {
-        return Err("Dieses Tile ist bereits in global.cfg eingetragen".into());
+        return Err("This tile is already registered in global.cfg".into());
     }
     let nl = if text.contains("\r\n") { "\r\n" } else { "\n" };
     let entry = format!("{nl}{nl}[map]{nl}{}{nl}{}{nl}{file}{nl}", key.0, key.1);
@@ -164,17 +164,17 @@ fn mod_dir(content: &Path, map_rel: &str, original: &Path) -> Result<PathBuf, St
     let rel = Path::new(map_rel);
     if rel.is_absolute() || rel.components().any(|c| !matches!(c, Component::Normal(_)))
         || !rel.file_name().is_some_and(|n| n.to_string_lossy().eq_ignore_ascii_case("global.cfg")) {
-        return Err("Die Karte muss mit einem relativen Pfad wie maps/Kartenname/global.cfg geöffnet sein".into());
+        return Err("The map must be opened with a relative path such as maps/MapName/global.cfg".into());
     }
     let original = original.canonicalize().map_err(|e| e.to_string())?;
     let mut ancestor = content;
-    while !ancestor.exists() { ancestor = ancestor.parent().ok_or("Inhaltsordner ohne existierenden Elternordner")?; }
+    while !ancestor.exists() { ancestor = ancestor.parent().ok_or("Content folder has no existing parent folder")?; }
     if ancestor.canonicalize().map_err(|e| e.to_string())?.starts_with(&original) {
-        return Err("Der Inhaltsordner liegt in der Originalinstallation".into());
+        return Err("The content folder is inside the original installation".into());
     }
     std::fs::create_dir_all(content).map_err(|e| e.to_string())?;
     let base = content.canonicalize().map_err(|e| e.to_string())?;
-    if base.starts_with(&original) { return Err("Der Inhaltsordner liegt in der Originalinstallation".into()); }
+    if base.starts_with(&original) { return Err("The content folder is inside the original installation".into()); }
     let mut dir = base.clone();
     for part in rel.parent().unwrap_or(Path::new("")).components() {
         dir = local_path(&dir, &part.as_os_str().to_string_lossy())?;
@@ -184,7 +184,7 @@ fn mod_dir(content: &Path, map_rel: &str, original: &Path) -> Result<PathBuf, St
             Err(e) => return Err(e.to_string()),
         }
         dir = dir.canonicalize().map_err(|e| e.to_string())?;
-        if !dir.starts_with(&base) || dir.starts_with(&original) { return Err("Kartenordner verweist außerhalb des Inhaltsordners".into()); }
+        if !dir.starts_with(&base) || dir.starts_with(&original) { return Err("Map folder points outside the content folder".into()); }
     }
     Ok(dir)
 }
@@ -195,7 +195,7 @@ fn local_path(dir: &Path, name: &str) -> Result<PathBuf, String> {
     for entry in std::fs::read_dir(dir).map_err(|e| e.to_string())? {
         let entry = entry.map_err(|e| e.to_string())?;
         if entry.file_name().to_string_lossy().eq_ignore_ascii_case(name) {
-            if found.is_some() { return Err(format!("Mehrdeutige Groß-/Kleinschreibung für {name}")); }
+            if found.is_some() { return Err(format!("Ambiguous letter case for {name}")); }
             found = Some(entry.path());
         }
     }
@@ -217,13 +217,13 @@ fn write_set(dir: &Path, key: Key, terrain: &Terrain, old_global: &[u8], new_glo
     let map = dir.join(&file); let ground = dir.join(format!("{file}.terrain"));
     let global = local_path(dir,"global.cfg")?;
     if std::fs::symlink_metadata(&global).is_ok_and(|m| !m.is_file() || m.file_type().is_symlink()) {
-        return Err("global.cfg ist keine normale Datei".into());
+        return Err("global.cfg is not a regular file".into());
     }
     let previous = match std::fs::read(&global) {
         Ok(b) => Some(b), Err(e) if e.kind() == std::io::ErrorKind::NotFound => None,
         Err(e) => return Err(e.to_string()),
     };
-    if previous.as_deref().is_some_and(|b| b != old_global) { return Err("global.cfg wurde inzwischen verändert; Fenster erneut öffnen".into()); }
+    if previous.as_deref().is_some_and(|b| b != old_global) { return Err("global.cfg has changed; reopen the window".into()); }
     let stamp = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_err(|e| e.to_string())?.as_nanos();
     let temp = dir.join(format!("global.cfg.editor-{stamp}.tmp"));
     let backup = dir.join(format!("global.cfg.before-editor-{stamp}"));
@@ -239,7 +239,7 @@ fn write_set(dir: &Path, key: Key, terrain: &Terrain, old_global: &[u8], new_glo
             Ok(b) => Some(b), Err(e) if e.kind() == std::io::ErrorKind::NotFound => None,
             Err(e) => return Err(e.to_string()),
         };
-        if now != previous { return Err("global.cfg wurde während des Speicherns verändert".into()); }
+        if now != previous { return Err("global.cfg changed while saving".into()); }
         std::fs::rename(&temp, &global).map_err(|e| e.to_string())
     })();
     if let Err(e) = result {
@@ -253,19 +253,19 @@ fn write_set(dir: &Path, key: Key, terrain: &Terrain, old_global: &[u8], new_glo
 
 pub fn create(world: &World, key: Key, content: &Path, map_rel: &str, original: &Path, height:Option<f64>) -> Result<PathBuf, String> {
     if height.is_some_and(|h|!h.is_finite() || !(crate::terrain_editor::HEIGHT_MIN..=crate::terrain_editor::HEIGHT_MAX).contains(&h)) {
-        return Err("Ungültige Tile-Höhe".into());
+        return Err("Invalid tile height".into());
     }
-    if omsi_map::world_coordinates() || world.global.world_coordinates { return Err("Tile-Erstellung braucht eine normale OMSI-Karte".into()); }
+    if omsi_map::world_coordinates() || world.global.world_coordinates { return Err("Tile creation requires a standard OMSI map".into()); }
     let known = world.editor_tile_keys();
-    if known.contains(&key) { return Err("Dieses Tile ist bereits vorhanden".into()); }
-    if !adjacent(&known, key) { return Err("Neues Tile muss direkt an die Karte angrenzen".into()); }
+    if known.contains(&key) { return Err("This tile already exists".into()); }
+    if !adjacent(&known, key) { return Err("New tile must directly border the map".into()); }
     let dir = mod_dir(content, map_rel, original)?;
     let filename = format!("tile_{}_{}.map", key.0, key.1);
     for ext in ["", ".terrain", ".water"] {
         let name = format!("{filename}{ext}");
         if omsi_cfg::vfs::exists(&omsi_cfg::resolve_path(&dir, &name))
             || omsi_cfg::vfs::exists(&omsi_cfg::resolve_path(&world.map_dir, &name)) {
-            return Err(format!("{name} existiert bereits; kein Überschreiben"));
+            return Err(format!("{name} already exists; no overwrite"));
         }
     }
     let global_path = local_path(&dir,"global.cfg")?;
@@ -276,27 +276,27 @@ pub fn create(world: &World, key: Key, content: &Path, map_rel: &str, original: 
     if current.tiles.iter().map(|t| (t.x, t.y)).collect::<HashSet<_>>() != known
         || !current.raw_tiles.starts_with(&world.global.raw_tiles)
         || world.global.tiles.iter().any(|old| !current.tiles.iter().any(|t| t == old)) {
-        return Err("Die Tile-Liste in global.cfg wurde außerhalb des Editors verändert; Karte neu laden".into());
+        return Err("Tile list in global.cfg changed outside the editor; reload map".into());
     }
     let mut neighbours: [Option<Terrain>; 4] = [None, None, None, None];
     for (side, &(dx, dy)) in SIDES.iter().enumerate() {
         let k = (key.0 + dx, key.1 + dy);
         if !known.contains(&k) { continue; }
-        let src = world.tile_source(k.0, k.1).ok_or("Nachbar-Tile hat keine Datei")?;
-        if !omsi_cfg::vfs::is_file(&src) { return Err("Nachbar-Tile-Datei fehlt".into()); }
-        let mod_ground = local_path(&dir,&format!("{}.terrain", src.file_name().ok_or("Nachbar-Tile ohne Dateiname")?.to_string_lossy()))?;
+        let src = world.tile_source(k.0, k.1).ok_or("Neighbouring tile has no file")?;
+        if !omsi_cfg::vfs::is_file(&src) { return Err("Neighbouring tile file missing".into()); }
+        let mod_ground = local_path(&dir,&format!("{}.terrain", src.file_name().ok_or("Neighbouring tile has no filename")?.to_string_lossy()))?;
         let path = if mod_ground.is_file() { mod_ground } else { crate::scene::tile_companion(&src, ".terrain") };
         let terrain = if omsi_cfg::vfs::is_file(&path) {
-            Terrain::load(&path).map_err(|e| format!("Gelände ({}, {}): {e}", k.0, k.1))?
+            Terrain::load(&path).map_err(|e| format!("Terrain ({}, {}): {e}", k.0, k.1))?
         } else { Terrain::flat() };
         if height.is_none() && world.terrain_edits.lock().get(&k).is_some_and(|edited| edited != &terrain) {
-            return Err("Gelände am Nachbar-Tile wurde bearbeitet: zuerst Strg+S speichern, dann Tile anlegen".into());
+            return Err("Neighbouring tile terrain was edited: Ctrl+S to save first, then create tile".into());
         }
         neighbours[side] = Some(terrain);
     }
     let terrain = if let Some(height)=height {
         let cells=neighbours.iter().flatten().next().map_or(60,|t|t.cells);
-        if cells==0 || cells>256 {return Err("Geländeraster wird nicht unterstützt".into());}
+        if cells==0 || cells>256 {return Err("Terrain grid not supported".into());}
         Terrain {cells,heights:vec![height as f32;(cells+1)*(cells+1)]}
     } else {joined_terrain(&neighbours)?};
     let (global, index) = append_global(&bytes, key, &filename)?;

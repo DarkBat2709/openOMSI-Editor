@@ -10,14 +10,14 @@ pub fn validate_name(name: &str) -> Result<&str> {
         || name.chars().any(|c| c.is_control() || "<>:\"/\\|?*[]".contains(c))
         || name == "." || name == ".."
     {
-        bail!("Bitte einen Kartennamen ohne Sonderzeichen wie /, \\, : oder [] eingeben (max. 80 Bytes).");
+        bail!("Enter a map name without special characters such as /, \\, : or [] (max. 80 bytes).");
     }
     let stem = name.split('.').next().unwrap_or("").to_ascii_uppercase();
     if ["CON", "PRN", "AUX", "NUL"].contains(&stem.as_str())
         || (stem.len() == 4 && (stem.starts_with("COM") || stem.starts_with("LPT"))
             && matches!(stem.as_bytes()[3], b'1'..=b'9'))
     {
-        bail!("Dieser Kartenname ist unter Windows reserviert.");
+        bail!("This map name is reserved on Windows.");
     }
     Ok(name)
 }
@@ -57,18 +57,18 @@ fn maps_folder(root: &Path) -> PathBuf {
 pub fn create(content: &Path, original: &Path, name: &str, author: &str, description: &str) -> Result<String> {
     let name = validate_name(name)?;
     if author.len() > 160 || description.len() > 2000 || [author, description].iter().any(|s| s.chars().any(|c| c.is_control() || c == '[' || c == ']')) {
-        bail!("Autor und Beschreibung dürfen keine Steuerzeichen oder eckigen Klammern enthalten (max. 160 / 2000 Bytes).");
+        bail!("Author and description must not contain control characters or square brackets (max. 160 / 2000 bytes).");
     }
-    let content = content.canonicalize().context("Spielinhaltsordner ist nicht erreichbar")?;
-    let original = original.canonicalize().context("OMSI-2-Ordner ist nicht erreichbar")?;
+    let content = content.canonicalize().context("Game content folder is not accessible")?;
+    let original = original.canonicalize().context("OMSI 2 folder is not accessible")?;
     if content.starts_with(&original) {
-        bail!("Neue Karten müssen außerhalb der originalen OMSI-2-Installation liegen.");
+        bail!("New maps must be outside the original OMSI 2 installation.");
     }
     let maps = maps_folder(&content);
     std::fs::create_dir_all(&maps)?;
     let maps_real = maps.canonicalize()?;
     if !maps_real.starts_with(&content) || maps_real.starts_with(&original) {
-        bail!("Der Kartenordner verweist außerhalb des Spielinhaltsordners.");
+        bail!("The maps folder points outside the game content folder.");
     }
     let relative = format!("maps/{name}/global.cfg");
     // Also reject case-only clashes on Linux, keeping names portable to Windows.
@@ -77,13 +77,13 @@ pub fn create(content: &Path, original: &Path, name: &str, author: &str, descrip
         if let Ok(entries) = std::fs::read_dir(map_root) {
             for entry in entries.flatten() {
                 if entry.file_name().to_string_lossy().to_lowercase() == name.to_lowercase() {
-                    bail!("Eine Karte oder ein Ordner mit diesem Namen existiert bereits.");
+                    bail!("A map or folder with this name already exists.");
                 }
             }
         }
     }
     let dir = maps.join(name);
-    std::fs::create_dir(&dir).context("Kartenordner konnte nicht neu angelegt werden")?;
+    std::fs::create_dir(&dir).context("Could not create map folder")?;
     let result = write_map(&dir, name, author, description);
     if let Err(error) = result {
         // Only remove files belonging to this attempt, never a pre-existing directory.

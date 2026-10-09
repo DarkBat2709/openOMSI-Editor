@@ -7,7 +7,7 @@ use std::path::Path;
 
 impl App {
     pub(crate) fn editor_open_textures(&mut self,target:TextureTarget) {
-        if self.net.lan.is_some() {self.service_msg=Some(("Texturen bearbeiten ist im Einzelspieler verfügbar".into(),5.0));return;}
+        if self.net.lan.is_some() {self.service_msg=Some(("Texture editing is available in single-player".into(),5.0));return;}
         self.editor_terrain_finish();
         let (Some(ed),Some(world))=(self.menus.editor.as_mut(),self.world.as_ref()) else {return;};
         ed.texture_target=Some(target);ed.tile_window=None;ed.text_window=None;ed.roadside_window=None;ed.sidewalk_window=None;ed.placing_asset=None;ed.object_stamp=None;
@@ -17,26 +17,29 @@ impl App {
         if let Some(window)=self.window.as_ref() {window.set_cursor_visible(true);}
     }
 
-    pub(crate) fn editor_open_junction(&mut self) {
-        if self.net.lan.is_some() {self.service_msg=Some(("Kreuzungsbaukasten ist im Einzelspieler verfügbar".into(),5.0));return;}
+    pub(crate) fn editor_open_junction(&mut self) {self.editor_open_builder(false);}
+    pub(crate) fn editor_open_roundabout(&mut self) {self.editor_open_builder(true);}
+    fn editor_open_builder(&mut self,roundabout:bool) {
+        if self.net.lan.is_some() {self.service_msg=Some(("Junction builder is available in single-player".into(),5.0));return;}
         self.editor_terrain_finish();
         let (Some(ed),Some(world))=(self.menus.editor.as_mut(),self.world.as_ref()) else {return;};
         ed.splines.finish_drag();ed.end_object_drag();ed.splines.cancel_connection();ed.splines.cancel_generation();
         ed.catalog=None;ed.texture_target=None;ed.tile_window=None;ed.text_window=None;ed.roadside_window=None;ed.sidewalk_window=None;ed.terrain.active=false;
         ed.placing_asset=None;ed.object_stamp=None;
-        ed.junction_window=Some(crate::junction_builder::Window::new(world.global.left_hand_traffic));
+        ed.junction_window=Some(if roundabout {crate::junction_builder::Window::new_roundabout(world.global.left_hand_traffic)} else {crate::junction_builder::Window::new(world.global.left_hand_traffic)});
         let target=ed.editing_added.and_then(|i|ed.added.get(i)).map(|o|o.id).or(ed.selected);
         let selected_sco=ed.editing_added.and_then(|i|ed.added.get(i)).map(|o|o.sco.clone())
             .or_else(||ed.selected.and_then(|id|world.edit_objects.lock().get(&id).map(|o|o.sco.clone())));
         if let Some(path)=selected_sco.and_then(|p|p.parent().map(|dir|dir.join("junction.junction.json"))).filter(|p|p.is_file()) {
+            let same_kind=std::fs::read(&path).ok().and_then(|b|serde_json::from_slice::<crate::junction_builder::Project>(&b).ok()).is_some_and(|p|p.roundabout.is_some()==roundabout);
             let w=ed.junction_window.as_mut().unwrap();
-            match w.load(&path){Ok(())=>{w.target=target;w.placed_project=Some(w.project.clone());w.message="Platzierte Kreuzung bearbeiten · Aktualisieren erhält Position und ID. Straßenanschlüsse werden mitgeprüft.".into();},Err(e)=>w.message=e}
+            if same_kind {match w.load(&path){Ok(())=>{w.target=target;w.placed_project=Some(w.project.clone());w.message="Editing placed junction · Update keeps position and ID. Road connections are checked too.".into();},Err(e)=>w.message=e}}
         }
-        let source_label=ed.splines.selected.and_then(|key|world.spline_edits.lock().current(key).map(|s|format!("Ausgewählte Straße: {} · {}",key.1,s.file))).unwrap_or_else(||"Keine Straße ausgewählt – vor dem Baukasten im Spline-Modus auswählen".into());
+        let source_label=ed.splines.selected.and_then(|key|world.spline_edits.lock().current(key).map(|s|format!("Selected road: {} · {}",key.1,s.file))).unwrap_or_else(||"No road selected – select one in spline mode before opening the builder".into());
         ed.junction_window.as_mut().unwrap().source_label=source_label;
         if let Some(id)=target.filter(|_|ed.junction_window.as_ref().unwrap().target.is_some()){
             let project=ed.junction_window.as_ref().unwrap().project.clone();
-            match junction_roads(ed,world,id,&project,&project,None){Ok(parts)=>{let _=show_junction_connections(ed,world,id,&project,&parts,None);},Err(e)=>{ed.junction_window.as_mut().unwrap().message=format!("Bestehende Anschlüsse prüfen: {e}");}}
+            match junction_roads(ed,world,id,&project,&project,None){Ok(parts)=>{let _=show_junction_connections(ed,world,id,&project,&parts,None);},Err(e)=>{ed.junction_window.as_mut().unwrap().message=format!("Check existing connections: {e}");}}
         }
         self.menus.editor_drag=false;self.input.dragging=false;self.input.keys.clear();self.input.mouse_look=false;self.input.mmb_held=false;self.input.buttons_held=(false,false);
         if let Some(window)=self.window.as_ref() {window.set_cursor_visible(true);}
@@ -52,11 +55,11 @@ impl App {
                 self.editor_open_textures(if matches!(command,Command::WalkTexture) {TextureTarget::JunctionWalk} else {TextureTarget::JunctionRoad});
             }
             Command::Load=>{
-                let mut dialog=rfd::FileDialog::new().set_title("Kreuzungsprojekt laden").add_filter("Kreuzungsprojekt",&["json"]);
+                let mut dialog=rfd::FileDialog::new().set_title(omsi_ui::tr("Load junction project").as_ref()).add_filter(omsi_ui::tr("Junction project").as_ref(),&["json"]);
                 if let Some(content)=crate::startup::content_dir() {dialog=dialog.set_directory(content.join("Sceneryobjects/openOMSI_Editor/Junctions"));}
                 if let Some(path)=dialog.pick_file() {
                     let window=self.menus.editor.as_mut().unwrap().junction_window.as_mut().unwrap();
-                    if let Err(e)=window.load(&path) {window.message=format!("Nicht geladen: {e}");}
+                    if let Err(e)=window.load(&path) {window.message=format!("Not loaded: {e}");}
                 }
                 self.input.keys.clear();self.input.buttons_held=(false,false);
             }
@@ -65,10 +68,10 @@ impl App {
                 let selected=self.menus.editor.as_ref().and_then(|ed|ed.splines.selected);
                 let spline=selected.and_then(|key|world.spline_edits.lock().current(key));
                 let outcome=(||->Result<(f64,String,crate::junction_builder::RoadSurface,f64),String> {
-                    let spline=spline.ok_or("Zuerst im Spline-Modus eine Straße auswählen, dann den Baukasten öffnen")?;
-                    let ty=world.spline_type(&spline.file).ok_or("Straßenprofil fehlt")?;
+                    let spline=spline.ok_or("Select a road in spline mode first, then open the builder")?;
+                    let ty=world.spline_type(&spline.file).ok_or("Road profile missing")?;
                     let paths:Vec<_>=ty.def.paths.iter().filter(|p|p.kind==0).collect();
-                    if paths.is_empty() {return Err("Dieser Spline besitzt keine Fahrbahnwege".into());}
+                    if paths.is_empty() {return Err("This spline has no road paths".into());}
                     let lo=paths.iter().map(|p|p.start[0] as f64-p.width as f64/2.0).fold(f64::INFINITY,f64::min);
                     let hi=paths.iter().map(|p|p.start[0] as f64+p.width as f64/2.0).fold(f64::NEG_INFINITY,f64::max);
                     let dirs=crate::scene::texture_dirs(&world.root,&ty.dir);let refs:Vec<&Path>=dirs.iter().map(|p|p.as_path()).collect();
@@ -78,8 +81,8 @@ impl App {
                         roots.iter().filter_map(|root|p.strip_prefix(root).ok()).max_by_key(|p|p.components().count())
                             .map(|p|p.to_string_lossy().replace('\\',"/"))
                     });
-                    if !(4.0..=30.0).contains(&(hi-lo)) {return Err("Fahrbahnbreite liegt außerhalb von 4–30 m".into());}
-                    Ok((hi-lo,texture.ok_or("Fahrbahntextur fehlt oder liegt außerhalb der Inhalteordner")?,surface,metres))
+                    if !(4.0..=30.0).contains(&(hi-lo)) {return Err("Road width is outside 4–30 m".into());}
+                    Ok((hi-lo,texture.ok_or("Road texture missing or outside the content folders")?,surface,metres))
                 })();
                 let window=self.menus.editor.as_mut().unwrap().junction_window.as_mut().unwrap();
                 if !window.commit() {return;}match outcome {Ok((width,texture,surface,metres))=>window.use_spline(width,texture,surface,metres),Err(e)=>window.message=e}
@@ -89,39 +92,39 @@ impl App {
                 let w=ed.junction_window.as_mut().unwrap();if !w.commit(){return;}
                 let pending=ed.splines.selected.map(|key|(key,w.arm));
                 let target=w.target;let project=w.project.clone();let old=w.placed_project.clone();
-                let result=(||{let id=target.ok_or("Zuerst eine platzierte Baukasten-Kreuzung im Objektmodus auswählen")?;
-                    let pending=pending.ok_or("Vor dem Objektmodus im Spline-Modus die anzuschließende Straße auswählen")?;
+                let result=(||{let id=target.ok_or("Select a placed builder junction in object mode first")?;
+                    let pending=pending.ok_or("Before switching to object mode, select the road to connect in spline mode")?;
                     junction_roads(ed,world,id,&project,old.as_ref().unwrap_or(&project),Some(pending))})();
                 match result{Ok(roads)=>{
                     let id=target.unwrap();let shown=show_junction_connections(ed,world,id,&project,&roads,pending);
-                    let w=ed.junction_window.as_mut().unwrap();match shown{Ok(())=>{w.pending=pending;w.message=format!("Grün: bestehende Anschlüsse · Blau: Vorbereitung an Arm {}. Aktualisieren übernimmt gemeinsam; Schließen verwirft die Vorbereitung.",['A','B','C','D'][w.arm]);},Err(e)=>w.message=e}
+                    let w=ed.junction_window.as_mut().unwrap();match shown{Ok(())=>{w.pending=pending;w.message=format!("Green: existing connections · Blue: prepared for arm {}. Update applies both; Close discards preparation.",['A','B','C','D'][w.arm]);},Err(e)=>w.message=e}
                 },Err(e)=>{let w=ed.junction_window.as_mut().unwrap();w.clear_connection_preview();w.message=e;}}
 
             }
             Command::Export=>{
                 let window=self.menus.editor.as_mut().unwrap().junction_window.as_mut().unwrap();if !window.commit() {return;}
                 let project=window.project.clone();let Some(world)=self.world.as_ref() else {return;};
-                let Some(content)=crate::startup::content_dir() else {window.message="Kein beschreibbarer Inhalteordner verfügbar".into();return;};
+                let Some(content)=crate::startup::content_dir() else {window.message="No writable content folder available".into();return;};
                 let target=window.target;let old=window.placed_project.clone();let pending=window.pending;
-                let roads=if let Some(id)=target{match junction_roads(self.menus.editor.as_ref().unwrap(),world,id,&project,old.as_ref().unwrap_or(&project),pending){Ok(v)=>v,Err(e)=>{self.menus.editor.as_mut().unwrap().junction_window.as_mut().unwrap().message=format!("Nicht aktualisiert: {e}");return;}}}else{Vec::new()};
+                let roads=if let Some(id)=target{match junction_roads(self.menus.editor.as_ref().unwrap(),world,id,&project,old.as_ref().unwrap_or(&project),pending){Ok(v)=>v,Err(e)=>{self.menus.editor.as_mut().unwrap().junction_window.as_mut().unwrap().message=format!("Not updated: {e}");return;}}}else{Vec::new()};
                 match crate::junction_builder::export(&project,&world.root,&content,&self.args.root) {
                     Ok(path)=>{
                         omsi_cfg::content_changed();
                         if let Some(id)=target{
                             let(Some(r),Some(scene))=(self.renderer.as_ref(),self.scene.as_mut())else{return;};
                             let ed=self.menus.editor.as_mut().unwrap();
-                            match ed.replace_junction(world,r,scene,id,path,roads,true){Ok(())=>{ed.junction_window=None;ed.spline_mode=false;self.editor_reload_splines();self.service_msg=Some(("Kreuzung und Anschlüsse aktualisiert · Position/ID erhalten · Rückgängig im Objektmodus · Strg+S speichern".into(),12.0));},Err(e)=>ed.junction_window.as_mut().unwrap().message=e}
+                            match ed.replace_junction(world,r,scene,id,path,roads,true){Ok(())=>{ed.junction_window=None;ed.spline_mode=false;self.editor_reload_splines();self.service_msg=Some(("Junction and connections updated · Position/ID kept · Undo in object mode · Ctrl+S to save".into(),12.0));},Err(e)=>ed.junction_window.as_mut().unwrap().message=e}
                             return;
                         }
                         let file=path.strip_prefix(&content).unwrap_or(&path).to_string_lossy().replace('\\',"/");
                         let ed=self.menus.editor.as_mut().unwrap();ed.junction_window=None;ed.spline_mode=false;ed.align_object=false;
                         ed.start_object(ObjectStamp::new(path.clone()));ed.align_object=false;
                         ed.placing_asset=Some(crate::asset_catalog::Asset {kind:crate::asset_catalog::Kind::Object,file,
-                            name:project.name,path,category:crate::asset_catalog::Category::Junctions,groups:"Eigene Kreuzungen".into()});
-                        self.service_msg=Some(("Kreuzung gespeichert · Ziel anklicken · N/M drehen · U/O Höhe · Strg+S speichert die Platzierung".into(),12.0));
+                            name:project.name,path,category:crate::asset_catalog::Category::Junctions,groups:"Custom junctions".into()});
+                        self.service_msg=Some(("Junction saved · Click target · N/M to rotate · U/O for height · Ctrl+S saves placement".into(),12.0));
                         self.input.keys.clear();self.input.buttons_held=(false,false);
                     }
-                    Err(e)=>self.menus.editor.as_mut().unwrap().junction_window.as_mut().unwrap().message=format!("Nicht gespeichert: {e}"),
+                    Err(e)=>self.menus.editor.as_mut().unwrap().junction_window.as_mut().unwrap().message=format!("Not saved: {e}"),
                 }
             }
             command=>self.menus.editor.as_mut().unwrap().junction_window.as_mut().unwrap().command(command),
@@ -167,24 +170,24 @@ impl App {
 
 /// Resolve the persistent object placement and all roads explicitly linked to its ID.
 fn junction_roads(ed:&crate::editor::Editor,world:&crate::scene::World,id:i64,project:&crate::junction_builder::Project,old:&crate::junction_builder::Project,pending:Option<(crate::spline_editor::Key,usize)>)->Result<Vec<(crate::spline_editor::Key,omsi_map::MapSpline)>,String>{
-    if world.global.world_coordinates{return Err("Kreuzungsanschlüsse brauchen eine normale OMSI-Karte".into());}
+    if world.global.world_coordinates{return Err("Junction connections require a standard OMSI map".into());}
     let(_,at,heading,tilt,_,_)=ed.junction_placement(world,id)?;
-    if tilt.iter().any(|v|v.abs()>1e-6){return Err("Geneigte Kreuzung: Neigung vor dem Anschließen auf 0 setzen".into());}
+    if tilt.iter().any(|v|v.abs()>1e-6){return Err("Tilted junction: set tilt to 0 before connecting".into());}
     let transform=|p:glam::DVec3|{let(s,c)=heading.to_radians().sin_cos();at+glam::DVec3::new(p.x*c+p.y*s,p.y*c-p.x*s,p.z)};
     let mut assigned=std::collections::BTreeMap::new();
     for(_,tx,ty,_)in world.map_tiles(){let(mut tile,_)=world.editor_row_source((tx,ty))?;
         {let mut edits=world.spline_edits.lock();for s in &tile.splines{edits.originals.entry(((tx,ty),s.id)).or_insert_with(||s.clone());}edits.overlay((tx,ty),&mut tile);}
         for s in tile.splines.into_iter().filter(|s|!s.deleted&&(s.prev_id==id||s.next_id==id)){
-            let key=((tx,ty),s.id);if s.prev_id==id&&s.next_id==id{return Err("Straße ist an beiden Enden mit dieser Kreuzung verbunden; separat bearbeiten".into());}
+            let key=((tx,ty),s.id);if s.prev_id==id&&s.next_id==id{return Err("Road is connected to this junction at both ends; edit separately".into());}
             let curve=omsi_geometry::SplineCurve::from_map(&s,glam::DVec2::new(tx as f64,ty as f64)*omsi_map::tile_size());
             let p=curve.point_at(if s.prev_id==id{0.0}else{s.length});
-            let arm=(0..4).filter_map(|i|crate::junction_builder::port(old,i).ok().map(|(q,_,_)|(i,transform(q).distance(p)))).min_by(|a,b|a.1.total_cmp(&b.1)).filter(|(_,d)|*d<0.1).ok_or("Alter Straßenanschluss liegt nicht mehr am Kreuzungsarm; Kreuzung/Straße zuerst zurücksetzen")?.0;
+            let arm=(0..4).filter_map(|i|crate::junction_builder::port(old,i).ok().map(|(q,_,_)|(i,transform(q).distance(p)))).min_by(|a,b|a.1.total_cmp(&b.1)).filter(|(_,d)|*d<0.1).ok_or("Old road connection no longer meets junction arm; reset junction/road first")?.0;
             assigned.insert(key,arm);
         }
     }
     if let Some((key,arm))=pending{assigned.insert(key,arm);}
     let mut occupied=std::collections::HashSet::new();let mut result=Vec::new();
-    for(key,arm)in assigned{if !occupied.insert(arm){return Err("Kreuzungsarm ist bereits mit einer anderen Straße verbunden".into());}
+    for(key,arm)in assigned{if !occupied.insert(arm){return Err("Junction arm is already connected to another road".into());}
         let(point,direction,def)=crate::junction_builder::port(project,arm)?;
         result.push((key,ed.splines.junction_plan(world,key,id,transform(point),direction+heading,&def)?));
     }Ok(result)

@@ -148,7 +148,7 @@ impl Updater {
     /// Download and install `r` (in the background).
     pub fn install(&mut self, r: Release) {
         if crate::spline_editor::OFFICIAL_UPDATES_DISABLED {
-            self.set(Status::Failed("Dieser Spline-Editor wird über sein eigenes Paket aktualisiert. Die offizielle Installation kann separat aktualisiert werden.".into()));
+            self.set(Status::Failed("This editor is updated through its own package. The official installation can be updated separately.".into()));
             return;
         }
         if matches!(self.status(), Status::Downloading { .. } | Status::Installing(_) | Status::WaitingForInstaller(_) | Status::Restarting(_)) {

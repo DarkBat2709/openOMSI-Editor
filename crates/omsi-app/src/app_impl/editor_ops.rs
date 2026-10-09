@@ -13,7 +13,7 @@ impl App {
         };
         let dir = omsi_launcher_lib::data_dir().join("editor-views");
         if let Err(e) = omsi_launcher_lib::editor_views::save(&dir, &key, view) {
-            log::warn!("Editor-Kameraposition konnte nicht gespeichert werden: {e}");
+            log::warn!("Could not save editor camera position: {e}");
         }
     }
 
@@ -59,12 +59,29 @@ impl App {
         if self.menus.editor.as_ref().is_some_and(|ed| ed.placing_asset.is_some()) {
             if matches!(code, KeyCode::Escape | KeyCode::KeyB) {
                 let ed = self.menus.editor.as_mut().unwrap(); ed.placing_asset = None;ed.object_stamp=None;ed.splines.cancel_generation();
-                self.service_msg = Some(("Einsetzen beendet; gesetzte Objekte bleiben erhalten · Strg+S speichern".into(), 4.0));
+                self.service_msg = Some(("Placement finished; placed objects are kept · Ctrl+S to save".into(), 4.0));
                 return true;
             }
             let object=self.menus.editor.as_ref().is_some_and(|ed|ed.placing_asset.as_ref().is_some_and(|a|a.kind==crate::asset_catalog::Kind::Object));
             let ctrl=self.input.keys.contains(&KeyCode::ControlLeft)||self.input.keys.contains(&KeyCode::ControlRight);
             if matches!(code,KeyCode::KeyW|KeyCode::KeyA|KeyCode::KeyS|KeyCode::KeyD|KeyCode::KeyQ|KeyCode::KeyE) && !(ctrl&&code==KeyCode::KeyS) {return false;}
+            if object {
+                let fine=self.input.keys.contains(&KeyCode::ShiftLeft)||self.input.keys.contains(&KeyCode::ShiftRight);
+                if let Some(step)=crate::object_angles::key(code,fine,ctrl) {
+                    let ed=self.menus.editor.as_mut().unwrap();
+                    if let Some(stamp)=ed.object_stamp.as_mut() {
+                        match step {
+                            crate::object_angles::Step::Turn(t)=>stamp.heading+=t,
+                            crate::object_angles::Step::Tilt(axis,d)=>{
+                                if !crate::editor::builder_asset(&stamp.sco) {self.service_msg=Some(("Tilt controls currently support builder junctions and roundabouts".into(),5.0));return true;}
+                                match crate::object_angles::adjusted(stamp.tilt,axis,d) {Ok(tilt)=>stamp.tilt=tilt,Err(e)=>{self.service_msg=Some((e,5.0));return true;}}
+                            }
+                        }
+                        ed.align_object=false;
+                    }
+                    return true;
+                }
+            }
             if object && matches!(code,KeyCode::KeyN|KeyCode::KeyM|KeyCode::KeyU|KeyCode::KeyO) {
                 let fine=self.input.keys.contains(&KeyCode::ShiftLeft)||self.input.keys.contains(&KeyCode::ShiftRight);
                 let ed=self.menus.editor.as_mut().unwrap();
@@ -81,7 +98,7 @@ impl App {
         let shift = self.input.keys.contains(&KeyCode::ShiftLeft) || self.input.keys.contains(&KeyCode::ShiftRight);
         let ctrl = self.input.keys.contains(&KeyCode::ControlLeft) || self.input.keys.contains(&KeyCode::ControlRight);
         let Some(cam) = self.camera.as_ref() else { return false };
-        let Some(action) = crate::editor::action_for(code, shift, ctrl, cam.yaw as f64) else { return false };
+        let Some(action) = crate::editor::action_for_mode(code, shift, ctrl, cam.yaw as f64,self.menus.editor.as_ref().is_some_and(|ed|ed.spline_mode)) else { return false };
         self.editor_action(action)
     }
 
@@ -97,7 +114,7 @@ impl App {
             self.menus.editor_drag=false;
         }
         if matches!(action,crate::editor::Action::Save|crate::editor::Action::Leave|crate::editor::Action::SplineMode
-            |crate::editor::Action::TileWindow|crate::editor::Action::TerrainMode|crate::editor::Action::Catalog|crate::editor::Action::JunctionWindow|crate::editor::Action::RoadsideWindow
+            |crate::editor::Action::TileWindow|crate::editor::Action::TerrainMode|crate::editor::Action::Catalog|crate::editor::Action::JunctionWindow|crate::editor::Action::RoundaboutWindow|crate::editor::Action::RoadsideWindow
             |crate::editor::Action::Paste|crate::editor::Action::RepeatObject) {
             self.editor_terrain_finish();
         }
@@ -106,39 +123,40 @@ impl App {
             && !matches!(&action, crate::editor::Action::Connect | crate::editor::Action::ReplaceConnection | crate::editor::Action::Generate
                 | crate::editor::Action::SnapEnd | crate::editor::Action::Pick | crate::editor::Action::NextPick
                 | crate::editor::Action::SplineUndo | crate::editor::Action::Straight | crate::editor::Action::Leave
-                | crate::editor::Action::SplineMode | crate::editor::Action::Save | crate::editor::Action::TileWindow | crate::editor::Action::TerrainMode | crate::editor::Action::JunctionWindow | crate::editor::Action::RoadsideWindow)
+                | crate::editor::Action::SplineMode | crate::editor::Action::Save | crate::editor::Action::TileWindow | crate::editor::Action::TerrainMode | crate::editor::Action::JunctionWindow | crate::editor::Action::RoundaboutWindow | crate::editor::Action::RoadsideWindow)
         {
-            self.service_msg = Some(("Erst Verbinden oder Abbrechen wählen".into(), 4.0));
+            self.service_msg = Some(("Choose Connect or Cancel first".into(), 4.0));
             return true;
         }
         let msg = match action {
             crate::editor::Action::ObjectText => {
-                if self.net.lan.is_some() { "Beschriftung bearbeiten ist bisher im Einzelspieler verfügbar".into() }
+                if self.net.lan.is_some() { "Object text editing is currently available in single-player".into() }
                 else {
                     self.editor_terrain_finish(); self.menus.editor_drag = false; self.input.mouse_look = false;
                     match self.menus.editor.as_mut().unwrap().open_labels(&world) {
                         Ok(()) => { self.input.keys.clear(); self.input.buttons_held = (false,false); self.input.dragging = false;
                             self.input.mmb_held = false; self.input.cursor_hidden = None;
                             if let Some(window) = self.window.as_ref() { window.set_cursor_visible(true); }
-                            "Textfeld anklicken und Beschriftung eingeben".into() }
+                            "Click text field and enter text".into() }
                         Err(error) => error,
                     }
                 }
             }
-            crate::editor::Action::CancelPlacement=>{let ed=self.menus.editor.as_mut().unwrap();ed.placing_asset=None;ed.object_stamp=None;ed.splines.cancel_generation();"Einsetzen beendet · Strg+S speichern".into()}
+            crate::editor::Action::CancelPlacement=>{let ed=self.menus.editor.as_mut().unwrap();ed.placing_asset=None;ed.object_stamp=None;ed.splines.cancel_generation();"Placement finished · Ctrl+S to save".into()}
             crate::editor::Action::PlacementRepeat=>{let ed=self.menus.editor.as_mut().unwrap();ed.repeat_objects=!ed.repeat_objects;
-                if ed.repeat_objects {"Mehrfachsetzen AN · jeden Zielpunkt anklicken · Esc beenden"} else {"Einmal setzen"}.into()}
+                if ed.repeat_objects {"Repeat placement ON · Click each target · Esc to finish"} else {"Place once"}.into()}
             crate::editor::Action::ClipboardCopy=>{let ed=self.menus.editor.as_mut().unwrap();
-                if ed.spline_mode {"Zum Kopieren eines Objekts erst in den Objekt-Modus wechseln".into()} else {
-                    match ed.capture_object(&world) {Ok(stamp)=>{ed.clipboard=Some(stamp);"Objekt kopiert · Strg+V und Ziel anklicken".into()},Err(e)=>e}
+                if ed.spline_mode {"Switch to object mode before copying an object".into()} else {
+                    match ed.capture_object(&world) {Ok(stamp)=>{ed.clipboard=Some(stamp);"Object copied · Ctrl+V and click target".into()},Err(e)=>e}
                 }}
             crate::editor::Action::Paste|crate::editor::Action::RepeatObject=>{
                 let ed=self.menus.editor.as_mut().unwrap();let stamp=if matches!(action,crate::editor::Action::Paste) {ed.clipboard.clone()} else {ed.last_object.clone()};
-                match stamp {Some(stamp)=>{self.menus.editor_drag=false;ed.start_object(stamp);"Ziel anklicken · Mehrfachsetzen für weitere Exemplare · Esc beenden".into()},None=>"Noch kein Objekt zum Einsetzen gespeichert".into()}
+                match stamp {Some(stamp)=>{self.menus.editor_drag=false;ed.start_object(stamp);"Click target · Repeat placement for more copies · Esc to finish".into()},None=>"No object stored for placement yet".into()}
             }
             crate::editor::Action::TerrainMode=>{self.editor_open_terrain();return true;}
             crate::editor::Action::SidewalkWindow=>{self.editor_open_sidewalk();return true;}
             crate::editor::Action::RoadsideWindow=>{self.editor_open_roadside();return true;}
+            crate::editor::Action::RoundaboutWindow=>{self.editor_open_roundabout();return true;}
             crate::editor::Action::JunctionWindow=>{self.editor_open_junction();return true;}
             crate::editor::Action::TileWindow => { self.editor_open_tiles(); return true; }
             crate::editor::Action::SplineMode => {
@@ -169,18 +187,18 @@ impl App {
                 self.menus.editor_drag = false;
                 let ed = self.menus.editor.as_mut().unwrap();
                 if ed.spline_mode { ed.splines.connect_key(&world) }
-                else { "T für Splines, dann ersten Spline anklicken und G drücken".into() }
+                else { "T for splines, then click first spline and press G".into() }
             }
             crate::editor::Action::ReplaceConnection => {
                 self.menus.editor_drag = false;
                 let ed = self.menus.editor.as_mut().unwrap();
                 if ed.spline_mode { ed.splines.replace_connection(&world) }
-                else { "T für Splines, dann G zum Verbinden".into() }
+                else { "T for splines, then G to connect".into() }
             }
             a @ (crate::editor::Action::FitTerrain | crate::editor::Action::SmoothRoad(_) | crate::editor::Action::Branch(_) | crate::editor::Action::SnapEnd | crate::editor::Action::SplineUndo | crate::editor::Action::Split) => {
                 let at = crate::editor::Editor::aim(&world, eye, fwd);
                 let ed = self.menus.editor.as_mut().unwrap();
-                if !ed.spline_mode { "Diese Funktion braucht den Spline-Modus (T)".into() }
+                if !ed.spline_mode { "This function requires spline mode (T)".into() }
                 else {
                     ed.splines.finish_drag();
                     match a {
@@ -198,7 +216,7 @@ impl App {
             crate::editor::Action::Catalog => { self.editor_open_catalog(None); return true; }
             crate::editor::Action::Leave => {
                 if self.menus.editor.as_mut().is_some_and(|ed| ed.splines.cancel_connection()) {
-                    self.service_msg = Some(("Verbindung abgebrochen; nichts verändert".into(), 4.0));
+                    self.service_msg = Some(("Connection cancelled; nothing changed".into(), 4.0));
                     return true;
                 }
                 self.toggle_editor();
@@ -231,7 +249,7 @@ impl App {
                             let e = world.spline_edits.lock();
                             !e.changed.is_empty() || !e.added.is_empty()
                         };
-                        format!("{} Datei(en) im Modordner gespeichert ({}){}", files.len(), files.iter().filter_map(|f| f.file_name()).map(|n| n.to_string_lossy()).collect::<Vec<_>>().join(", "),
+                        format!("{} file(s) saved in mod folder ({}){}", files.len(), files.iter().filter_map(|f| f.file_name()).map(|n| n.to_string_lossy()).collect::<Vec<_>>().join(", "),
                             if spline_changed { " - reload the map to update AI traffic" } else { "" })
                     }
                     Some(Err(e)) => format!("Not saved: {e}"),
@@ -264,7 +282,7 @@ impl App {
 
     pub(crate) fn editor_open_terrain(&mut self) {
         if self.net.lan.is_some() || self.world.as_ref().is_some_and(|w|w.global.world_coordinates) {
-            self.service_msg=Some(("Gelände-Modus braucht Einzelspieler und eine normale OMSI-Karte".into(),5.0));return;
+            self.service_msg=Some(("Terrain mode requires single-player and a standard OMSI map".into(),5.0));return;
         }
         self.editor_terrain_finish();
         let (Some(ed),Some(w),Some(cam))=(self.menus.editor.as_mut(),self.world.as_ref(),self.camera.as_ref()) else {return;};
@@ -293,7 +311,7 @@ impl App {
         if force {
             if let Some(world) = self.world.as_ref() {
                 if world.roadside_edits.lock().groups.iter().any(|g| g.settings.ground) {
-                    if let Err(error) = crate::roadside_objects::refresh(world) { log::warn!("Objektreihen nach Geländeänderung: {error}"); }
+                    if let Err(error) = crate::roadside_objects::refresh(world) { log::warn!("Object rows after terrain change: {error}"); }
                     tiles.extend(world.roadside_edits.lock().dirty_tiles.drain());
         tiles.extend(world.object_ground_dirty.lock().drain());
                     tiles.sort(); tiles.dedup();
@@ -322,13 +340,13 @@ impl App {
             Command::Layer(delta)=>{let count=crate::ground_paint::layers(w).len();if count>0 {
                 let layer=(ed.terrain.texture_layer as i64+delta as i64).rem_euclid(count as i64) as usize;ed.terrain.choose_layer(w,layer);}},
             Command::Erase(erase)=>{ed.terrain.texture_erase=erase;ed.terrain.sample_texture=false;},
-            Command::SampleTexture=>{ed.terrain.sample_texture=true;ed.terrain.message="Boden anklicken, um dessen sichtbare Textur aufzunehmen".into();},
+            Command::SampleTexture=>{ed.terrain.sample_texture=true;ed.terrain.message="Click ground to sample its visible texture".into();},
             Command::Tool(tool)=>{ed.terrain.tool=tool;ed.terrain.sample_height=false;ed.terrain.pick_tile=false;},
             Command::FineSmooth=>{ed.terrain.tool=crate::terrain_editor::Tool::Smooth;ed.terrain.strength=0.15;ed.terrain.softness=80.0;ed.terrain.sample_height=false;ed.terrain.pick_tile=false;},
             Command::Edit(field)=>{ed.terrain.edit(field);self.input.keys.clear();},
             Command::Adjust(field,delta)=>{ed.terrain.input=None;let value=ed.terrain.value(field)+delta;ed.terrain.set_value(field,value);},
-            Command::SampleHeight=>{ed.terrain.sample_height=true;ed.terrain.pick_tile=false;ed.terrain.message="Gelände anklicken, um dessen Höhe aufzunehmen".into();},
-            Command::PickTile=>{ed.terrain.pick_tile=true;ed.terrain.sample_height=false;ed.terrain.message="Gewünschtes Tile auf dem Gelände anklicken".into();},
+            Command::SampleHeight=>{ed.terrain.sample_height=true;ed.terrain.pick_tile=false;ed.terrain.message="Click terrain to sample its height".into();},
+            Command::PickTile=>{ed.terrain.pick_tile=true;ed.terrain.sample_height=false;ed.terrain.message="Click the desired tile on the terrain".into();},
             Command::TileMove(sign)=>{ed.terrain.change_tile(w,ed.terrain.tile_step*sign,false);},
             Command::TileLevel=>{ed.terrain.change_tile(w,ed.terrain.height,true);},
             Command::Blend=>{ed.terrain.blend=!ed.terrain.blend;},
@@ -377,11 +395,11 @@ impl App {
     pub(crate) fn editor_open_tiles(&mut self) {
         self.editor_terrain_finish();
         if self.net.lan.is_some() {
-            self.service_msg = Some(("Neue Tiles sind bisher nur im Einzelspieler möglich".into(), 5.0)); return;
+            self.service_msg = Some(("New tiles are currently available only in single-player".into(), 5.0)); return;
         }
         let (Some(ed), Some(world), Some(cam)) = (self.menus.editor.as_mut(), self.world.as_ref(), self.camera.as_ref()) else { return; };
         if world.global.world_coordinates {
-            self.service_msg = Some(("Neue Tiles sind bisher nur für normale OMSI-Karten möglich".into(), 5.0)); return;
+            self.service_msg = Some(("New tiles are currently available only for standard OMSI maps".into(), 5.0)); return;
         }
         ed.splines.finish_drag(); ed.end_object_drag(); ed.splines.cancel_connection(); ed.splines.cancel_generation();
         ed.placing_asset = None;ed.object_stamp=None;ed.catalog = None;ed.text_window = None;ed.junction_window=None;ed.roadside_window=None;ed.sidewalk_window=None;ed.texture_target=None;
@@ -400,7 +418,7 @@ impl App {
         match command {
             Command::Close => { self.menus.editor.as_mut().unwrap().tile_window = None; }
             Command::Select(key) => window.select(key),
-            Command::HeightMode(own)=>{window.own_height=own;window.height_edit=None;window.message=if own {"Neue Tile-Höhe im Zahlfeld einstellen"} else {"Die Randhöhen der Nachbarn werden übernommen"}.into();},
+            Command::HeightMode(own)=>{window.own_height=own;window.height_edit=None;window.message=if own {"Set new tile height in the number field"} else {"Neighbouring edge heights will be used"}.into();},
             Command::HeightAdjust(delta)=>{window.height=(window.height+delta).clamp(crate::terrain_editor::HEIGHT_MIN,crate::terrain_editor::HEIGHT_MAX);window.height_edit=None;},
             Command::EditHeight=>{window.height_edit=Some(format!("{:.2}",window.height));window.height_replace=true;},
             Command::Pan((x,y)) => {
@@ -411,7 +429,7 @@ impl App {
                 if !window.can_create() { return; }
                 let key = window.selected.unwrap();
                 let Some(world) = self.world.clone() else { return; };
-                let result = crate::startup::content_dir().ok_or_else(|| "Kein Inhaltsordner eingerichtet".to_string())
+                let result = crate::startup::content_dir().ok_or_else(|| "No content folder configured".to_string())
                     .and_then(|content| crate::tile_editor::create(&world,key,&content,&self.args.map,&self.args.root,window.own_height.then_some(window.height)));
                 match result {
                     Ok(path) => {
@@ -423,15 +441,15 @@ impl App {
                         } else if let (Some(r),Some(scene)) = (self.renderer.as_ref(),self.scene.as_mut()) {
                             if let Some(path) = world.tile_source(key.0,key.1) {
                                 if let Err(e) = world.build_scene(r,scene,&[(key.0,key.1,path)]) {
-                                    window.message = format!("Tile gespeichert; Darstellung fehlgeschlagen: {e}. Karte neu laden.");
+                                    window.message = format!("Tile saved; rendering failed: {e}. Reload map.");
                                     window.known.insert(key); window.selected = None; return;
                                 }
                             }
                         }
                         window.known.insert(key); window.selected = None; window.center = key;
-                        window.message = format!("Tile ({}, {}) gespeichert. Schließen und Straße weiterbauen.",key.0,key.1);
+                        window.message = format!("Tile ({}, {}) saved. Close and continue building the road.",key.0,key.1);
                     }
-                    Err(e) => { log::warn!("tile editor: {e}"); window.message = format!("Nicht angelegt: {e}"); }
+                    Err(e) => { log::warn!("tile editor: {e}"); window.message = format!("Not created: {e}"); }
                 }
             }
         }
@@ -495,7 +513,7 @@ impl App {
                             values.resize(values.len().max(count), String::new()); window.values = values;
                         })
                     };
-                    window.message = match result { Ok(()) => "Beschriftung übernommen · Strg+S speichert die Karte".into(), Err(e) => e };
+                    window.message = match result { Ok(()) => "Text applied · Ctrl+S saves the map".into(), Err(e) => e };
                 }
             }
         }
@@ -554,7 +572,7 @@ impl App {
         if let Some(window) = self.window.as_ref() { window.set_cursor_visible(true); }
         self.input.buttons_held = (false, false); self.input.both_drag = None;
         self.release_vehicle_keys(); self.input.keys.clear();
-        self.service_msg = Some(("Bauteilkatalog: Suchbegriff tippen · Kachel anklicken · Auswählen · Esc schließen".into(), 8.0));
+        self.service_msg = Some(("Asset catalogue: type search · Click tile · Select · Esc closes".into(), 8.0));
     }
 
     pub(crate) fn editor_catalog_command(&mut self, command: crate::asset_catalog::Command) {
@@ -567,31 +585,31 @@ impl App {
             Command::Choose => {
                 let Some(asset) = catalog.chosen() else { return; };
                 if let Some(window)=ed.sidewalk_window.as_mut(){
-                    if asset.kind!=Kind::Spline{self.service_msg=Some(("Ein Gehweg-Spline-Profil auswählen".into(),5.0));return;}
-                    window.file=asset.file;window.existing=None;window.message="Profil und Texturen gewählt – Vorschau prüfen".into();
+                    if asset.kind!=Kind::Spline{self.service_msg=Some(("Select a sidewalk spline profile".into(),5.0));return;}
+                    window.file=asset.file;window.existing=None;window.message="Profile and textures selected – check preview".into();
                     if let Some(world)=self.world.as_ref(){window.refresh(world);}ed.catalog=None;self.input.keys.clear();self.input.buttons_held=(false,false);return;
                 }
                 if let Some(window) = ed.roadside_window.as_mut() {
-                    if asset.kind != Kind::Object { self.service_msg = Some(("Für eine Objektreihe ein Szenerieobjekt wählen".into(), 5.0)); return; }
-                    window.file = asset.file; window.message = "Objekt gewählt · Blau = geplante Positionen".into();
+                    if asset.kind != Kind::Object { self.service_msg = Some(("Choose a scenery object for an object row".into(), 5.0)); return; }
+                    window.file = asset.file; window.message = "Object selected · Blue = planned positions".into();
                     if let Some(world) = self.world.as_ref() { window.refresh(world); }
                     ed.catalog = None; self.input.keys.clear(); self.input.buttons_held = (false, false); return;
                 }
                 if asset.kind==Kind::Texture {
                     let target=ed.texture_target.unwrap_or(crate::editor::TextureTarget::Terrain);
-                    if self.net.lan.is_some() {self.service_msg=Some(("Texturen bearbeiten ist im Einzelspieler verfügbar".into(),5.0));return;}
+                    if self.net.lan.is_some() {self.service_msg=Some(("Texture editing is available in single-player".into(),5.0));return;}
                     let Some(world)=self.world.as_ref() else {return;};
                     match target {
                         crate::editor::TextureTarget::Terrain=>{
-                            if world.global.world_coordinates {self.service_msg=Some(("Texturpinsel braucht eine normale OMSI-Karte".into(),5.0));return;}
+                            if world.global.world_coordinates {self.service_msg=Some(("Texture brush requires a standard OMSI map".into(),5.0));return;}
                             match crate::ground_paint::select_texture(world,&asset,4.0) {
                                 Ok(layer)=>{ed.terrain.active=true;ed.terrain.mode=crate::terrain_editor::Mode::Textures;
                                     ed.terrain.input=None;ed.terrain.sample_height=false;ed.terrain.pick_tile=false;ed.terrain.cursor=None;
                                     ed.placing_asset=None;ed.object_stamp=None;ed.junction_window=None;
                                     ed.terrain.choose_layer(world,layer);ed.terrain.texture_erase=false;
-                                    log::info!("Texturpinsel: gewählt Ebene {layer} '{}'",asset.file);
-                                    ed.terrain.message="Textur gewählt · links halten und malen · Strg+Z rückgängig · Strg+S speichern".into();},
-                                Err(error)=>{log::warn!("Texturpinsel: '{}' nicht gewählt: {error}",asset.file);self.service_msg=Some((error,8.0));return;}
+                                    log::info!("Texture brush: selected layer {layer} '{}'",asset.file);
+                                    ed.terrain.message="Texture selected · Hold left mouse button to paint · Ctrl+Z to undo · Ctrl+S to save".into();},
+                                Err(error)=>{log::warn!("Texture brush: '{}' not selected: {error}",asset.file);self.service_msg=Some((error,8.0));return;}
                             }
                         }
                         crate::editor::TextureTarget::JunctionRoad|crate::editor::TextureTarget::JunctionWalk=>{
@@ -607,8 +625,8 @@ impl App {
                 if asset.kind == Kind::Spline { ed.splines.choose_file(asset.file.clone()); ed.spline_mode = true; ed.selected = None; ed.editing_added = None; }
                 else {ed.spline_mode=false;ed.object_stamp=Some(crate::editor::ObjectStamp::new(asset.path.clone()));
                     ed.align_object=asset.category==crate::asset_catalog::Category::Junctions;}
-                let message = if asset.kind == Kind::Spline { "Straßenart gewählt · Start auf dem Boden anklicken, dann Ziel · Esc/B Abbruch" }
-                    else { "Objekt gewählt · Ziel anklicken · Mehrfachsetzen für weitere Exemplare · Esc beenden" };
+                let message = if asset.kind == Kind::Spline { "Road type selected · Click start on ground, then target · Esc/B cancels" }
+                    else { "Object selected · Click target · Repeat placement for more copies · Esc to finish" };
                 ed.placing_asset = Some(asset); ed.catalog = None;
                 self.service_msg = Some((message.into(), 12.0));
             }
@@ -657,8 +675,8 @@ impl App {
         };
         if changed {
             if let Err(error) = crate::roadside_objects::initialize(&world).and_then(|_| crate::roadside_objects::refresh(&world)) {
-                log::warn!("Objektreihen nach Straßenänderung: {error}");
-                self.service_msg = Some((format!("Objektreihen prüfen: {error}"), 6.0));
+                log::warn!("Object rows after road change: {error}");
+                self.service_msg = Some((format!("Check object rows: {error}"), 6.0));
             }
         }
         tiles.extend(world.roadside_edits.lock().dirty_tiles.drain());
@@ -760,6 +778,10 @@ impl App {
             self.input.cursor.0>=r[0] && self.input.cursor.0<=r[2] && self.input.cursor.1>=r[1] && self.input.cursor.1<=r[3]) {
             self.editor_action(crate::editor::Action::TerrainMode);return true;
         }
+        if pressed && self.ui.as_ref().and_then(|ui|ui.roundabout_open_rect).is_some_and(|r|
+            self.input.cursor.0>=r[0]&&self.input.cursor.0<=r[2]&&self.input.cursor.1>=r[1]&&self.input.cursor.1<=r[3]) {
+            self.editor_action(crate::editor::Action::RoundaboutWindow);return true;
+        }
         if pressed && self.ui.as_ref().and_then(|ui|ui.junction_open_rect).is_some_and(|r|
             self.input.cursor.0>=r[0] && self.input.cursor.0<=r[2] && self.input.cursor.1>=r[1] && self.input.cursor.1<=r[3]) {
             self.editor_action(crate::editor::Action::JunctionWindow);return true;
@@ -810,7 +832,7 @@ impl App {
                 let ed = self.menus.editor.as_mut().unwrap();
                 let message = if confirm && ed.splines.connection_can_replace() { ed.splines.replace_connection(&world) }
                     else if confirm { ed.splines.confirm_connection(&world) }
-                    else { ed.splines.cancel_connection(); "Verbindung abgebrochen; nichts verändert".into() };
+                    else { ed.splines.cancel_connection(); "Connection cancelled; nothing changed".into() };
                 self.service_msg = Some((message, 5.0));
                 self.editor_reload_splines();
                 return true;
@@ -825,21 +847,21 @@ impl App {
             let terrain=&mut self.menus.editor.as_mut().unwrap().terrain;
             if !terrain.commit_input() {return true;}
             if let Some(hit)=crate::terrain_editor::TerrainEditor::ground_hit(&world,o,d.as_dvec3()) {terrain.begin(&world,hit);}
-            else {terrain.message="Auf geladenes Gelände innerhalb der Karte klicken".into();
-                if terrain.mode==crate::terrain_editor::Mode::Textures {log::info!("Texturpinsel: kein Geländetreffer · {}",terrain.message);}}
+            else {terrain.message="Click loaded terrain inside the map".into();
+                if terrain.mode==crate::terrain_editor::Mode::Textures {log::info!("Texture brush: no terrain hit · {}",terrain.message);}}
             return true;
         }
         if let Some(asset) = self.menus.editor.as_ref().and_then(|ed| ed.placing_asset.clone()) {
             self.menus.editor_drag = false;
             let Some(hit) = crate::placing::ground_hit(&world, o, d.as_dvec3(), 400.0) else {
-                self.service_msg = Some(("Auf einen Bodenpunkt innerhalb der Karte klicken".into(), 4.0)); return true;
+                self.service_msg = Some(("Click a ground location inside the map".into(), 4.0)); return true;
             };
             let object=asset.kind==crate::asset_catalog::Kind::Object;
             let message = if asset.kind == crate::asset_catalog::Kind::Spline {
                 let ed = self.menus.editor.as_mut().unwrap(); let started = ed.splines.generation_started();
                 let message = ed.splines.generate(&world, Some(hit));
                 if started && !ed.splines.generation_started() { ed.placing_asset = None; }
-                if !started { "Start gewählt (blaue Markierung) · jetzt Ziel anklicken · Esc/B Abbruch".into() } else { message }
+                if !started { "Start selected (blue marker) · Now click target · Esc/B cancels".into() } else { message }
             } else {
                 let (Some(r), Some(scene)) = (self.renderer.as_ref(), self.scene.as_mut()) else { return true; };
                 let ed = self.menus.editor.as_mut().unwrap();
@@ -848,14 +870,14 @@ impl App {
                 at.z+=stamp.height_offset;stamp.heading=heading;
                 let message=if stamp.tilt==[0.0;2] && stamp.strings.is_empty() {ed.place_object(&world,r,scene,stamp.sco.clone(),at,heading)}
                     else {ed.place_object_values(&world,r,scene,stamp.sco.clone(),at,heading,stamp.tilt,stamp.strings.clone())};
-                if message.starts_with("Objekt eingesetzt") {
+                if message.starts_with("Object placed") {
                     ed.last_object=Some(stamp.clone());ed.clipboard=Some(stamp);
                     if !ed.repeat_objects {ed.placing_asset=None;ed.object_stamp=None;}
                     else {ed.object_stamp=ed.last_object.clone();}
                 }
                 message
             };
-            self.service_msg = if object && message.starts_with("Objekt eingesetzt") {None} else {Some((message,8.0))};
+            self.service_msg = if object && message.starts_with("Object placed") {None} else {Some((message,8.0))};
             self.editor_reload_splines(); self.editor_broadcast(false);
             return true;
         }

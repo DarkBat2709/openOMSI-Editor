@@ -1,4 +1,10 @@
-//! Parameterised T/X junctions. Mesh, markings and AI paths come from the same arms.
+//! Parameterised T/X junctions and single-lane roundabouts. Mesh, markings and AI paths come from the same arms.
+mod roundabout;
+mod rules;
+pub use rules::rewrite as rewrite_roundabout_rules;
+pub fn roundabout_rules(asset:&Path)->Result<Option<String>,String>{rules::asset_rules(asset)}
+pub use roundabout::Roundabout;
+
 use glam::{DVec2,DVec3,Mat4,Vec2,Vec3};
 use omsi_o3d::{Material,Mesh,Triangle,Vertex};
 use serde::{Deserialize,Serialize};
@@ -10,23 +16,25 @@ pub struct Arm {pub enabled:bool,pub angle:f64,pub width:f64,pub length:f64,pub 
 pub struct RoadSurface {pub u_start:f64,pub u_end:f64,pub reverse_v:bool,pub width_metres:f64}
 impl Default for RoadSurface {fn default()->Self {Self {u_start:0.0,u_end:1.0,reverse_v:false,width_metres:4.0}}}
 #[derive(Clone,Debug,PartialEq,Serialize,Deserialize)]
-pub struct Project {pub format:u32,pub name:String,pub arms:[Arm;4],pub corner:f64,pub texture_metres:f64,
+pub struct Project {
+    #[serde(default, skip_serializing_if="Option::is_none")] pub roundabout:Option<Roundabout>,
+    pub format:u32,pub name:String,pub arms:[Arm;4],pub corner:f64,pub texture_metres:f64,
     #[serde(default)] pub road_surface:Option<RoadSurface>,
     pub road_texture:String,pub walk_texture:String,pub markings:bool,pub left_hand:bool}
 
 impl Default for Project {
-    fn default()->Self {Self {format:1,name:"Eigene T-Kreuzung".into(),arms:std::array::from_fn(|i|Arm {
+    fn default()->Self {Self {roundabout:None,format:1,name:"Custom T-junction".into(),arms:std::array::from_fn(|i|Arm {
         enabled:i!=3,angle:[270.0,90.0,180.0,0.0][i],width:7.0,length:30.0,bend:0.0,sidewalk:0.0}),
         corner:5.0,texture_metres:4.0,road_surface:Some(RoadSurface::default()),road_texture:String::new(),walk_texture:String::new(),markings:true,left_hand:false}}
 }
 
 #[derive(Clone,Copy,Debug,PartialEq,Eq)]
-pub enum Field {Name,Width,Length,Angle,Bend,Sidewalk,Corner,TextureMetres,UStart,UEnd,TextureWidth}
+pub enum Field {IslandRadius,RingWidth,IslandHeight,Name,Width,Length,Angle,Bend,Sidewalk,Corner,TextureMetres,UStart,UEnd,TextureWidth}
 impl Field {
-    pub fn title(self)->&'static str {match self {Self::Name=>"Name",Self::Width=>"Fahrbahnbreite (m)",Self::Length=>"Länge ab Mitte (m)",
-        Self::Angle=>"Richtung (°)",Self::Bend=>"Biegung am Ende (°)",Self::Sidewalk=>"Gehweg je Seite (m)",Self::Corner=>"Eckrundung (m)",Self::TextureWidth=>"Texturbreite (m)",Self::UStart=>"Ausschnitt U von",Self::UEnd=>"Ausschnitt U bis",Self::TextureMetres=>"Texturlänge (m)"}}
+    pub fn title(self)->&'static str {match self {Self::IslandRadius=>"Island radius (m)",Self::RingWidth=>"Ring road width (m)",Self::IslandHeight=>"Island height (m)",Self::Name=>"Name",Self::Width=>"Road width (m)",Self::Length=>"Length from centre (m)",
+        Self::Angle=>"Direction (°)",Self::Bend=>"Bend at end (°)",Self::Sidewalk=>"Sidewalk per side (m)",Self::Corner=>"Corner radius (m)",Self::TextureWidth=>"Texture width (m)",Self::UStart=>"Crop U from",Self::UEnd=>"Crop U to",Self::TextureMetres=>"Texture length (m)"}}
     pub fn texture_index(self)->Option<usize> {match self {Self::UStart=>Some(0),Self::UEnd=>Some(1),Self::TextureWidth=>Some(2),_=>None}}
-    fn limits(self)->(f64,f64) {match self {Self::Width=>(4.0,30.0),Self::Length=>(8.0,150.0),Self::Angle=>(0.0,360.0),
+    fn limits(self)->(f64,f64) {match self {Self::IslandRadius=>(5.0,60.0),Self::RingWidth=>(4.0,12.0),Self::IslandHeight=>(0.05,1.0),Self::Width=>(4.0,30.0),Self::Length=>(8.0,150.0),Self::Angle=>(0.0,360.0),
         Self::Bend=>(-35.0,35.0),Self::Sidewalk=>(0.0,6.0),Self::Corner=>(0.0,20.0),Self::TextureMetres=>(0.25,100.0),Self::TextureWidth=>(0.25,100.0),Self::UStart|Self::UEnd=>(-16.0,16.0),Self::Name=>(0.0,0.0)}}
 }
 #[derive(Clone,Copy)]
@@ -43,11 +51,24 @@ pub struct Window {
 
 impl Window {
     pub fn new(left_hand:bool)->Self {let project=Project {left_hand,..Default::default()};Self {texture_digits:[4;3],texture_steps:[-4;3],texture_focus:None,existing_preview:Vec::new(),arm_links:[None;4],source_label:String::new(),road_preview:Vec::new(),pending:None,target:None,placed_project:None,project,arm:0,input:None,
-        message:"Arm wählen, Maße einstellen, dann Speichern & einsetzen. Blau = KI-Wege.".into(),rects:Vec::new(),preview:None,
+        message:"Choose arm, adjust dimensions, then Save & place. Blue = AI paths.".into(),rects:Vec::new(),preview:None,
         preview_id:0,show_paths:true,view:0,error:None,undo:Vec::new(),redo:Vec::new(),dirty:true}}
+    pub fn new_roundabout(left_hand:bool)->Self {
+        let mut w=Self::new(left_hand);
+        w.project.roundabout=Some(Roundabout::default());
+        w.project.format=2;
+        w.project.name="Custom roundabout".into();
+        w.project.arms[3].enabled=true;
+        for arm in &mut w.project.arms {arm.length=35.0;}
+        w.message="Single lane · Choose an entrance and dimensions · Save & place · Reload map for AI".into();
+        w
+    }
     pub fn hit(&self,p:(f32,f32))->Option<Command> {self.rects.iter().rev().find(|(r,_)|
         p.0>=r[0]&&p.0<=r[2]&&p.1>=r[1]&&p.1<=r[3]).map(|(_,c)|*c)}
     pub fn value(&self,field:Field)->f64 {let arm=&self.project.arms[self.arm];match field {
+        Field::IslandRadius=>self.project.roundabout.as_ref().map_or(12.0,|r|r.island_radius),
+        Field::RingWidth=>self.project.roundabout.as_ref().map_or(6.0,|r|r.road_width),
+        Field::IslandHeight=>self.project.roundabout.as_ref().map_or(0.15,|r|r.island_height),
         Field::Width=>arm.width,Field::Length=>arm.length,Field::Angle=>arm.angle,Field::Bend=>arm.bend,Field::Sidewalk=>arm.sidewalk,
         Field::TextureWidth=>self.project.road_surface.as_ref().map_or(self.project.texture_metres,|p|p.width_metres),
         Field::UStart=>self.project.road_surface.as_ref().map_or(0.0,|p|p.u_start),
@@ -90,7 +111,11 @@ impl Window {
     pub fn connection_preview(&mut self,points:Vec<[DVec3;2]>,existing:Vec<[DVec3;2]>,links:[Option<i64>;4]){self.changed();self.road_preview=points;self.existing_preview=existing;self.arm_links=links;}
     pub fn set(&mut self,field:Field,value:f64) {let (lo,hi)=field.limits();let value=value.clamp(lo,hi);
         if !value.is_finite() || field==Field::Name || (self.value(field)-value).abs()<1e-8 {return;}
-        self.remember();let arm=&mut self.project.arms[self.arm];match field {Field::Width=>arm.width=value,Field::Length=>arm.length=value,
+        self.remember();let arm=&mut self.project.arms[self.arm];match field {
+            Field::IslandRadius=>{if let Some(r)=self.project.roundabout.as_mut(){r.island_radius=value;}},
+            Field::RingWidth=>{if let Some(r)=self.project.roundabout.as_mut(){r.road_width=value;}},
+            Field::IslandHeight=>{if let Some(r)=self.project.roundabout.as_mut(){r.island_height=value;}},
+            Field::Width=>arm.width=value,Field::Length=>arm.length=value,
             Field::Angle=>arm.angle=value,Field::Bend=>arm.bend=value,Field::Sidewalk=>arm.sidewalk=value,
             Field::TextureWidth=>self.project.road_surface.get_or_insert_with(RoadSurface::default).width_metres=value,
             Field::UStart=>self.project.road_surface.get_or_insert_with(RoadSurface::default).u_start=value,
@@ -100,14 +125,14 @@ impl Window {
     pub fn commit(&mut self)->bool {
         let Some(input)=self.input.as_ref() else {return true;};let field=input.field;let text=input.text.trim().to_string();
         if field==Field::Name {
-            if text.is_empty() || text.chars().count()>80 || text.chars().any(char::is_control) {self.message="Name benötigt 1–80 Zeichen".into();return false;}
+            if text.is_empty() || text.chars().count()>80 || text.chars().any(char::is_control) {self.message="Name requires 1–80 characters".into();return false;}
             if self.project.name!=text {self.remember();self.project.name=text;self.changed();}
         } else {let (lo,hi)=field.limits();match crate::terrain_editor::parse_number(&text,lo,hi) {
             Ok(v)=>{
                 if let Some(i)=field.texture_index() {
                     if !input.replace {
                         let digits=text.split(['.',',']).nth(1).map_or(0,str::len);
-                        if digits>4 {self.message="Bitte höchstens 4 Nachkommastellen eingeben".into();return false;}
+                        if digits>4 {self.message="Please enter at most 4 decimal places".into();return false;}
                         self.texture_digits[i]=digits;self.texture_steps[i]=-(digits as i32);
                     }
                 }
@@ -128,8 +153,8 @@ impl Window {
             Command::Arm(i) if i<4 && self.project.arms[i].enabled=>{if self.commit() {self.arm=i;}},
             Command::Adjust(f,d)=>{if self.commit() {self.set(f,self.value(f)+d);}},
             Command::Shape(cross)=>{if !self.commit() || self.project.arms[3].enabled==cross {return;}self.remember();self.project.arms[3].enabled=cross;
-                if matches!(self.project.name.as_str(),"Eigene T-Kreuzung"|"Eigene Vierarmkreuzung") {
-                    self.project.name=if cross {"Eigene Vierarmkreuzung"} else {"Eigene T-Kreuzung"}.into();
+                if matches!(self.project.name.as_str(),"Custom T-junction"|"Custom four-way junction") {
+                    self.project.name=if cross {"Custom four-way junction"} else {"Custom T-junction"}.into();
                 }
                 if !cross && self.arm==3 {self.arm=2;}self.changed();},
             Command::Markings=>{if !self.commit() {return;}self.remember();self.project.markings=!self.project.markings;self.changed();},
@@ -146,7 +171,7 @@ impl Window {
     pub fn use_spline(&mut self,width:f64,texture:String,surface:RoadSurface,metres:f64) {
         self.remember();self.project.arms[self.arm].width=width;
         self.project.road_texture=texture;self.project.road_surface=Some(surface);self.project.texture_metres=metres;self.changed();
-        self.message="Fahrbahntextur und Ausschnitt übernommen. U von/bis prüfen: eingebrannte Linien ggf. aussparen. Gilt für alle Arme.".into();
+        self.message="Road texture and crop applied. Check U from/to: exclude painted lines if needed. Applies to all arms.".into();
     }
     pub fn refresh(&mut self,root:&Path) {
         if !self.dirty {return;}self.dirty=false;self.preview_id=self.preview_id.wrapping_add(1);self.preview=None;
@@ -162,23 +187,23 @@ impl Window {
     }
     pub fn load(&mut self,path:&Path)->Result<(),String> {
         let bytes=std::fs::read(path).map_err(|e|e.to_string())?;
-        if bytes.len()>64*1024 {return Err("Kreuzungsprojekt ist zu groß".into());}
+        if bytes.len()>64*1024 {return Err("Junction project is too large".into());}
         let project:Project=serde_json::from_slice(&bytes).map_err(|e|e.to_string())?;build(&project)?;
-        self.remember();self.project=project;if !self.project.arms[self.arm].enabled {self.arm=0;}self.input=None;self.changed();
-        self.message="Projekt geladen · Änderungen werden beim Export als neues Bauteil gespeichert".into();Ok(())
+        self.remember();self.target=None;self.placed_project=None;self.existing_preview.clear();self.arm_links=[None;4];self.project=project;if !self.project.arms[self.arm].enabled {self.arm=0;}self.input=None;self.changed();
+        self.message="Project loaded · Changes are exported as a new asset".into();Ok(())
     }
 }
 
 fn validate_surface(surface:&RoadSurface)->Result<(),String> {
-    if !surface.width_metres.is_finite() || !(0.25..=100.0).contains(&surface.width_metres) {return Err("Texturbreite benötigt 0,25–100 m".into());}
+    if !surface.width_metres.is_finite() || !(0.25..=100.0).contains(&surface.width_metres) {return Err("Texture width must be 0.25–100 m".into());}
     if !surface.u_start.is_finite() || !surface.u_end.is_finite() || surface.u_start.abs()>16.0 || surface.u_end.abs()>16.0
-        || (surface.u_end-surface.u_start).abs()<0.0001 {return Err("Texturausschnitt U von/bis muss verschieden sein und zwischen -16 und 16 liegen".into());}Ok(())
+        || (surface.u_end-surface.u_start).abs()<0.0001 {return Err("Texture crop U from/to must differ and lie between -16 and 16".into());}Ok(())
 }
 /// Materialise the horizontal atlas interval so wrapping cannot sample adjacent markings.
 /// The same pixels are used in the preview and the exported native OMSI texture.
 pub fn crop_surface(image:&omsi_texture::Image,surface:&RoadSurface)->Result<omsi_texture::Image,String> {
     validate_surface(surface)?;
-    if image.width==0 || image.height==0 || image.rgba.len()!=image.width as usize*image.height as usize*4 {return Err("Ungültige Bilddaten".into());}
+    if image.width==0 || image.height==0 || image.rgba.len()!=image.width as usize*image.height as usize*4 {return Err("Invalid image data".into());}
     let width=((surface.u_end-surface.u_start).abs()*image.width as f64).round().clamp(1.0,4096.0) as u32;
     let mut rgba=Vec::with_capacity(width as usize*image.height as usize*4);
     for y in 0..image.height {for x in 0..width {
@@ -193,7 +218,7 @@ pub fn crop_surface(image:&omsi_texture::Image,surface:&RoadSurface)->Result<oms
 /// This avoids assuming slot zero is asphalt (it may be a kerb, verge or decal).
 pub fn spline_surface(def:&omsi_scenery::Spline,mirror:bool,length:f64)->Result<(usize,RoadSurface,f64),String> {
     let paths:Vec<_>=def.paths.iter().filter(|p|p.kind==0).collect();
-    if paths.is_empty() {return Err("Spline besitzt keine Fahrbahnwege".into());}
+    if paths.is_empty() {return Err("Spline has no road paths".into());}
     let road_lo=paths.iter().map(|p|p.start[0] as f64-p.width as f64/2.0).fold(f64::INFINITY,f64::min);
     let road_hi=paths.iter().map(|p|p.start[0] as f64+p.width as f64/2.0).fold(f64::NEG_INFINITY,f64::max);
     let mut candidates=Vec::new();
@@ -211,13 +236,13 @@ pub fn spline_surface(def:&omsi_scenery::Spline,mirror:bool,length:f64)->Result<
             }
         }
     }
-    let (_,slot,a,b,lo,hi)=candidates.into_iter().max_by(|a,b|a.0.total_cmp(&b.0)).ok_or("Keine eindeutige Fahrbahnfläche; Asphalt bitte im Texturkatalog auswählen")?;
+    let (_,slot,a,b,lo,hi)=candidates.into_iter().max_by(|a,b|a.0.total_cmp(&b.0)).ok_or("No unambiguous road surface; choose asphalt in the texture catalogue")?;
     let texture=&def.textures[slot];
-    if texture.patchwork.is_some() || (a.v_scale-b.v_scale).abs()>0.00001 {return Err("Patchwork oder variable Texturskalierung: Asphalt bitte manuell auswählen".into());}
+    if texture.patchwork.is_some() || (a.v_scale-b.v_scale).abs()>0.00001 {return Err("Patchwork or variable texture scaling: choose asphalt manually".into());}
     let u=|x:f64|a.u as f64+(b.u-a.u) as f64*(x-a.x as f64)/(b.x-a.x) as f64;
     let scale=a.v_scale as f64/if texture.scale_by_length {length} else {1.0};
     let metres=1.0/scale.abs();
-    if !metres.is_finite() || !(0.25..=100.0).contains(&metres) {return Err("Texturlänge außerhalb von 0,25–100 m; Textur manuell auswählen".into());}
+    if !metres.is_finite() || !(0.25..=100.0).contains(&metres) {return Err("Texture length outside 0.25–100 m; choose texture manually".into());}
     let (u_start,u_end)=if mirror {(u(hi),u(lo))} else {(u(lo),u(hi))};
     let surface=RoadSurface {u_start,u_end,reverse_v:(scale<0.0)^mirror,width_metres:hi-lo};validate_surface(&surface)?;
     Ok((slot,surface,metres))
@@ -236,13 +261,14 @@ fn point(arm:&Arm,core:f64,s:f64,offset:f64,z:f64)->DVec3 {
 /// Exact centre, outward heading and cross-section of an exported arm.
 pub fn port(project:&Project,index:usize)->Result<(DVec3,f64,omsi_scenery::Spline),String>{
     build(project)?;
-    let a=project.arms.get(index).filter(|a|a.enabled).ok_or("Dieser Kreuzungsarm ist nicht aktiv")?;
+    let a=project.arms.get(index).filter(|a|a.enabled).ok_or("This junction arm is not active")?;
     let core=project.arms.iter().filter(|a|a.enabled).map(|a|a.width/2.0+a.sidewalk).fold(0.0,f64::max)+project.corner+1.0;
     let mut points=Vec::new();let half=a.width/2.0;
     if a.sidewalk>0.0 {points.extend([(-half-a.sidewalk,0.15),(-half,0.15)]);}
     points.extend([(-half,0.0),(half,0.0)]);
     if a.sidewalk>0.0 {points.extend([(half,0.15),(half+a.sidewalk,0.15)]);}
     let def=omsi_scenery::Spline{profiles:vec![omsi_scenery::SplineProfile{texture:0,points:points.into_iter().map(|(x,z)|omsi_scenery::SplineProfilePoint{x:x as f32,z:z as f32,u:0.0,v_scale:1.0}).collect()}],..Default::default()};
+    if project.roundabout.is_some() {return Ok((direction(a.angle).extend(0.0)*a.length,a.angle,def));}
     Ok((point(a,core,a.length-core,0.0,0.0),a.angle+a.bend,def))
 }
 
@@ -284,34 +310,35 @@ fn contains(p:DVec2,outline:&[DVec2])->bool {
 }
 
 pub fn build(project:&Project)->Result<Built,String> {
-    if project.format!=1 {return Err("Unbekanntes Kreuzungsprojektformat".into());}
+    if !matches!((project.format,project.roundabout.is_some()),(1,false)|(2,true)) {return Err("Unknown junction project format".into());}
     if project.name.trim().is_empty() || project.name.chars().count()>80 || project.name.chars().any(char::is_control) {
-        return Err("Kreuzung benötigt einen Namen mit 1–80 Zeichen".into());
+        return Err("Junction requires a name of 1–80 characters".into());
     }
     for (f,v) in [(Field::Corner,project.corner),(Field::TextureMetres,project.texture_metres)] {
-        let (lo,hi)=f.limits();if !v.is_finite() || v<lo || v>hi {return Err(format!("Ungültiger Wert: {}",f.title()));}
+        let (lo,hi)=f.limits();if !v.is_finite() || v<lo || v>hi {return Err(format!("Invalid value: {}",f.title()));}
     }
     if let Some(surface)=&project.road_surface {validate_surface(surface)?;}
     for texture in [&project.road_texture,&project.walk_texture] {
         let normal=texture.replace('\\',"/");let path=Path::new(&normal);
         if !texture.is_empty() && (path.is_absolute() || normal.contains(':') || normal.chars().any(char::is_control)
             || path.components().any(|c|!matches!(c,std::path::Component::Normal(_)))) {
-            return Err("Textur benötigt einen relativen OMSI-Inhaltepfad".into());
+            return Err("Texture requires a relative OMSI content path".into());
         }
     }
     let mut arms:Vec<_>=project.arms.iter().filter(|a|a.enabled).collect();
-    if !(3..=4).contains(&arms.len()) {return Err("Drei oder vier Straßenarme auswählen".into());}
+    if !(3..=4).contains(&arms.len()) {return Err("Choose three or four road arms".into());}
     for a in &arms {for (f,v) in [(Field::Width,a.width),(Field::Length,a.length),(Field::Angle,a.angle),(Field::Bend,a.bend),(Field::Sidewalk,a.sidewalk)] {
-        let (lo,hi)=f.limits();if !v.is_finite() || v<lo || v>hi {return Err(format!("Ungültiger Armwert: {}",f.title()));}
+        let (lo,hi)=f.limits();if !v.is_finite() || v<lo || v>hi {return Err(format!("Invalid arm value: {}",f.title()));}
     }}
     arms.sort_by(|a,b|a.angle.rem_euclid(360.0).total_cmp(&b.angle.rem_euclid(360.0)));
     for i in 0..arms.len() {let gap=(arms[(i+1)%arms.len()].angle-arms[i].angle).rem_euclid(360.0);
-        if !(35.0..=180.00001).contains(&gap) {return Err("Straßenarme benötigen 35–180° Abstand; Hauptarme gegebenenfalls gegenüberstellen".into());}}
+        if !(35.0..=180.00001).contains(&gap) {return Err("Road arms need 35–180° spacing; place main arms opposite if needed".into());}}
+    if project.roundabout.is_some() {return roundabout::build(project);}
     let core=arms.iter().map(|a|a.width/2.0+a.sidewalk).fold(0.0,f64::max)+project.corner+1.0;
     for a in &arms {
-        if a.length<core+4.0 {return Err(format!("Arme müssen mindestens {:.1} m lang sein; Eckrundung oder Breite verkleinern",core+4.0));}
+        if a.length<core+4.0 {return Err(format!("Arms must be at least {:.1} m long; reduce corner radius or width",core+4.0));}
         if a.bend.abs()>0.001 && (a.length-core)/a.bend.to_radians().abs()<=a.width/2.0+a.sidewalk+1.0 {
-            return Err("Biegung ist für diese Straßenbreite zu eng".into());
+            return Err("Bend is too tight for this road width".into());
         }
     }
     let mut mesh=Mesh {version:4,transform:Mat4::IDENTITY,has_transform:true,materials:vec![
@@ -373,16 +400,16 @@ pub fn build(project:&Project)->Result<Built,String> {
             let kerb:Vec<_>=curve.iter().map(|p|(p.extend(0.0),p.extend(0.15))).collect();ribbon(&mut mesh,&kerb,1,project.texture_metres);
         }
     }
-    if omsi_geometry::outline_crosses_itself(&outline) {return Err("Straßenarme überschneiden sich; Biegung, Winkel oder Länge ändern".into());}
+    if omsi_geometry::outline_crosses_itself(&outline) {return Err("Road arms overlap; change bend, angle or length".into());}
     for (i,a) in arms.iter().enumerate() {for (j,b) in arms.iter().enumerate() {if i==j {continue;}
         let start=point(a,core,0.0,-sign*a.width/4.0,0.0);let end=point(b,core,0.0,sign*b.width/4.0,0.0);
         let c1=start-direction(a.angle).extend(0.0)*(core*0.9);let c2=end-direction(b.angle).extend(0.0)*(core*0.9);
         let curve:Vec<_>=(0..=48).map(|k|cubic(start,c1,c2,end,k as f64/48.0)).collect();
-        if curve.iter().any(|p|!contains(p.truncate(),&outline)) {return Err("Ein Fahrweg verlässt die Fahrbahn; Winkel oder Eckrundung anpassen".into());}
+        if curve.iter().any(|p|!contains(p.truncate(),&outline)) {return Err("A driving path leaves the road surface; adjust angle or corner radius".into());}
         let delta=(b.angle-a.angle-180.0+180.0).rem_euclid(360.0)-180.0;
         paths.push((curve,(a.width.min(b.width)/2.0).max(2.0),if delta.abs()<35.0 {1} else if delta>0.0 {3} else {2}));
     }}
-    if mesh.vertices.len()>100_000 {return Err("Kreuzungsmodell ist zu groß".into());}
+    if mesh.vertices.len()>100_000 {return Err("Junction model is too large".into());}
     Ok(Built {mesh,paths,outline})
 }
 
@@ -401,7 +428,7 @@ fn o3d(mesh:&Mesh)->Result<Vec<u8>,String> {
     for t in &mesh.triangles {for index in t.indices {out.extend_from_slice(&index.to_le_bytes());}out.extend_from_slice(&t.material.to_le_bytes());}
     out.push(0x26);out.extend_from_slice(&(mesh.materials.len() as u16).to_le_bytes());
     for m in &mesh.materials {for f in m.diffuse.into_iter().chain(m.specular).chain(m.emissive).chain([m.specular_power]) {out.extend_from_slice(&f.to_le_bytes());}
-        if !m.texture.is_ascii() || m.texture.len()>255 {return Err("Exporttextur benötigt kurzen ASCII-Dateinamen".into());}
+        if !m.texture.is_ascii() || m.texture.len()>255 {return Err("Export texture requires a short ASCII filename".into());}
         out.push(m.texture.len() as u8);out.extend_from_slice(m.texture.as_bytes());}
     out.push(0x79);for f in Mat4::IDENTITY.to_cols_array() {out.extend_from_slice(&f.to_le_bytes());}Ok(out)
 }
@@ -427,11 +454,11 @@ pub fn export(project:&Project,root:&Path,content:&Path,original:&Path)->Result<
     let mut textures=Vec::new();
     for (slot,base) in [(0,"asphalt"),(1,"gehweg")] {
         let name=&built.mesh.materials[slot].texture;if name.is_empty() {continue;}
-        let path=omsi_texture::find_texture(name,&[root]).ok_or_else(||format!("Textur fehlt: {name}"))?;
+        let path=omsi_texture::find_texture(name,&[root]).ok_or_else(||format!("Texture missing: {name}"))?;
         let decoded=omsi_texture::decode_file(&path).map_err(|e|e.to_string())?;
         if slot==0 {if let Some(surface)=&project.road_surface {
             let cropped=crop_surface(&decoded,surface)?;
-            let image=image::RgbaImage::from_raw(cropped.width,cropped.height,cropped.rgba).ok_or("Ungültige Texturgröße")?;
+            let image=image::RgbaImage::from_raw(cropped.width,cropped.height,cropped.rgba).ok_or("Invalid texture size")?;
             let mut bytes=std::io::Cursor::new(Vec::new());
             image::DynamicImage::ImageRgba8(image).write_to(&mut bytes,image::ImageFormat::Png).map_err(|e|e.to_string())?;
             textures.push(("asphalt.png".into(),bytes.into_inner()));built.mesh.materials[slot].texture="asphalt.png".into();continue;

@@ -10,7 +10,7 @@ pub const TOLERANCE:f64=0.15;
 pub enum Status {Broken,Open,Unknown,Good}
 impl Status {
     pub fn color(self)->[f32;3]{match self{Self::Broken=>[1.0,0.12,0.12],Self::Open=>[1.0,0.8,0.05],Self::Unknown=>[0.65,0.65,0.7],Self::Good=>[0.1,1.0,0.3]}}
-    pub fn name(self)->&'static str{match self{Self::Broken=>"FEHLER",Self::Open=>"OFFEN",Self::Unknown=>"UNGEPRÜFT",Self::Good=>"VERBUNDEN"}}
+    pub fn name(self)->&'static str{match self{Self::Broken=>"ERROR",Self::Open=>"OPEN",Self::Unknown=>"UNCHECKED",Self::Good=>"CONNECTED"}}
     fn rank(self)->u8{match self{Self::Broken=>0,Self::Open=>1,Self::Unknown=>2,Self::Good=>3}}
 }
 #[derive(Clone)]
@@ -53,36 +53,36 @@ pub fn inspect(roads:&[(Key,MapSpline)],objects:&[Object],tile_size:f64,unread_t
         for(end,link)in [s.prev_id,s.next_id].into_iter().enumerate(){
             let at=ends[i][end];let mut port=None;
             let(status,reason)=if !at.is_finite()||!s.length.is_finite()||s.length<=0.0 {
-                (Status::Broken,"Ungültige Spline-Geometrie".into())
+                (Status::Broken,"Invalid spline geometry".into())
             }else if ids.get(&s.id).is_some_and(|v|v.len()!=1){
-                (Status::Broken,"Eigene ID mehrfach vergeben".into())
+                (Status::Broken,"Own ID assigned more than once".into())
             }else if link==0 {
-                (Status::Open,"Kein Verweis – kann ein beabsichtigtes Ende sein".into())
+                (Status::Open,"No reference – may be an intentional end".into())
             }else if link==s.id {
-                (Status::Broken,"Verweis auf sich selbst".into())
+                (Status::Broken,"Reference to itself".into())
             }else{match ids.get(&link){
-                None if !report.unread_tiles.is_empty()=>(Status::Unknown,format!("ID {link} nicht gefunden; Prüfung unvollständig")),
-                None=>(Status::Broken,format!("Ziel-ID {link} fehlt")),
-                Some(v) if v.len()!=1=>(Status::Broken,format!("Ziel-ID {link} mehrfach vergeben")),
+                None if !report.unread_tiles.is_empty()=>(Status::Unknown,format!("ID {link} not found; check incomplete")),
+                None=>(Status::Broken,format!("Target ID {link} missing")),
+                Some(v) if v.len()!=1=>(Status::Broken,format!("Target ID {link} assigned more than once")),
                 Some(v)=>match v[0]{
                     Target::Road(j)=>{let other=&roads[j].1;
-                        if other.deleted {(Status::Broken,format!("Ziel-Spline {link} ist gelöscht"))}
+                        if other.deleted {(Status::Broken,format!("Target spline {link} is deleted"))}
                         else{
                             let reciprocal:Vec<_>=[other.prev_id,other.next_id].into_iter().enumerate().filter(|(_,id)|*id==s.id).map(|(e,_)|e).collect();
-                            if reciprocal.is_empty(){(Status::Broken,format!("Spline {link} verweist nicht zurück"))}
+                            if reciprocal.is_empty(){(Status::Broken,format!("Spline {link} does not link back"))}
                             else{let gap=reciprocal.iter().map(|e|at.distance(ends[j][*e])).filter(|d|d.is_finite()).min_by(f64::total_cmp).unwrap_or(f64::INFINITY);
-                                if gap>TOLERANCE {(Status::Broken,format!("Spline {link}: Endpunktabstand {gap:.2} m"))}
-                                else{(Status::Good,format!("Spline {link}: beidseitiger Verweis, Abstand {gap:.3} m"))}}
+                                if gap>TOLERANCE {(Status::Broken,format!("Spline {link}: endpoint distance {gap:.2} m"))}
+                                else{(Status::Good,format!("Spline {link}: mutual reference, distance {gap:.3} m"))}}
                         }
                     }
                     Target::Object(j)=>{let o=&objects[j];
-                        if o.deleted {(Status::Broken,format!("Ziel-Objekt {link} ist gelöscht"))}
+                        if o.deleted {(Status::Broken,format!("Target object {link} is deleted"))}
                         else if let Some(ports)=&o.ports {
                             let nearest=ports.iter().enumerate().map(|(p,q)|(p,at.distance(*q))).filter(|(_,d)|d.is_finite()).min_by(|a,b|a.1.total_cmp(&b.1));
-                            match nearest {Some((p,gap))if gap<=TOLERANCE=>{port=Some((link,p));(Status::Good,format!("Kreuzung {link}: Arm {}, Abstand {gap:.3} m",p+1))},
-                                Some((_,gap))=>(Status::Broken,format!("Kreuzung {link}: Abstand zum nächsten Arm {gap:.2} m")),
-                                None=>(Status::Unknown,format!("Objekt {link}: keine prüfbaren Arme"))}
-                        }else{(Status::Unknown,format!("Objekt {link} vorhanden; Anschlussgeometrie ungeprüft"))}
+                            match nearest {Some((p,gap))if gap<=TOLERANCE=>{port=Some((link,p));(Status::Good,format!("Junction {link}: arm {}, distance {gap:.3} m",p+1))},
+                                Some((_,gap))=>(Status::Broken,format!("Junction {link}: distance to nearest arm {gap:.2} m")),
+                                None=>(Status::Unknown,format!("Object {link}: no verifiable arms"))}
+                        }else{(Status::Unknown,format!("Object {link} exists; connection geometry unchecked"))}
                     }
                 }
             }};
@@ -91,7 +91,7 @@ pub fn inspect(roads:&[(Key,MapSpline)],objects:&[Object],tile_size:f64,unread_t
         }
     }
     for indices in occupied.values().filter(|v|v.len()>1){for &i in indices{
-        report.entries[i].status=Status::Broken;report.entries[i].reason="Mehrere Spline-Enden belegen denselben Kreuzungsarm".into();
+        report.entries[i].status=Status::Broken;report.entries[i].reason="Multiple spline ends occupy the same junction arm".into();
     }}
     report.entries.sort_by_key(|e|(e.status.rank(),e.key,e.end));
     for(i,e)in report.entries.iter().enumerate(){

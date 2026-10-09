@@ -334,9 +334,9 @@ impl World {
     }
 
     pub(crate) fn editor_row_source(&self, key: (i32, i32)) -> Result<(Tile, HashSet<i64>), String> {
-        let path = self.tile_source(key.0, key.1).ok_or("Tile der Straße fehlt")?;
+        let path = self.tile_source(key.0, key.1).ok_or("Road tile missing")?;
         let base = Tile::load(&path).map_err(|e| e.to_string())?;
-        let active = crate::tiles::read_tile(&path, &self.chrono_dirs.read()).ok_or("Aktives Tile fehlt")?;
+        let active = crate::tiles::read_tile(&path, &self.chrono_dirs.read()).ok_or("Active tile missing")?;
         let editable = base.splines.iter().filter(|s| active.splines.iter().any(|a| a == *s)).map(|s| s.id).collect();
         Ok((base, editable))
     }
@@ -559,7 +559,7 @@ impl World {
     /// resident, and the returned ownership keeps the new shared textures alive.
     pub fn update_editor_object_labels(&self, renderer: &Renderer, scene: &mut Scene,
         id: i64, strings: &[String]) -> Result<TileGpu, String> {
-        let object = self.edit_objects.lock().get(&id).cloned().ok_or("Objekt nicht mehr geladen")?;
+        let object = self.edit_objects.lock().get(&id).cloned().ok_or("Object no longer loaded")?;
         let ot = self.editor_object_type(&object.sco.to_string_lossy())?;
         let scripted = self.scripted.lock().iter().any(|o| o.map_id == id);
         let resources = self.update_editor_label_materials(renderer, scene, &ot, &object.instances, strings, scripted);
@@ -617,6 +617,12 @@ impl World {
     pub fn move_helper_object(&self, renderer: &Renderer, scene: &mut Scene, tg: &TileGpu, pos: DVec3, heading: f64) {
         let rotation = Mat4::from_rotation_z((-heading).to_radians() as f32)*tg.helper_shape.unwrap_or(Mat4::IDENTITY);
         for instance in &tg.instances { renderer.set_transform(scene, *instance, pos, rotation); }
+    }
+
+    /// Refresh the helper's cached local shape too, so later yaw/translation keeps tilt.
+    pub(crate) fn reshape_editor_helper(&self,renderer:&Renderer,scene:&mut Scene,tg:&mut TileGpu,pos:DVec3,heading:f64,shape:Mat4) {
+        tg.helper_shape=Some(shape);
+        self.move_helper_object(renderer,scene,tg,pos,heading);
     }
 
     /// The scripted objects of tile `key` go (their sounds stop).

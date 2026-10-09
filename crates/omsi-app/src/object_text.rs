@@ -21,12 +21,12 @@ pub fn fields(ot: &ObjectType) -> Vec<(usize, String)> {
     let mut fields = std::collections::BTreeMap::new();
     if let Some(program) = ot.program.as_ref().filter(|_| !ot.model.text_textures.is_empty()) {
         for (slot, name) in program.str_var_names.iter().enumerate().take(4096) {
-            fields.insert(slot, format!("{} · Feld {}", name, slot + 1));
+            fields.insert(slot, format!("{} · Field {}", name, slot + 1));
         }
     }
     for tt in &ot.model.text_textures {
         if let Ok(slot) = tt.variable.trim().parse::<usize>() {
-            if slot < 4096 { fields.insert(slot, format!("Textfeld {} · {}", slot + 1, tt.font)); }
+            if slot < 4096 { fields.insert(slot, format!("Text field {} · {}", slot + 1, tt.font)); }
         }
     }
     fields.into_iter().collect()
@@ -34,11 +34,11 @@ pub fn fields(ot: &ObjectType) -> Vec<(usize, String)> {
 impl Window {
     pub fn new(target: Target, name: String, fields: Vec<(usize, String)>, mut values: Vec<String>) -> Result<Self, String> {
         let count = fields.iter().map(|(slot, _)| slot + 1).max().unwrap_or(0);
-        if count == 0 { return Err("Dieses Objekt besitzt keine editierbaren Textfelder. Fest aufgemalte Texte gehören zur Textur.".into()); }
-        if count > 4096 || values.len() > 4096 { return Err("Zu viele Textfelder im Objekt".into()); }
+        if count == 0 { return Err("This object has no editable text fields. Text painted onto the object belongs to its texture.".into()); }
+        if count > 4096 || values.len() > 4096 { return Err("Too many text fields in object".into()); }
         values.resize(values.len().max(count), String::new());
         Ok(Self { target, name, fields, values, active: 0, replace: true, rects: Vec::new(),
-            message: "Feld anklicken und tippen · Übernehmen zeigt den Text · Strg+S speichert die Karte".into() })
+            message: "Click field and type · Apply shows the text · Ctrl+S saves the map".into() })
     }
     pub fn page(&self) -> usize { self.active / 6 }
     pub fn select(&mut self, index: usize) { if index < self.fields.len() { self.active = index; self.replace = true; } }

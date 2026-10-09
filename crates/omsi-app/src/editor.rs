@@ -65,6 +65,7 @@ pub struct Editor {
     pub text_window: Option<crate::object_text::Window>,
     pub junction_window: Option<crate::junction_builder::Window>,
     junction_history:Vec<JunctionUndo>,
+    tilt_baselines:HashMap<i64,[f64;2]>,
     pub sidewalk_window: Option<crate::sidewalk::Window>,
     pub roadside_window: Option<crate::roadside_objects::Window>,
     pub texture_target: Option<TextureTarget>,
@@ -187,6 +188,7 @@ pub enum Action {
     ObjectText,
     TerrainMode,
     JunctionWindow,
+    RoundaboutWindow,
     RoadsideWindow,
     SidewalkWindow,
     Length(f64),
@@ -204,6 +206,7 @@ pub enum Action {
     NextPick,
     Move(DVec3),
     Turn(f64),
+    Tilt(usize,f64),
     Delete,
     Undo,
     Save,
@@ -446,14 +449,31 @@ impl Editor {
     /// Change the selected object; returns what to say.
     pub fn apply(&mut self, world: &World, renderer: &omsi_render::Renderer, scene: &mut omsi_render::Scene, action: &Action) -> Option<String> {
         if self.spline_mode { return self.splines.apply(world, action); }
+        if let Action::Tilt(axis,delta)=*action {
+            let result=(|| {
+                let id=self.editing_added.and_then(|i|self.added.get(i)).map(|a|a.id).or(self.selected).ok_or("No object selected")?;
+                let (_,_,_,old,_,_)=self.junction_placement(world,id)?;
+                let tilt=crate::object_angles::adjusted(old,axis,delta)?;
+                self.set_builder_tilt(world,renderer,scene,id,tilt)?;
+                self.tilt_baselines.entry(id).or_insert(old);
+                Ok::<_,String>(format!("Pitch {:.2}° · Bank {:.2}° · Ctrl+S to save · Reload map for traffic",tilt[0],tilt[1]))
+            })();
+            return Some(result.unwrap_or_else(|e|e));
+        }
         if matches!(action, Action::Undo) {
+            let selected_id=self.editing_added.and_then(|k|self.added.get(k)).map(|a|a.id).or(self.selected);
+            if let Some((id,tilt))=selected_id.filter(|id|!self.added.iter().any(|a|a.id==*id&&a.deleted)).and_then(|id|self.tilt_baselines.get(&id).copied().map(|tilt|(id,tilt))) {
+                return Some(match self.set_builder_tilt(world,renderer,scene,id,tilt) {
+                    Ok(())=>{self.tilt_baselines.remove(&id);"Object tilt reset · Ctrl+S to save · Reload map for traffic".into()},Err(e)=>e,
+                });
+            }
             let selected_id=self.editing_added.and_then(|k|self.added.get(k)).map(|a|a.id).or(self.selected);
             if self.junction_history.last().is_some_and(|h|Some(h.id)==selected_id){
                 let h=self.junction_history.last().cloned().unwrap();
                 let unchanged=self.junction_placement(world,h.id).is_ok_and(|(_,at,heading,_,_,_)|at.distance(h.at)<1e-6&&(heading-h.heading).abs()<1e-6)
                     &&h.after.iter().all(|(k,s)|world.spline_edits.lock().current(*k).as_ref()==Some(s));
-                if !unchanged{return Some("Seit der Kreuzungsänderung wurden Position oder Straßen verändert; diese Änderungen zuerst rückgängig machen".into());}
-                return Some(match self.replace_junction(world,renderer,scene,h.id,h.path,h.before,false){Ok(())=>{self.junction_history.pop();"Kreuzungsänderung und Straßenanschlüsse rückgängig · Strg+S speichern".into()},Err(e)=>e});
+                if !unchanged{return Some("Position or roads changed after the junction edit; undo those changes first".into());}
+                return Some(match self.replace_junction(world,renderer,scene,h.id,h.path,h.before,false){Ok(())=>{self.junction_history.pop();"Junction edit and road connections undone · Ctrl+S to save".into()},Err(e)=>e});
             }
             let target = self.editing_added.map(crate::object_text::Target::Added)
                 .or_else(|| self.selected.map(crate::object_text::Target::Map));
@@ -506,19 +526,19 @@ impl Editor {
     fn label_id(&self, target: crate::object_text::Target) -> Result<i64, String> {
         match target {
             crate::object_text::Target::Map(id) => Ok(id),
-            crate::object_text::Target::Added(i) => self.added.get(i).map(|a| a.id).ok_or_else(|| "Objekt nicht mehr vorhanden".into()),
+            crate::object_text::Target::Added(i) => self.added.get(i).map(|a| a.id).ok_or_else(|| "Object no longer exists".into()),
         }
     }
     pub fn open_labels(&mut self, world: &World) -> Result<(), String> {
         use crate::object_text::{Target, Window};
         let (target, sco, strings) = if let Some(index) = self.editing_added {
-            let a = self.added.get(index).ok_or("Objekt nicht mehr vorhanden")?;
-            if a.deleted { return Err("Gelöschtes Objekt zuerst zurückholen".into()); }
+            let a = self.added.get(index).ok_or("Object no longer exists")?;
+            if a.deleted { return Err("Restore the deleted object first".into()); }
             (Target::Added(index), a.sco.clone(), a.strings.clone())
         } else {
-            let id = self.selected.ok_or("Zuerst das Schild anklicken")?;
-            let object = world.edit_objects.lock().get(&id).cloned().ok_or("Objekt nicht mehr geladen")?;
-            if world.object_edits.lock().get(&id).is_some_and(|e| e.deleted) { return Err("Gelöschtes Objekt zuerst zurückholen".into()); }
+            let id = self.selected.ok_or("Select the sign first")?;
+            let object = world.edit_objects.lock().get(&id).cloned().ok_or("Object no longer loaded")?;
+            if world.object_edits.lock().get(&id).is_some_and(|e| e.deleted) { return Err("Restore the deleted object first".into()); }
             let strings = world.object_text_edits.lock().get(&id).cloned().unwrap_or(object.strings);
             (Target::Map(id), object.sco, strings)
         };
@@ -531,7 +551,7 @@ impl Editor {
     pub fn set_labels(&mut self, world: &World, renderer: &omsi_render::Renderer, scene: &mut omsi_render::Scene,
         target: crate::object_text::Target, values: Vec<String>, remember: bool) -> Result<(), String> {
         if values.len() > 4096 || values.iter().any(|s| s.chars().any(char::is_control) || s.chars().count() > 4096) {
-            return Err("Beschriftung enthält ungültige Zeichen oder ist zu lang".into());
+            return Err("Text contains invalid characters or is too long".into());
         }
         let id = self.label_id(target)?;
         let old = match target {
@@ -545,7 +565,7 @@ impl Editor {
                 old
             }
             crate::object_text::Target::Map(id) => {
-                let object = world.edit_objects.lock().get(&id).cloned().ok_or("Objekt nicht mehr geladen")?;
+                let object = world.edit_objects.lock().get(&id).cloned().ok_or("Object no longer loaded")?;
                 let old = world.object_text_edits.lock().get(&id).cloned().unwrap_or(object.strings);
                 let gpu = world.update_editor_object_labels(renderer, scene, id, &values)?;
                 if let Some(previous) = self.label_resources.insert(id, gpu) { world.remove_helper_object(renderer, scene, previous); }
@@ -559,7 +579,7 @@ impl Editor {
     pub fn undo_labels(&mut self, world: &World, renderer: &omsi_render::Renderer, scene: &mut omsi_render::Scene,
         target: crate::object_text::Target) -> Result<Vec<String>, String> {
         let id = self.label_id(target)?;
-        let values = self.label_history.get(&id).and_then(|h| h.last()).cloned().ok_or("Keine frühere Beschriftung in dieser Sitzung")?;
+        let values = self.label_history.get(&id).and_then(|h| h.last()).cloned().ok_or("No previous text in this session")?;
         self.set_labels(world, renderer, scene, target, values.clone(), false)?;
         self.label_history.get_mut(&id).unwrap().pop();
         Ok(values)
@@ -568,23 +588,23 @@ impl Editor {
     /// Capture values rather than an instance ID, so deleting/unloading the source is safe.
     pub fn capture_object(&self,world:&World)->Result<ObjectStamp,String> {
         if let Some(a)=self.editing_added.and_then(|i|self.added.get(i)) {
-            if a.deleted {return Err("Gelöschtes Objekt zuerst zurückholen".into());}
+            if a.deleted {return Err("Restore the deleted object first".into());}
             let at=a.base+a.moved;
             let ground=world.ground_terrain(at.x,at.y).unwrap_or(a.ground_height);
             return Ok(ObjectStamp {sco:a.sco.clone(),heading:a.base_heading+a.turned,tilt:a.tilt,
                 strings:a.strings.clone(),height_offset:at.z-ground});
         }
-        let id=self.selected.ok_or("Zuerst ein Objekt anklicken")?;
-        let object=world.edit_objects.lock().get(&id).cloned().ok_or("Objekt nicht mehr geladen")?;
+        let id=self.selected.ok_or("Select an object first")?;
+        let object=world.edit_objects.lock().get(&id).cloned().ok_or("Object no longer loaded")?;
         let edit=world.object_edits.lock().get(&id).copied().unwrap_or_default();
-        if edit.deleted {return Err("Gelöschtes Objekt zuerst zurückholen".into());}
-        let src=world.tile_source(object.tile.0,object.tile.1).ok_or("Tile-Datei fehlt")?;
-        let tile=crate::tiles::read_tile(&src,&world.chrono_dirs.read()).ok_or("Tile kann nicht gelesen werden")?;
-        let record=tile.objects.iter().find(|o|o.id==id).ok_or("Kein eigenständiges Kartenobjekt")?;
+        if edit.deleted {return Err("Restore the deleted object first".into());}
+        let src=world.tile_source(object.tile.0,object.tile.1).ok_or("Tile file missing")?;
+        let tile=crate::tiles::read_tile(&src,&world.chrono_dirs.read()).ok_or("Cannot read tile")?;
+        let record=tile.objects.iter().find(|o|o.id==id).ok_or("Not a standalone map object")?;
         let at=object.pos+edit.moved;let ground=world.ground_terrain(at.x,at.y).unwrap_or(at.z);
         let ot=world.editor_object_type(&object.sco.to_string_lossy())?;
         let height_offset=if ot.sco.absolute_height() {at.z-ground} else {record.pos[2]+edit.moved.z};
-        if record.flag>4096 {return Err("Objekt enthält zu viele Beschriftungen".into());}
+        if record.flag>4096 {return Err("Object contains too many text fields".into());}
         let mut strings=world.object_text_edits.lock().get(&id).cloned().unwrap_or_else(|| object.strings.clone());
         strings.resize(strings.len().max(record.flag.max(0) as usize),String::new());
         Ok(ObjectStamp {sco:object.sco,heading:record.rot[0]+edit.turned,tilt:[record.rot[1],record.rot[2]],strings,height_offset})
@@ -603,7 +623,7 @@ impl Editor {
 
     fn copy(&mut self,world:&World,_renderer:&omsi_render::Renderer,_scene:&mut omsi_render::Scene)->Option<String> {
         match self.capture_object(world) {Ok(stamp)=>{self.clipboard=Some(stamp.clone());self.start_object(stamp);
-            Some("Objekt kopiert · Ziel anklicken · Mehrfachsetzen für weitere Kopien · Esc beenden".into())},Err(e)=>Some(e)}
+            Some("Object copied · Click target · Repeat placement for more copies · Esc to finish".into())},Err(e)=>Some(e)}
     }
 
     /// Insert a chosen scenery object, such as an authored T junction with paths.
@@ -612,20 +632,20 @@ impl Editor {
     }
 
     pub fn place_object_values(&mut self,world:&World,renderer:&omsi_render::Renderer,scene:&mut omsi_render::Scene,sco:PathBuf,at:DVec3,heading:f64,tilt:[f64;2],strings:Vec<String>)->String {
-        if omsi_map::world_coordinates() { return "Einsetzen auf Weltkoordinaten-Karten wird noch nicht unterstützt".into(); }
+        if omsi_map::world_coordinates() { return "Placement on world-coordinate maps is not supported yet".into(); }
         let size = omsi_map::tile_size();
         let tile = ((at.x / size).floor() as i32, (at.y / size).floor() as i32);
-        let Some(source) = world.tile_source(tile.0, tile.1) else { return "Punkt liegt außerhalb der Karte".into() };
-        let Ok(base) = omsi_map::Tile::load(&source) else { return "Tile kann nicht gelesen werden".into() };
-        if base.version != 0 && base.version < 14 { return "Objekt einfügen braucht Tile-Version 14".into(); }
+        let Some(source) = world.tile_source(tile.0, tile.1) else { return "Point lies outside the map".into() };
+        let Ok(base) = omsi_map::Tile::load(&source) else { return "Cannot read tile".into() };
+        if base.version != 0 && base.version < 14 { return "Object placement requires tile version 14".into(); }
         let ot=match world.editor_object_type(&sco.to_string_lossy()) {Ok(ot)=>ot,Err(error)=>{
             log::warn!("editor object placement {}: {error}", sco.display());
-            return format!("Objekt nicht geladen: {error}");
+            return format!("Object not loaded: {error}");
         }};
         let Some(id) = world.allocate_editor_id() else { return "No free map ID".into() };
         let Some(gpu) = world.add_editor_helper_object(renderer,scene,&sco.to_string_lossy(),at,heading,tilt,&strings) else {
             log::warn!("editor object placement {}: GPU upload failed", sco.display());
-            return format!("Objekt nicht dargestellt: {} · siehe game.log", sco.display());
+            return format!("Object not rendered: {} · See game.log", sco.display());
         };
         world.retain_editor_helper(id);
         self.added.push(Added { template: 0, tile, id, sco, base: at, base_heading: heading,
@@ -636,24 +656,46 @@ impl Editor {
         self.drag_offset = None;
         self.selected = None;
         self.spline_mode = false;
-        "Objekt eingesetzt · IJKL verschieben · N/M drehen · U/O Höhe · Strg+S speichern · danach Karte neu laden".into()
+        "Object placed · IJKL to move · N/M to rotate · U/O for height · Ctrl+S to save · Then reload map".into()
+    }
+
+    /// Keep the object's ID and native map angles when promoting a loaded builder
+    /// object to the existing editable-helper path. No asset file is changed.
+    fn set_builder_tilt(&mut self,world:&World,renderer:&omsi_render::Renderer,scene:&mut omsi_render::Scene,id:i64,tilt:[f64;2])->Result<(),String> {
+        let (path,at,heading,_,_,_)=self.junction_placement(world,id)?;
+        if !builder_asset(&path) {return Err("Tilt controls currently support builder junctions and roundabouts".into());}
+        if world.global.world_coordinates {return Err("Object tilt requires a standard OMSI map".into());}
+        if self.added.iter().all(|a|a.id!=id) {
+            let edit=world.object_edits.lock().get(&id).copied().unwrap_or_default();
+            self.replace_junction(world,renderer,scene,id,path,Vec::new(),false)?;
+            let a=self.added.iter_mut().find(|a|a.id==id).unwrap();
+            a.base=at-edit.moved;a.base_heading=heading-edit.turned;a.moved=edit.moved;a.turned=edit.turned;
+        }
+        let index=self.added.iter().position(|a|a.id==id).ok_or("Object no longer exists")?;
+        let a=&mut self.added[index];
+        a.tilt=tilt;a.shape=crate::object_angles::shape(tilt);
+        if let Some(gpu)=a.gpu.as_mut() {
+            world.reshape_editor_helper(renderer,scene,gpu,a.base+a.moved,a.base_heading+a.turned,a.shape);
+        }
+        self.editing_added=Some(index);
+        Ok(())
     }
 
     pub(crate) fn junction_placement(&self,world:&World,id:i64)->Result<(PathBuf,DVec3,f64,[f64;2],Vec<String>,(i32,i32)),String>{
         if let Some(a)=self.added.iter().find(|a|a.id==id){
-            if a.deleted{return Err("Kreuzung ist gelöscht".into());}
+            if a.deleted{return Err("Junction is deleted".into());}
             return Ok((a.sco.clone(),a.base+a.moved,a.base_heading+a.turned,a.tilt,a.strings.clone(),a.tile));
         }
-        let o=world.edit_objects.lock().get(&id).cloned().ok_or("Kreuzung zuerst laden und auswählen")?;
-        let e=world.object_edits.lock().get(&id).copied().unwrap_or_default();if e.deleted{return Err("Kreuzung ist gelöscht".into());}
-        let(tile,_)=world.editor_row_source(o.tile)?;let r=tile.objects.iter().find(|r|r.id==id).ok_or("Kein eigenständiges Kreuzungsobjekt")?;
+        let o=world.edit_objects.lock().get(&id).cloned().ok_or("Load and select the junction first")?;
+        let e=world.object_edits.lock().get(&id).copied().unwrap_or_default();if e.deleted{return Err("Junction is deleted".into());}
+        let(tile,_)=world.editor_row_source(o.tile)?;let r=tile.objects.iter().find(|r|r.id==id).ok_or("Not a standalone junction object")?;
         Ok((o.sco,o.pos+e.moved,r.rot[0]+e.turned,[r.rot[1],r.rot[2]],o.strings,o.tile))
     }
     pub(crate) fn replace_junction(&mut self,world:&World,renderer:&omsi_render::Renderer,scene:&mut omsi_render::Scene,id:i64,path:PathBuf,roads:Vec<(crate::spline_editor::Key,omsi_map::MapSpline)>,remember:bool)->Result<(),String>{
         let(old,at,heading,tilt,strings,tile)=self.junction_placement(world,id)?;
         let ot=world.editor_object_type(&path.to_string_lossy())?;
-        let before=roads.iter().map(|(key,_)|world.spline_edits.lock().current(*key).map(|s|(*key,s)).ok_or("Angebundene Straße nicht mehr verfügbar")).collect::<Result<Vec<_>,_>>()?;
-        let gpu=world.add_editor_helper_object(renderer,scene,&path.to_string_lossy(),at,heading,tilt,&strings).ok_or("Geänderte Kreuzung konnte nicht dargestellt werden")?;
+        let before=roads.iter().map(|(key,_)|world.spline_edits.lock().current(*key).map(|s|(*key,s)).ok_or("Connected road no longer available")).collect::<Result<Vec<_>,_>>()?;
+        let gpu=world.add_editor_helper_object(renderer,scene,&path.to_string_lossy(),at,heading,tilt,&strings).ok_or("Could not render updated junction")?;
         if let Some(k)=self.added.iter().position(|a|a.id==id){
             let a=&mut self.added[k];if let Some(g)=a.gpu.take(){world.remove_helper_object(renderer,scene,g);}
             a.sco=path;a.gpu=Some(gpu);a.shape=crate::scene::editor_helper_shape(&ot.sco,&strings,tilt);a._object_type=Some(ot);self.editing_added=Some(k);
@@ -678,7 +720,7 @@ impl Editor {
         let i = all.iter().position(|p| p == &cur).map(|i| (i + 1) % all.len()).unwrap_or(0);
         let replacement = all.get(i)?.clone();
         if let Err(error) = world.editor_object_type(&replacement.to_string_lossy()) {
-            return Some(format!("Variante nicht geladen: {error}"));
+            return Some(format!("Variant not loaded: {error}"));
         }
         if let Some(gpu) = self.added[k].gpu.take() { world.remove_helper_object(renderer, scene, gpu); }
         let ot=world.editor_object_type(&replacement.to_string_lossy()).ok()?;
@@ -707,17 +749,18 @@ impl Editor {
     pub fn describe(&self, world: &World) -> String {
         if self.terrain.active { return self.terrain.describe(); }
         if let Some(asset)=self.placing_asset.as_ref().filter(|a|a.kind==crate::asset_catalog::Kind::Object) {
-            let values=self.object_stamp.as_ref().map(|s|format!(" · Drehung {:.1}° · Höhe {:+.2} m",s.heading,s.height_offset)).unwrap_or_default();
-            return format!("Objekt setzen · {} · {}{values} · Klick: einsetzen · Esc: fertig",asset.name,
-                if self.repeat_objects {"Mehrfachsetzen AN"} else {"Einmal setzen"});
+            let mode = if self.repeat_objects {"Repeat placement ON"} else {"Place once"};
+            let values = self.object_stamp.as_ref().map(|s| format!("{} · Rotation {:.1}° · Height {:+.2} m · Pitch {:.2}° · Bank {:.2}°", mode, s.heading, s.height_offset,s.tilt[0],s.tilt[1]))
+                .unwrap_or_else(|| mode.to_string());
+            return format!("Place object · {} · {} · Click: place · Esc: finish", asset.name, values);
         }
         if self.spline_mode { return self.splines.describe(world); }
         if let Some(a) = self.editing_added.and_then(|k| self.added.get(k)) {
             let name = a.sco.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default();
-            return if a.deleted { format!("Objekt {} · {name} · gelöscht · Entf stellt es wieder her", a.id) }
-                else { format!("Objekt {} · {name} · Höhe {:.2} m · Drehung {:.1}°", a.id, (a.base + a.moved).z, a.base_heading + a.turned) };
+            return if a.deleted { format!("Object {} · {name} · Deleted · Del restores it", a.id) }
+                else { format!("Object {} · {name} · Height {:.2} m · Rotation {:.1}° · Pitch {:.2}° · Bank {:.2}°", a.id, (a.base + a.moved).z, a.base_heading + a.turned,a.tilt[0],a.tilt[1]) };
         }
-        let Some(id) = self.selected else { return "Kein Objekt ausgewählt".into() };
+        let Some(id) = self.selected else { return "No object selected".into() };
         let name = world
             .edit_objects
             .lock()
@@ -726,11 +769,11 @@ impl Editor {
             .unwrap_or_default();
         let e = world.object_edits.lock().get(&id).copied().unwrap_or_default();
         if e.deleted {
-            format!("Objekt {id} · {name} · gelöscht · Entf stellt es wieder her")
+            format!("Object {id} · {name} · Deleted · Del restores it")
         } else if e == ObjectEdit::default() {
-            format!("Objekt {id} · {name}")
+            format!("Object {id} · {name}")
         } else {
-            format!("Objekt {id} · {name} · Verschoben {:+.2} / {:+.2} / {:+.2} m · Gedreht {:+.1}°", e.moved.x, e.moved.y, e.moved.z, e.turned)
+            format!("Object {id} · {name} · Moved {:+.2} / {:+.2} / {:+.2} m · Rotated {:+.1}°", e.moved.x, e.moved.y, e.moved.z, e.turned)
         }
     }
 
@@ -753,15 +796,15 @@ impl Editor {
         use crate::terrain_editor::{Field,Tool};
         if let Action::Brush(f)=action {
             self.terrain.set_value(Field::Radius,self.terrain.radius*f);
-            return (format!("Geländepinsel: Radius {:.1} m",self.terrain.radius),Vec::new());
+            return (format!("Terrain brush: radius {:.1} m",self.terrain.radius),Vec::new());
         }
-        let Some(mut at)=at else {return ("Auf das Gelände zeigen".into(),Vec::new())};
+        let Some(mut at)=at else {return ("Point at the terrain".into(),Vec::new())};
         at.z=world.editor_terrain_height(at.x,at.y).unwrap_or(at.z);
         let (tool,amount)=match action {Action::Ground(d) if *d>=0.0=>(Tool::Raise,*d),
             Action::Ground(d)=>(Tool::Lower,-d),_=>(Tool::Level,1.0)};
         let tiles=self.terrain.once(world,at,tool,amount);
         if tiles.is_empty() {return (self.terrain.message.clone(),tiles);}
-        (format!("{} · {} Tile(s) · Gelände-Modus: rückgängig · Strg+S speichern",tool.title(),tiles.len()),tiles)
+        (format!("{} · {} tile(s) · Terrain mode: undo · Ctrl+S to save",tool.title(),tiles.len()),tiles)
     }
 
     /// Write every tile with edits as a copy under `content` (the map's own folder there),
@@ -783,7 +826,7 @@ impl Editor {
             let position = a.base + a.moved;
             let size = omsi_map::tile_size();
             let tile = ((position.x / size).floor() as i32, (position.y / size).floor() as i32);
-            if tile != a.tile { return Err("Neu gesetztes Objekt muss in seinem Tile bleiben; per Kopieren am Ziel-Tile einsetzen".into()); }
+            if tile != a.tile { return Err("New object must remain in its tile; copy and place it in the target tile".into()); }
             // Assets may live in another content root (including mounted packs).
             // Map records keep an OMSI-relative name so a saved map stays portable.
             let mut roots = omsi_cfg::content_roots(); roots.push(world.root.clone());
@@ -815,6 +858,11 @@ impl Editor {
             by_tile.entry(*tile).or_default();
         }
         let map_dir = Path::new(map_rel).parent().unwrap_or(Path::new(""));
+        let mut roundabout_rules:HashMap<(i32,i32),Vec<(i64,Option<String>)>>=HashMap::new();
+        for a in self.added.iter().filter(|a|a.standalone) {
+            let rules=if a.deleted {None}else{crate::junction_builder::roundabout_rules(&a.sco)?};
+            roundabout_rules.entry(a.tile).or_default().push((a.id,rules));
+        }
         let mut written = Vec::new();
         for ((tx, ty), edits) in by_tile {
             let src = world.tile_source(tx, ty).ok_or_else(|| format!("tile ({tx}, {ty}) is not in the map"))?;
@@ -842,6 +890,7 @@ impl Editor {
             let (new_text, n) = rewrite_tile(&text, &edits);
             let (new_text, c) = add_copies(&new_text, copies_by_tile.get(&(tx, ty)).map(|v| v.as_slice()).unwrap_or(&[]));
             let (new_text, p) = rewrite_placed(&new_text, placed_by_tile.get(&(tx, ty)).map(|v| v.as_slice()).unwrap_or(&[]))?;
+            let new_text=crate::junction_builder::rewrite_roundabout_rules(&new_text,roundabout_rules.get(&(tx,ty)).map(Vec::as_slice).unwrap_or(&[]))?;
             let additions: Vec<i64> = spline_edits.added.keys().filter(|(tile, _)| *tile == (tx, ty)).map(|(_, id)| *id).collect();
             let (new_text, s) = crate::spline_editor::rewrite(&new_text, &spline_edits.for_tile((tx, ty)), &additions)?;
             let (new_text, rows) = crate::roadside_objects::rewrite(&new_text, (tx, ty), &roadside_edits)?;
@@ -910,10 +959,10 @@ pub(crate) fn save_copy(out: &Path, data: &[u8]) -> Result<(), String> {
 /// Resolve the existing parent before writing, also when the final path is new.
 pub(crate) fn protect_output(out:&Path,original:&Path) -> Result<(),String> {
     let mut ancestor=out;
-    while !ancestor.exists() {ancestor=ancestor.parent().ok_or("Ausgabeordner fehlt")?;}
+    while !ancestor.exists() {ancestor=ancestor.parent().ok_or("Output folder missing")?;}
     let resolved=ancestor.canonicalize().map_err(|e|e.to_string())?;
     if original.canonicalize().is_ok_and(|root|resolved.starts_with(root)) {
-        return Err(format!("{} liegt in der Originalinstallation",out.display()));
+        return Err(format!("{} lies in the original installation",out.display()));
     }
     Ok(())
 }
@@ -958,9 +1007,9 @@ fn rewrite_placed(text: &str, records: &[PlacedRecord]) -> Result<(String, usize
         let id = lines.get(i + 3).and_then(|l| body(l).trim().parse::<i64>().ok());
         if object && records.iter().any(|r| Some(r.id) == id) {
             let id = id.unwrap();
-            if !found.insert(id) { return Err(format!("Objekt {id} mehrfach vorhanden; nichts gespeichert")); }
+            if !found.insert(id) { return Err(format!("Object {id} exists more than once; nothing saved")); }
             let labels=lines.get(i+10).and_then(|l|body(l).trim().parse::<usize>().ok())
-                .filter(|n|*n<=4096 && i+11+*n<=lines.len()).ok_or_else(||format!("Objekt {id}: beschädigte Beschriftungen"))?;
+                .filter(|n|*n<=4096 && i+11+*n<=lines.len()).ok_or_else(||format!("Object {id}: damaged text fields"))?;
             if let Some(r) = records.iter().find(|r| r.id == id && !r.deleted) { out.push_str(&record(r, eol)); }
             i += 11+labels;
         } else if object {
@@ -1104,7 +1153,7 @@ fn rewrite_labels(text: &str, labels: &HashMap<i64, Vec<String>>) -> Result<(Str
         let id = lines.get(i + 3).and_then(|s| s.trim().parse::<i64>().ok());
         let end = object_record_end(&lines, i);
         if let Some(values) = id.and_then(|id| labels.get(&id)) {
-            let end = end.ok_or_else(|| format!("Ungültiger Objekt-Datensatz für Beschriftung {}", id.unwrap()))?;
+            let end = end.ok_or_else(|| format!("Invalid object record for text field {}", id.unwrap()))?;
             let eol = if lines[i].ends_with("\r\n") { "\r\n" } else { "\n" };
             for line in &lines[i..i+10] { out.push_str(line); }
             out.push_str(&values.len().to_string()); out.push_str(eol);
@@ -1114,7 +1163,7 @@ fn rewrite_labels(text: &str, labels: &HashMap<i64, Vec<String>>) -> Result<(Str
             for line in &lines[i..end] { out.push_str(line); } i = end;
         } else { out.push_str(lines[i]); i += 1; }
     }
-    if changed.len() != labels.len() { return Err("Ein beschriftetes Objekt fehlt in der Tile-Datei; nicht gespeichert".into()); }
+    if changed.len() != labels.len() { return Err("An object with text is missing from the tile file; not saved".into()); }
     Ok((out, changed.len()))
 }
 
@@ -1175,8 +1224,20 @@ pub fn rewrite_tile(text: &str, edits: &HashMap<i64, ObjectEdit>) -> (String, us
     (out, changed)
 }
 
-/// The editor's key for `code` (with Shift for the fine steps), as the camera faces `yaw`
-/// (degrees clockwise from north).
+/// Assets produced by either of the road junction builders.
+pub fn builder_asset(path:&Path)->bool {
+    path.file_name().is_some_and(|n|n=="junction.sco")
+        && path.parent().is_some_and(|dir|dir.join("junction.junction.json").is_file())
+}
+pub fn action_for_mode(code:winit::keyboard::KeyCode,shift:bool,ctrl:bool,yaw:f64,spline:bool)->Option<Action> {
+    if !spline && matches!(code,winit::keyboard::KeyCode::Comma|winit::keyboard::KeyCode::Period) {return None;}
+    if !spline {if let Some(step)=crate::object_angles::key(code,shift,ctrl) {
+        return Some(match step {crate::object_angles::Step::Turn(t)=>Action::Turn(t),crate::object_angles::Step::Tilt(axis,d)=>Action::Tilt(axis,d)});
+    }}
+    action_for(code,shift,ctrl,yaw)
+}
+
+/// Resolve the original spline and general editor shortcuts.
 pub fn action_for(code: winit::keyboard::KeyCode, shift: bool, ctrl: bool, yaw: f64) -> Option<Action> {
     use winit::keyboard::KeyCode as K;
     let step = if shift { 0.05 } else { 0.5 };
@@ -1480,6 +1541,37 @@ mod tests {
         assert!(omsi_map::Tile::load(&saved).unwrap().objects.is_empty());
         assert_eq!(std::fs::read_to_string(map.join("tile_0_0.map")).unwrap(),source);
         std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn object_angles_keep_spline_bindings_and_native_saved_pose() {
+        use winit::keyboard::KeyCode as K;
+        assert!(matches!(action_for_mode(K::Home,false,false,0.0,false),Some(Action::Tilt(0,0.5))));
+        assert!(matches!(action_for_mode(K::PageDown,true,false,0.0,false),Some(Action::Tilt(1,v)) if v == -0.05));
+        assert!(matches!(action_for_mode(K::Home,false,false,0.0,true),Some(Action::Grade(0.5))));
+        assert!(matches!(action_for_mode(K::Comma,false,false,0.0,true),Some(Action::Curvature(v)) if v == -0.001));
+        assert!(action_for_mode(K::Comma,false,false,0.0,false).is_none());
+        assert!(action_for_mode(K::Period,false,false,0.0,false).is_none());
+        assert!(matches!(action_for_mode(K::Delete,false,false,0.0,false),Some(Action::Delete)));
+        assert!(matches!(action_for_mode(K::Backspace,false,false,0.0,false),Some(Action::Undo)));
+        let original=[2.0,-1.5];
+        let tilt=crate::object_angles::adjusted(original,0,0.05).unwrap();
+        let mut object=PlacedRecord{id:708,file:"Sceneryobjects\\openOMSI_Editor\\Junctions\\test\\junction.sco".into(),pos:DVec3::new(10.0,20.0,3.0),heading:35.0,tilt,strings:vec!["Name".into()],deleted:false};
+        let other="[object]\n0\nother.sco\n709\n1\n2\n3\n4\n5\n6\n0\n";
+        let saved=rewrite_placed(other,std::slice::from_ref(&object)).unwrap().0;
+        assert!(saved.starts_with(other));
+        let parsed=omsi_map::Tile::parse(&omsi_cfg::CfgFile::from_str("test.map",&saved));
+        let placed=parsed.objects.iter().find(|o|o.id==708).unwrap();
+        assert_eq!(placed.rot,[35.0,2.05,-1.5]);
+        object.heading+=5.0;object.pos.x+=0.5;
+        let moved=rewrite_placed(&saved,std::slice::from_ref(&object)).unwrap().0;
+        let parsed=omsi_map::Tile::parse(&omsi_cfg::CfgFile::from_str("test.map",&moved));
+        assert_eq!(parsed.objects.iter().find(|o|o.id==708).unwrap().rot,[40.0,2.05,-1.5]);
+        object.tilt=original;
+        let reset=rewrite_placed(&moved,std::slice::from_ref(&object)).unwrap().0;
+        let parsed=omsi_map::Tile::parse(&omsi_cfg::CfgFile::from_str("test.map",&reset));
+        assert_eq!(parsed.objects.iter().find(|o|o.id==708).unwrap().rot,[40.0,2.0,-1.5]);
+        assert_eq!(rewrite_placed(&reset,std::slice::from_ref(&object)).unwrap().0,reset);
     }
 
     #[test]

@@ -15,7 +15,7 @@ pub struct Mask { pub size: usize, pub alpha: Vec<f32> }
 impl Mask {
     pub fn empty(size: usize) -> Result<Self, String> {
         if !(2..=MAX_EDGE).contains(&size) || !size.is_power_of_two() {
-            return Err("Texturmaske benötigt 2–2048 Pixel und eine Zweierpotenz".into());
+            return Err("Texture mask requires 2–2048 pixels and a power of two".into());
         }
         Ok(Self { size, alpha: vec![0.0; size * size] })
     }
@@ -23,7 +23,7 @@ impl Mask {
         let size = image.width as usize;
         let mut out = Self::empty(size)?;
         if image.height as usize != size || image.rgba.len() != size * size * 4 || !image.has_alpha {
-            return Err("Bodentexturmaske ist kein quadratisches Bild mit Alphakanal".into());
+            return Err("Ground texture mask is not a square image with an alpha channel".into());
         }
         for (a, p) in out.alpha.iter_mut().zip(image.rgba.chunks_exact(4)) { *a = p[3] as f32 / 255.0; }
         Ok(out)
@@ -55,14 +55,14 @@ pub fn layers(world:&World) -> Vec<GroundTex> {
 }
 
 pub fn mask_path(world:&World,key:Key) -> Result<PathBuf,String> {
-    let tile=world.tile_source(key.0.0,key.0.1).ok_or("Tile liegt außerhalb der Karte")?;
-    let name=tile.file_name().ok_or("Tile-Dateiname fehlt")?.to_string_lossy();
+    let tile=world.tile_source(key.0.0,key.0.1).ok_or("Tile lies outside the map")?;
+    let name=tile.file_name().ok_or("Tile filename missing")?.to_string_lossy();
     Ok(omsi_cfg::resolve_path(&world.map_dir,&format!("texture/map/{name}.{}.dds",key.1)))
 }
 
 pub fn read(world:&World,key:Key) -> Result<Mask,String> {
     if let Some(mask)=world.ground_paint_edits.lock().get(&key) { return Ok(mask.clone()); }
-    let defs=layers(world);let def=defs.get(key.1).ok_or("Texturebene fehlt")?;
+    let defs=layers(world);let def=defs.get(key.1).ok_or("Texture layer missing")?;
     let path=mask_path(world,key)?;
     if omsi_cfg::vfs::is_file(&path) {
         Mask::from_image(omsi_texture::decode_file(&path).map_err(|e|format!("{}: {e}",path.display()))?)
@@ -73,25 +73,25 @@ pub fn read(world:&World,key:Key) -> Result<Mask,String> {
 /// once per tile/stroke, rather than reparsing large chrono tiles on every mouse frame.
 fn validate_chrono(world:&World,src:&Path,key:(i32,i32))->Result<(),String> {
     let chrono=world.chrono_dirs.read();if chrono.is_empty() {return Ok(());}
-    let tile=crate::tiles::read_tile(src,&chrono).ok_or("Tile mit Chrono-Daten kann nicht gelesen werden")?;
+    let tile=crate::tiles::read_tile(src,&chrono).ok_or("Cannot read tile with Chrono data")?;
     if tile.terrain_from.is_some() {
-        return Err(format!("Tile ({},{}): Chrono ersetzt das Gelände; für diesen Bereich einen Zeitpunkt ohne dieses Ereignis wählen",key.0,key.1));
+        return Err(format!("Tile ({},{}): Chrono replaces the terrain; choose a time without this event for this area",key.0,key.1));
     }
-    let name=src.file_name().ok_or("Tile-Dateiname fehlt")?.to_string_lossy();
+    let name=src.file_name().ok_or("Tile filename missing")?.to_string_lossy();
     let prefix=format!("{}.",name.to_lowercase());
     for dir in chrono.iter() {
         let masks=omsi_cfg::resolve_path(dir,"texture/map");
         if omsi_cfg::vfs::list_dir(&masks).is_some_and(|entries|entries.iter().any(|(name,is_dir)|{
             let name=name.to_string_lossy().to_lowercase();!*is_dir&&name.starts_with(&prefix)&&name.ends_with(".dds")
         })) {
-            return Err(format!("Tile ({},{}): Chrono besitzt eigene Texturmasken; für diesen Bereich einen Zeitpunkt ohne dieses Ereignis wählen",key.0,key.1));
+            return Err(format!("Tile ({},{}): Chrono has its own texture masks; choose a time without this event for this area",key.0,key.1));
         }
     }
     Ok(())
 }
 
 pub fn footprint(world:&World,at:DVec3,radius:f64,selected:usize,erase:bool,checked:&mut HashSet<(i32,i32)>) -> Result<HashMap<Key,Mask>,String> {
-    let defs=layers(world); if selected>=defs.len() { return Err("Zuerst eine Bodentextur auswählen".into()); }
+    let defs=layers(world); if selected>=defs.len() { return Err("Select a ground texture first".into()); }
     let ts=omsi_map::tile_size();let mut out=HashMap::new();
     for x in ((at.x-radius)/ts).floor() as i32..=((at.x+radius)/ts).floor() as i32 {
         for y in ((at.y-radius)/ts).floor() as i32..=((at.y+radius)/ts).floor() as i32 {
@@ -99,7 +99,7 @@ pub fn footprint(world:&World,at:DVec3,radius:f64,selected:usize,erase:bool,chec
             let dx=(x as f64*ts-at.x).max(0.0).max(at.x-(x+1) as f64*ts);
             let dy=(y as f64*ts-at.y).max(0.0).max(at.y-(y+1) as f64*ts);
             if dx.hypot(dy)>radius { continue; }
-            if !omsi_cfg::vfs::is_file(&src) { return Err("Tile-Datei fehlt".into()); }
+            if !omsi_cfg::vfs::is_file(&src) { return Err("Tile file missing".into()); }
             if !checked.contains(&(x,y)) {validate_chrono(world,&src,(x,y))?;checked.insert((x,y));}
             for layer in 1..defs.len() {
                 if erase && layer!=selected || !erase && layer<selected { continue; }
@@ -156,8 +156,8 @@ pub fn select_texture(world:&World,asset:&crate::asset_catalog::Asset,metres:f64
     let _=omsi_texture::decode_file(&asset.path).map_err(|e|e.to_string())?;
     let file=asset.file.replace('/',"\\");let defs=layers(world);
     if let Some(index)=defs.iter().position(|g|g.texture.eq_ignore_ascii_case(&file)) {return Ok(index);}
-    if defs.is_empty() { return Err("Die Karte benötigt zuerst eine Grundtextur in global.cfg".into()); }
-    if defs.len()>=128 { return Err("Die Karte hat bereits 128 Bodentexturebenen".into()); }
+    if defs.is_empty() { return Err("The map needs a base texture in global.cfg first".into()); }
+    if defs.len()>=128 { return Err("The map already has 128 ground texture layers".into()); }
     let index=defs.len();world.ground_texture_edits.lock().push(GroundTex {texture:file,detail_texture:String::new(),
         params:[9.0,(omsi_map::tile_size()/metres.clamp(0.25,100.0)) as f32,1.0]});
     Ok(index)
@@ -166,9 +166,9 @@ pub fn select_texture(world:&World,asset:&crate::asset_catalog::Asset,metres:f64
 pub fn safe_map_dir(map_rel:&str) -> Result<&Path,String> {
     let path=Path::new(map_rel);
     if path.is_absolute() || path.components().any(|c|!matches!(c,Component::Normal(_))) {
-        return Err("Ungültiger relativer Kartenpfad".into());
+        return Err("Invalid relative map path".into());
     }
-    path.parent().ok_or_else(||"Kartenordner fehlt".into())
+    path.parent().ok_or_else(||"Map folder missing".into())
 }
 
 pub fn save(world:&World,map_rel:&str,content:&Path,original:&Path) -> Result<Vec<PathBuf>,String> {
@@ -182,20 +182,20 @@ pub fn save(world:&World,map_rel:&str,content:&Path,original:&Path) -> Result<Ve
         let current=omsi_map::GlobalCfg::parse(&omsi_cfg::CfgFile::from_str("global.cfg",&text));
         if current.ground_textures.len()<world.global.ground_textures.len()
             || !current.ground_textures.iter().take(world.global.ground_textures.len()).eq(world.global.ground_textures.iter()) {
-            return Err("global.cfg-Bodentexturen wurden zwischenzeitlich verändert; Karte zuerst neu laden".into());
+            return Err("Ground textures in global.cfg have changed; reload the map first".into());
         }
         let eol=if text.contains("\r\n") {"\r\n"} else {"\n"};
         for (i,def) in additions.iter().enumerate() {
             let index=world.global.ground_textures.len()+i;
             if let Some(existing)=current.ground_textures.get(index) {
-                if existing!=def {return Err("Eine andere Texturebene belegt den neuen Index; Karte zuerst neu laden".into());}
+                if existing!=def {return Err("Another texture layer occupies the new index; reload the map first".into());}
                 continue;
             }
             text.push_str(&format!("{eol}[groundtex]{eol}{}{eol}{}{eol}{}{eol}{}{eol}{}{eol}",
                 def.texture,def.detail_texture,def.params[0],def.params[1],def.params[2]));
         }
         if current.ground_textures.len()>world.global.ground_textures.len()+additions.len() {
-            return Err("Zusätzliche unbekannte Bodentexturebenen gefunden; Karte zuerst neu laden".into());
+            return Err("Additional unknown ground texture layers found; reload the map first".into());
         }
         std::fs::create_dir_all(&dir).map_err(|e|e.to_string())?;
         crate::editor::save_copy(&out,&crate::editor::encode(&text,encoding))?;written.push(out);
@@ -203,8 +203,8 @@ pub fn save(world:&World,map_rel:&str,content:&Path,original:&Path) -> Result<Ve
     let edits=world.ground_paint_edits.lock().clone();
     let mask_dir=dir.join("texture/map");
     for (key,mask) in edits {
-        let src=world.tile_source(key.0.0,key.0.1).ok_or("Tile nicht mehr vorhanden")?;
-        let name=src.file_name().ok_or("Tile-Dateiname fehlt")?.to_string_lossy();
+        let src=world.tile_source(key.0.0,key.0.1).ok_or("Tile no longer exists")?;
+        let name=src.file_name().ok_or("Tile filename missing")?.to_string_lossy();
         let out=mask_dir.join(format!("{name}.{}.dds",key.1));crate::editor::protect_output(&out,original)?;
         std::fs::create_dir_all(&mask_dir).map_err(|e|e.to_string())?;
         crate::editor::save_copy(&out,&mask.dds())?;written.push(out);
@@ -276,11 +276,11 @@ mod tests {
         std::fs::write(chrono.join("tile_0_0.map.terrain"),omsi_map::Terrain::flat().to_bytes()).unwrap();
         omsi_cfg::content_changed();
         let source=world.tile_source(0,0).unwrap();let error=validate_chrono(&world,&source,(0,0)).unwrap_err();
-        assert!(error.contains("Chrono ersetzt das Gelände"));
+        assert!(error.contains("Chrono replaces the terrain"));
         let masks=chrono.join("texture/map");std::fs::create_dir_all(&masks).unwrap();
         std::fs::write(masks.join("tile_1_0.map.1.dds"),Mask::empty(8).unwrap().dds()).unwrap();omsi_cfg::content_changed();
         let source=world.tile_source(1,0).unwrap();let error=validate_chrono(&world,&source,(1,0)).unwrap_err();
-        assert!(error.contains("eigene Texturmasken"));
+        assert!(error.contains("own texture masks"));
         let _=std::fs::remove_dir_all(dir);
     }
 }

@@ -4,7 +4,7 @@ use winit::keyboard::KeyCode;
 
 impl App {
     pub(crate) fn editor_open_roadside(&mut self) {
-        if self.net.lan.is_some() { self.service_msg = Some(("Objektreihen sind im Einzelspieler verfügbar".into(), 5.0)); return; }
+        if self.net.lan.is_some() { self.service_msg = Some(("Object rows are available in single-player".into(), 5.0)); return; }
         self.editor_terrain_finish();
         let (Some(ed), Some(world)) = (self.menus.editor.as_mut(), self.world.as_ref()) else { return; };
         ed.splines.finish_drag(); ed.end_object_drag(); ed.splines.cancel_connection(); ed.splines.cancel_generation();
@@ -39,26 +39,26 @@ impl App {
             Command::Connected(connected) => { window.settings.connected = connected; window.settings.manual_gaps.clear(); window.gap_pick = None; }
             Command::Ground(ground) => window.settings.ground = ground,
             Command::PickGap => {
-                window.gap_pick = Some(None); window.message = "Zufahrt aussparen: zuerst den Anfang, dann das Ende auf der Straße anklicken".into(); return;
+                window.gap_pick = Some(None); window.message = "Leave driveway clear: click its start, then its end on the road".into(); return;
             }
             Command::ClearGaps => { window.settings.manual_gaps.clear(); window.gap_pick = None; }
             Command::Apply => {
-                let result = window.start.ok_or_else(|| "Zuerst eine Straße auswählen".to_string())
+                let result = window.start.ok_or_else(|| "Select a road first".to_string())
                     .and_then(|start| roadside_objects::apply(&world, start, window.settings.clone(), window.file.clone()));
-                window.message = match result { Ok(count) => format!("{count} Objekte eingesetzt · Strg+S speichern · Strg+Z rückgängig"), Err(error) => error };
+                window.message = match result { Ok(count) => format!("{count} objects placed · Ctrl+S to save · Ctrl+Z to undo"), Err(error) => error };
                 window.refresh(&world); self.editor_reload_splines(); return;
             }
             Command::Undo => {
-                window.message = match roadside_objects::undo(&world) { Ok(()) => "Objektreihe rückgängig gemacht · Strg+S speichern".into(), Err(error) => error };
+                window.message = match roadside_objects::undo(&world) { Ok(()) => "Object row undone · Ctrl+S to save".into(), Err(error) => error };
                 window.refresh(&world); self.editor_reload_splines(); return;
             }
             Command::Remove => {
-                let result = window.start.ok_or_else(|| "Zuerst eine Straße auswählen".to_string()).and_then(|start| roadside_objects::remove(&world, start));
-                window.message = match result { Ok(()) => "Eigene Reihe entfernt · Strg+Z stellt sie wieder her · Strg+S speichern".into(), Err(error) => error };
+                let result = window.start.ok_or_else(|| "Select a road first".to_string()).and_then(|start| roadside_objects::remove(&world, start));
+                window.message = match result { Ok(()) => "Own row removed · Ctrl+Z restores it · Ctrl+S to save".into(), Err(error) => error };
                 window.refresh(&world); self.editor_reload_splines(); return;
             }
             Command::Save => { self.editor_action(crate::editor::Action::Save); return; }
-            Command::Preview => window.message = "Blau = geplante Pfosten · Einsetzen übernimmt die Vorschau".into(),
+            Command::Preview => window.message = "Blue = planned posts · Place applies the preview".into(),
             Command::Close => {}
         }
         window.refresh(&world);
@@ -117,15 +117,15 @@ impl App {
         if !window.commit() { return true; }
         if let Some(first) = window.gap_pick {
             let hit = crate::placing::ground_hit(&world, origin, direction.as_dvec3(), 400.0);
-            let result = window.start.zip(hit).ok_or_else(|| "Auf die gewählte Straße klicken".to_string())
+            let result = window.start.zip(hit).ok_or_else(|| "Click the selected road".to_string())
                 .and_then(|(start, hit)| roadside_objects::gap_station(&world, start, &window.settings, hit));
             match result {
                 Ok(station) => if let Some(first) = first {
                     let (a, b) = (first.min(station), first.max(station));
-                    if b - a < 0.5 { window.message = "Die beiden Grenzen müssen mindestens 0,5 m auseinander liegen".into(); }
+                    if b - a < 0.5 { window.message = "The two boundaries must be at least 0.5 m apart".into(); }
                     else { window.settings.manual_gaps.push([a, b]); window.gap_pick = None;
-                        window.message = format!("Bereich {a:.1} bis {b:.1} m bleibt frei"); window.refresh(&world); }
-                } else { window.gap_pick = Some(Some(station)); window.message = format!("Anfang bei {station:.1} m · jetzt Ende der Zufahrt anklicken"); },
+                        window.message = format!("Area from {a:.1} to {b:.1} m stays clear"); window.refresh(&world); }
+                } else { window.gap_pick = Some(Some(station)); window.message = format!("Start at {station:.1} m · Now click the end of the driveway"); },
                 Err(error) => window.message = error,
             }
             return true;

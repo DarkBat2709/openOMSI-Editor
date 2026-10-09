@@ -29,13 +29,13 @@ impl Section {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Category { All, Profiles, Vegetation, Buildings, Junctions, Traffic, Street, Water, Other, Grass, Soil, Gravel, Stone, Asphalt }
 impl Category {
-    pub fn title(self)->&'static str {match self {Self::All=>"Alle",Self::Profiles=>"Spline-Profile",Self::Vegetation=>"Vegetation",Self::Buildings=>"Gebäude",
-        Self::Junctions=>"Kreuzungen",Self::Traffic=>"Verkehrslogik",Self::Street=>"Straßenzubehör",Self::Water=>"Gewässer",Self::Other=>"Sonstiges",
-        Self::Grass=>"Wiesen",Self::Soil=>"Erde",Self::Gravel=>"Schotter",Self::Stone=>"Steine",Self::Asphalt=>"Asphalt"}}
+    pub fn title(self)->&'static str {match self {Self::All=>"All",Self::Profiles=>"Spline profiles",Self::Vegetation=>"Vegetation",Self::Buildings=>"Buildings",
+        Self::Junctions=>"Junctions",Self::Traffic=>"Traffic logic",Self::Street=>"Street furniture",Self::Water=>"Waterways",Self::Other=>"Other",
+        Self::Grass=>"Grass",Self::Soil=>"Soil",Self::Gravel=>"Gravel",Self::Stone=>"Stone",Self::Asphalt=>"Asphalt"}}
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Sort { Name, Category, Path }
-impl Sort {pub fn title(self)->&'static str {match self {Self::Name=>"Name",Self::Category=>"Kategorie",Self::Path=>"Pfad"}}}
+impl Sort {pub fn title(self)->&'static str {match self {Self::Name=>"Name",Self::Category=>"Category",Self::Path=>"Path"}}}
 #[derive(Clone)]
 pub struct Asset { pub kind: Kind, pub file: String, pub name: String, pub path: PathBuf, pub category:Category, pub groups:String }
 #[derive(Clone, Copy)]
@@ -112,14 +112,14 @@ impl Catalog {
             loop { match audit.rx.try_recv() {
                 Ok(status) => self.audit_message = status,
                 Err(mpsc::TryRecvError::Disconnected) => {
-                    if audit.running && self.audit_message.starts_with("Prüfe ") {
-                        self.audit_message = "Prüfung unerwartet beendet · bisherige Tabellen und game.log prüfen".into();
+                    if audit.running && self.audit_message.starts_with("Checking ") {
+                        self.audit_message = "Check ended unexpectedly · Check existing tables and game.log".into();
                     }
                     audit.running = false; break;
                 }
                 Err(mpsc::TryRecvError::Empty) => break,
             } }
-            if !self.audit_message.starts_with("Prüfe ") { audit.running = false; }
+            if !self.audit_message.starts_with("Checking ") { audit.running = false; }
         }
         while let Ok(reply) = self.rx.try_recv() {
             match reply {
@@ -147,7 +147,7 @@ impl Catalog {
     fn start_audit(&mut self) {
         if self.audit_running() {
             self.audit.as_ref().unwrap().stop.store(true, Ordering::Relaxed);
-            self.audit_message = "Prüfe … wird beendet; bisherige Ergebnisse bleiben gespeichert".into();
+            self.audit_message = "Checking … stopping; existing results remain saved".into();
             return;
         }
         if self.scanning { return; }
@@ -157,16 +157,16 @@ impl Catalog {
         let root = self.root.clone(); let entries = self.entries.clone();
         let stop = Arc::new(AtomicBool::new(false)); let worker_stop = stop.clone();
         let (tx, rx) = mpsc::channel();
-        self.audit_message = format!("Prüfe 0 / {} Bauteile · Katalog geöffnet lassen", entries.len());
+        self.audit_message = format!("Checking 0 / {} assets · Keep catalogue open", entries.len());
         self.audit = Some(Audit { stop, rx, running: true });
         std::thread::spawn(move || {
             match audit_previews(&root, &entries, &folder, &worker_stop, &tx) {
                 Ok((done, failed)) => {
-                    let status = if worker_stop.load(Ordering::Relaxed) { "Abgebrochen" } else { "Fertig" };
-                    let message = format!("{status}: {done} geprüft, {failed} ohne Vorschau · {}", folder.display());
+                    let status = if worker_stop.load(Ordering::Relaxed) { "Cancelled" } else { "Done" };
+                    let message = format!("{status}: {done} checked, {failed} without preview · {}", folder.display());
                     log::info!("Katalog-Diagnose: {message}"); let _ = tx.send(message);
                 }
-                Err(error) => { let _ = tx.send(format!("Diagnose nicht gespeichert: {error}")); }
+                Err(error) => { let _ = tx.send(format!("Diagnostics not saved: {error}")); }
             }
         });
     }
@@ -232,17 +232,21 @@ fn report_cell(text: &str) -> String { text.replace(['\t', '\r', '\n'], " ") }
 /// Stream results to disk; keep only one thumbnail in memory and never reload the map.
 fn spline_texture_info(root:&Path,path:&Path,stop:&AtomicBool)->Vec<SplineTextureInfo> {
     let def=match omsi_scenery::Spline::load(path) {Ok(def)=>def,Err(e)=>return vec![SplineTextureInfo {
-        name:"Profil nicht lesbar".into(),path:path.display().to_string(),usage:String::new(),image:Err(e.to_string())}]};
+        name:"Cannot read profile".into(),path:path.display().to_string(),usage:String::new(),image:Err(e.to_string())}]};
     let dirs=crate::scene::texture_dirs(root,path.parent().unwrap_or(root));
     let refs:Vec<&Path>=dirs.iter().map(|p|p.as_path()).collect();
     def.textures.iter().enumerate().take_while(|_|!stop.load(Ordering::Relaxed)).map(|(slot,t)| {
         let resolved=omsi_texture::find_texture(&t.file,&refs);
-        let image=resolved.as_ref().ok_or_else(||"Textur fehlt".to_string()).and_then(|p|
+        let image=resolved.as_ref().ok_or_else(||"Texture missing".to_string()).and_then(|p|
             omsi_texture::decode_file(p).map(thumbnail_texture).map_err(|e|e.to_string()));
         let profiles:Vec<_>=def.profiles.iter().enumerate().filter(|(_,p)|p.texture==slot).map(|(i,_)|(i+1).to_string()).collect();
-        SplineTextureInfo {name:t.file.clone(),path:resolved.map(|p|p.display().to_string()).unwrap_or_else(||format!("Nicht gefunden: {}",t.file)),
-            usage:format!("Slot {} · Profile: {}{}{}",slot,profiles.join(", "),if t.patchwork.is_some() {" · Patchwork"} else {""},
-                if t.scale_by_length {" · längenabhängig"} else {""}),image}
+        SplineTextureInfo {name:t.file.clone(),path:resolved.map(|p|p.display().to_string()).unwrap_or_else(||format!("Not found: {}",t.file)),
+            usage:match (t.patchwork.is_some(), t.scale_by_length) {
+                (false, false) => format!("Slot {} · Profiles: {}", slot, profiles.join(", ")),
+                (true, false) => format!("Slot {} · Profiles: {} · Patchwork", slot, profiles.join(", ")),
+                (false, true) => format!("Slot {} · Profiles: {} · length-dependent", slot, profiles.join(", ")),
+                (true, true) => format!("Slot {} · Profiles: {} · Patchwork · length-dependent", slot, profiles.join(", ")),
+            },image}
     }).collect()
 }
 
@@ -262,14 +266,14 @@ fn audit_previews(root: &Path, entries: &[Asset], folder: &Path, stop: &AtomicBo
         if stop.load(Ordering::Relaxed) { break; }
         let (status, error) = match result { Ok(_) => ("OK", String::new()), Err(error) => ("KEINE_VORSCHAU", error) };
         let row = format!("{}\t{}\t{}\t{}\t{}\t{}\t{}\n", status,
-            match asset.kind {Kind::Spline=>"Spline",Kind::Object=>"Objekt",Kind::Texture=>"Textur"}, asset.category.title(),
+            match asset.kind {Kind::Spline=>"Spline",Kind::Object=>"Object",Kind::Texture=>"Texture"}, asset.category.title(),
             report_cell(&asset.name), report_cell(&asset.file), report_cell(&asset.path.to_string_lossy()), report_cell(&error));
         all.write_all(row.as_bytes()).map_err(|e| e.to_string())?;
         if !error.is_empty() { failed += 1; errors.write_all(row.as_bytes()).map_err(|e| e.to_string())?; }
         done += 1;
         if done % 25 == 0 || done == entries.len() {
             all.flush().map_err(|e| e.to_string())?; errors.flush().map_err(|e| e.to_string())?;
-            let _ = progress.send(format!("Prüfe {done} / {} Bauteile · {failed} ohne Vorschau", entries.len()));
+            let _ = progress.send(format!("Checking {done} / {} assets · {failed} without preview", entries.len()));
         }
     }
     all.flush().map_err(|e| e.to_string())?; errors.flush().map_err(|e| e.to_string())?;
@@ -504,7 +508,7 @@ fn scan_textures(root:&Path,map_dir:Option<&Path>,stop:&AtomicBool)->Vec<Asset> 
         }
     }
     let found=out.len();out.retain(|asset|!texture_is_decal(&asset.file,references.contains(&texture_key(&asset.path))));
-    log::info!("Texturkatalog: {} Texturen · {} Schild-/Beschriftungsbilder ausgeblendet",out.len(),found-out.len());
+    log::info!("Texture catalogue: {} textures · {} sign / text images hidden",out.len(),found-out.len());
     out.sort_by_cached_key(|a|a.file.to_lowercase());out
 }
 
@@ -535,14 +539,14 @@ fn preview_sample(tex:&Image,uv:Vec2)->[u8;4]{
     std::array::from_fn(|c|((sample(0,0,c)*(1.0-fx)+sample(1,0,c)*fx)*(1.0-fy)+(sample(0,1,c)*(1.0-fx)+sample(1,1,c)*fx)*fy).round().clamp(0.0,255.0)as u8)
 }
 fn preview(root: &Path, asset: &Asset, view: u8, stop: &AtomicBool) -> Result<Image, String> {
-    let dir = asset.path.parent().ok_or("Ordner fehlt")?;
+    let dir = asset.path.parent().ok_or("Folder missing")?;
     let mut parts = Vec::new();
     let yaw = preview_yaw(asset.kind, view);
     match asset.kind {
         Kind::Texture => {
             let img=thumbnail_texture(omsi_texture::decode_file(&asset.path).map_err(|e|e.to_string())?);
             if img.width==0 || img.height==0 || img.rgba.len()!=img.width as usize*img.height as usize*4 {
-                return Err("Ungültiges Texturbild".into());
+                return Err("Invalid texture image".into());
             }
             let (w,h)=(960usize,640usize);let mut rgba=vec![0u8;w*h*4];
             for y in 0..h {for x in 0..w {
@@ -555,8 +559,8 @@ fn preview(root: &Path, asset: &Asset, view: u8, stop: &AtomicBool) -> Result<Im
             return Ok(Image {width:w as u32,height:h as u32,rgba,has_alpha:false});
         }
         Kind::Spline => {
-            let def = omsi_scenery::Spline::load(&asset.path).map_err(|_| "Spline kann nicht gelesen werden")?;
-            if def.only_editor || def.profiles.is_empty() { return Err("Kein sichtbares Straßenprofil".into()); }
+            let def = omsi_scenery::Spline::load(&asset.path).map_err(|_| "Cannot read spline")?;
+            if def.only_editor || def.profiles.is_empty() { return Err("No visible road profile".into()); }
             let s = omsi_map::MapSpline { length: 20.0, ..Default::default() };
             let curve = SplineCurve::from_map(&s, DVec2::ZERO);
             let mesh = omsi_geometry::build_spline_mesh(&def, &curve, false, glam::DVec3::ZERO);
@@ -569,11 +573,11 @@ fn preview(root: &Path, asset: &Asset, view: u8, stop: &AtomicBool) -> Result<Im
             // mesh, or just Dummy.x/block.x. Show their actual paths, not that marker.
             if asset.category == Category::Traffic {
                 let sco = omsi_scenery::SceneryObject::load(&asset.path)
-                    .map_err(|e| format!("SCO-Datei {}: {e:#}", asset.path.display()))?;
+                    .map_err(|e| format!("SCO file {}: {e:#}", asset.path.display()))?;
                 let part = traffic_preview_part(&sco, stop).ok_or_else(||
-                    "Verkehrslogik ohne darstellbare Fahrwege".to_string())?;
+                    "Traffic logic without displayable paths".to_string())?;
                 return rasterize_camera(&[&part], view as f32 * std::f32::consts::FRAC_PI_2, true, stop)
-                    .ok_or_else(|| "Keine darstellbare Verkehrsweg-Vorschau".into());
+                    .ok_or_else(|| "No displayable traffic path preview".into());
             }
             let (sco, _, model, model_dir) = crate::scene::scenery_definition(root, &asset.path.to_string_lossy())?;
             if let Some((texture,_,_,_,_))=&sco.tree {
@@ -582,29 +586,29 @@ fn preview(root: &Path, asset: &Asset, view: u8, stop: &AtomicBool) -> Result<Im
                 for p in &mut mesh.positions {*p=shape.transform_point3(*p);}
                 let dirs=crate::scene::texture_dirs(root,dir);
                 parts.push(Part {mesh,paints:vec![paint(texture,[1.0;4],1,&dirs)]});
-                return rasterize_auto(&parts.iter().collect::<Vec<_>>(),yaw,stop).ok_or_else(||"Keine sichtbare Baumvorschau".into());
+                return rasterize_auto(&parts.iter().collect::<Vec<_>>(),yaw,stop).ok_or_else(||"No visible tree preview".into());
             }
             if model.meshes.is_empty() && !sco.map_lights.is_empty() {
-                return Err("Beleuchtungsobjekt ohne sichtbares Modell".into());
+                return Err("Light object without visible model".into());
             }
             let dirs = crate::scene::scenery_texture_dirs(root, &sco, &model_dir);
             return object_preview(&model, &model_dir, &dirs, yaw, stop);
         }
     }
-    rasterize(&parts, yaw, stop).ok_or_else(|| "Keine statische Modellvorschau verfügbar".into())
+    rasterize(&parts, yaw, stop).ok_or_else(|| "No static model preview available".into())
 }
 
 pub fn junction_preview(root:&Path,mesh:&omsi_o3d::Mesh,view:u8,surface:Option<&crate::junction_builder::RoadSurface>)->Result<Image,String> {
     let dirs=[root.to_path_buf()];
     let mut paints:Vec<_>=mesh.materials.iter().map(|m|paint(&m.texture,m.diffuse,0,&dirs)).collect();
     if let Some(surface)=surface {if !mesh.materials[0].texture.is_empty() {
-        let path=omsi_texture::find_texture(&mesh.materials[0].texture,&[root]).ok_or("Fahrbahntextur fehlt")?;
+        let path=omsi_texture::find_texture(&mesh.materials[0].texture,&[root]).ok_or("Road texture missing")?;
         let image=omsi_texture::decode_file(&path).map_err(|e|e.to_string())?;
         paints[0].texture=Some(thumbnail_texture(crate::junction_builder::crop_surface(&image,surface)?));
     }}
     let part=Part {mesh:omsi_geometry::mesh_from_o3d(mesh),paints};
     rasterize_parts(&[&part],preview_yaw(Kind::Object,view),&AtomicBool::new(false))
-        .ok_or_else(||"Keine Kreuzungsvorschau erzeugt".into())
+        .ok_or_else(||"No junction preview generated".into())
 }
 fn preview_yaw(kind: Kind, view: u8) -> f32 {
     let base = if kind == Kind::Object { std::f32::consts::PI } else { 0.0 };
@@ -650,7 +654,7 @@ fn preview_part(md: &omsi_model::MeshDef, model_dir: &Path, dirs: &[PathBuf]) ->
     let path = crate::scene::scenery_mesh_path(model_dir, &md.file);
     let mesh = omsi_o3d::load_mesh(&path).map_err(|error| {
         log::debug!("Katalog-Vorschau {}: {error}", path.display());
-        format!("Modelldatei {}: {error}", md.file)
+        format!("Model file {}: {error}", md.file)
     })?;
     let paints = mesh.materials.iter().enumerate().map(|(slot, material)| {
         let alpha = match crate::scene::material_alpha(&mesh.materials, slot, &md.materials) {
@@ -688,7 +692,7 @@ fn object_preview(model: &omsi_model::Model, model_dir: &Path, dirs: &[PathBuf],
         }
         let mut loaded = Vec::new();
         for md in defs.iter().filter(|md| !md.is_shadow) {
-            if stop.load(Ordering::Relaxed) { return Err("Abgebrochen".into()); }
+            if stop.load(Ordering::Relaxed) { return Err("Cancelled".into()); }
             has_geometry = true;
             // Prefer state zero; when a variable has no zero variant, show one
             // declared state alongside the object's unconditional geometry.
@@ -707,7 +711,7 @@ fn object_preview(model: &omsi_model::Model, model_dir: &Path, dirs: &[PathBuf],
             .map(|(_, part)| part).collect();
         let mut states = HashMap::new();
         for md in defs.iter().filter(|md| !md.is_shadow) {
-            if stop.load(Ordering::Relaxed) { return Err("Abgebrochen".into()); }
+            if stop.load(Ordering::Relaxed) { return Err("Cancelled".into()); }
             let Some((variable, value)) = &md.visible else { continue; };
             if *value == 0.0 || !value.is_finite()
                 || states.get(variable.as_str()).is_some_and(|selected| selected != value) { continue; }
@@ -723,9 +727,9 @@ fn object_preview(model: &omsi_model::Model, model_dir: &Path, dirs: &[PathBuf],
         }
         if let Some(image) = rasterize_auto(&parts.iter().collect::<Vec<_>>(), yaw, stop) { return Ok(image); }
     }
-    if stop.load(Ordering::Relaxed) { return Err("Abgebrochen".into()); }
-    Err(first_error.unwrap_or_else(|| if has_geometry { "Modell geladen, aber keine darstellbare Fläche".into() }
-        else { "Keine sichtbare Modellgeometrie definiert".into() }))
+    if stop.load(Ordering::Relaxed) { return Err("Cancelled".into()); }
+    Err(first_error.unwrap_or_else(|| if has_geometry { "Model loaded, but no displayable surface".into() }
+        else { "No visible model geometry defined".into() }))
 }
 
 // Orthographic three-quarter view with a depth buffer. This is deliberately static:
@@ -926,7 +930,7 @@ mod tests {
         let entries=vec![item("Zeder","Sceneryobjects/a.sco",Kind::Object,Category::Vegetation,"Bäume / Nadelbäume"),
             item("Ahorn","Sceneryobjects/z.sco",Kind::Object,Category::Vegetation,"Bäume / Laubbäume"),
             item("Fluss","Splines/river.sli",Kind::Spline,Category::Water,"Wasser"),
-            item("Haus","Sceneryobjects/h.sco",Kind::Object,Category::Buildings,"Gebäude")];
+            item("Haus","Sceneryobjects/h.sco",Kind::Object,Category::Buildings,"Buildings")];
         assert_eq!(filter_assets(&entries,Section::Objects,Category::Vegetation,"",Sort::Name,false),vec![1,0]);
         assert_eq!(filter_assets(&entries,Section::Objects,Category::Vegetation,"",Sort::Name,true),vec![0,1]);
         assert_eq!(filter_assets(&entries,Section::Objects,Category::Vegetation,"laub ahorn",Sort::Path,false),vec![1]);
@@ -934,8 +938,8 @@ mod tests {
         assert_eq!(filter_assets(&entries,Section::Objects,Category::All,"",Sort::Path,false),vec![0,3,1]);
         assert_eq!(filter_assets(&entries,Section::Objects,Category::All,"",Sort::Category,false),vec![3,1,0]);
         assert_eq!(classify("tree.sco","", "",true),Category::Vegetation);
-        assert_eq!(classify("lake.sco","See","Gewässer",false),Category::Water);
-        assert_eq!(classify("x.sco","","Kreuzungen",false),Category::Junctions);
+        assert_eq!(classify("lake.sco","See","Waterways",false),Category::Water);
+        assert_eq!(classify("x.sco","","Junctions",false),Category::Junctions);
     }
     #[test]
     fn roads_section_includes_sco_junctions_and_sli_profiles_but_excludes_buildings_and_signs() {
@@ -1003,9 +1007,9 @@ mod tests {
             ("Sceneryobjects/DavidM2412 - Objekte/AMPELOBJEKTE/Kreuz Rathaus/1.sco",
                 "1", "DavidM2412 / Kreuz Rathaus", Category::Street),
             ("Sceneryobjects/kosta_Objekte/Wegweiser_Narrow/N/2gerade_links.sco",
-                "2gerade_links", "Kreuzungen", Category::Street),
+                "2gerade_links", "Junctions", Category::Street),
             ("Sceneryobjects/Waldheini12/385_Flusshinweis.sco", "385 als Flusshinweis", "Waldheini12", Category::Street),
-            ("Sceneryobjects/paket/Achtung_Kreisverkehr.sco", "Achtung_Kreisverkehr", "Kreuzungen", Category::Street),
+            ("Sceneryobjects/paket/Achtung_Kreisverkehr.sco", "Achtung_Kreisverkehr", "Junctions", Category::Street),
             ("Sceneryobjects/DavidM2412/AirbusLogo.sco", "Airbus Logo", "Rathaus", Category::Street),
             ("Sceneryobjects/paket/Kreuz Rathaus/1.sco", "1", "Kreuz Rathaus", Category::Other),
             ("Sceneryobjects/Wald/unbekannt.sco", "Unbekannt", "", Category::Other),
@@ -1033,7 +1037,7 @@ mod tests {
         ] {
             assert_eq!(classify(file, name, groups, false), expected, "{file}: {groups}");
         }
-        assert_eq!(classify("Sceneryobjects/BusdriversObjekte/1.sco", "1", "Gewässer", true), Category::Vegetation);
+        assert_eq!(classify("Sceneryobjects/BusdriversObjekte/1.sco", "1", "Waterways", true), Category::Vegetation);
     }
     #[test]
     fn catalogue_category_filter_excludes_the_reported_false_positives() {
@@ -1041,7 +1045,7 @@ mod tests {
             item("Haus 1", "Sceneryobjects/Waldheini12/Haus1.sco", Kind::Object, Category::Other, ""),
             item("AB Abfahrt", "Sceneryobjects/BusdriversObjekte/AB Abfahrt.sco", Kind::Object, Category::Other, ""),
             item("2gerade_links", "Sceneryobjects/kosta_Objekte/Wegweiser_Narrow/N/2gerade_links.sco",
-                Kind::Object, Category::Other, "Kreuzungen"),
+                Kind::Object, Category::Other, "Junctions"),
             item("Ahorn", "Sceneryobjects/paket/Ahorn.sco", Kind::Object, Category::Other, ""),
             item("Fluss 1", "Splines/paket/Fluss1.sli", Kind::Spline, Category::Other, ""),
             item("Kreuzung", "Sceneryobjects/paket/Kreuzung.sco", Kind::Object, Category::Other, ""),
@@ -1173,7 +1177,7 @@ mod tests {
         let asset = asset_metadata(&path, Kind::Object,
             "Sceneryobjects/Lemmental/Kreuzungen/LT_Bahn.sco".into(), "LT_Bahn".into());
         assert_eq!(asset.category, Category::Other);
-        assert_eq!(fixture.image(definition).err().unwrap(), "Beleuchtungsobjekt ohne sichtbares Modell");
+        assert_eq!(fixture.image(definition).err().unwrap(), "Light object without visible model");
     }
     #[test]
     fn object_preview_default_and_opposite_views_show_opposite_sides_of_a_sign() {
@@ -1229,7 +1233,7 @@ mod tests {
         let error = fixture.image("[mesh]\nmissing.o3d\n").err().expect("missing mesh produced a preview");
         assert!(error.contains("missing.o3d"), "{error}");
         let empty = fixture.image("[friendlyname]\nUnsichtbarer Trigger\n").err().unwrap();
-        assert!(empty.contains("Keine sichtbare Modellgeometrie"), "{empty}");
+        assert!(empty.contains("No visible model geometry"), "{empty}");
     }
     #[test]
     fn referenced_model_preview_prioritizes_the_objects_own_texture_folder() {
@@ -1320,7 +1324,7 @@ mod tests {
         image::RgbaImage::from_pixel(2,2,image::Rgba([80,90,100,255])).save(&texture).unwrap();omsi_cfg::content_changed();
         let details=spline_texture_info(&fixture.0,&path,&AtomicBool::new(false));assert_eq!(details.len(),2);
         assert_eq!(std::path::Path::new(&details[0].path),texture.as_path());assert!(details[0].image.is_ok());
-        assert!(details[0].usage.contains("Profile: 1"));assert!(details[1].image.is_err());assert_eq!(details[1].name,"missing.png");
+        assert!(details[0].usage.contains("Profiles: 1"));assert!(details[1].image.is_err());assert_eq!(details[1].name,"missing.png");
     }
 
     #[test]fn high_resolution_texture_keeps_aspect_and_filters_samples(){

@@ -10,13 +10,13 @@ fn prepare_reload<T>(save:bool,write:impl FnOnce()->Result<(),String>,open:impl 
 impl App {
     #[cfg(target_os="android")]
     pub(crate) fn editor_reload_map(&mut self){
-        self.service_msg=Some(("Karte neu laden ist im Desktop-Editor verfügbar".into(),5.0));
+        self.service_msg=Some(("Reload map is available in the desktop editor".into(),5.0));
     }
 
     #[cfg(not(target_os="android"))]
     pub(crate) fn editor_reload_map(&mut self){
         if self.net.lan.is_some() || self.cam.starting.is_some(){
-            self.service_msg=Some(("Karte neu laden ist im geladenen Einzelspieler-Editor verfügbar".into(),5.0));return;
+            self.service_msg=Some(("Reload map is available in the loaded single-player editor".into(),5.0));return;
         }
         if self.renderer.is_none(){return;}
         let (Some(cam),Some(ed),Some(old))=(self.camera,self.menus.editor.as_ref(),self.world.clone())else{return;};
@@ -25,11 +25,11 @@ impl App {
         if let Some(ed)=self.menus.editor.as_mut(){ed.splines.finish_drag();ed.end_object_drag();}
         self.input.keys.clear();self.input.buttons_held=(false,false);self.input.mmb_held=false;
         self.menus.editor_drag=false;self.input.dragging=false;self.input.mouse_look=false;
-        let save_label="Speichern & neu laden";
-        let discard_label="Änderungen verwerfen & neu laden";
-        let result=rfd::MessageDialog::new().set_title("Karte neu laden")
-            .set_description("Die Karte wird vom gespeicherten Stand neu geladen. Kameraposition und Blickrichtung bleiben erhalten.\n\nUngespeicherte Kartenänderungen vorher speichern oder verwerfen? Rückgängig-Verlauf und Auswahlen werden zurückgesetzt. Fahrzeuge und KI werden neu aufgebaut.")
-            .set_buttons(rfd::MessageButtons::YesNoCancelCustom(save_label.into(),discard_label.into(),"Abbrechen".into())).show();
+        let save_label=omsi_ui::tr("Save & reload").into_owned();
+        let discard_label=omsi_ui::tr("Discard changes & reload").into_owned();
+        let result=rfd::MessageDialog::new().set_title(omsi_ui::tr("Reload map").as_ref())
+            .set_description(omsi_ui::tr("The map will be reloaded from its saved state. Camera position and direction are kept.\n\nSave or discard unsaved map changes first? Undo history and selections will be reset. Vehicles and AI will be rebuilt.").as_ref())
+            .set_buttons(rfd::MessageButtons::YesNoCancelCustom(save_label.clone(),discard_label.clone(),omsi_ui::tr("Cancel").into_owned())).show();
         let save=match result {
             rfd::MessageDialogResult::Yes=>true,
             rfd::MessageDialogResult::No=>false,
@@ -38,17 +38,17 @@ impl App {
             _=>return,
         };
         let fresh=prepare_reload(save,||{
-            let content=crate::startup::content_dir().ok_or("Kein beschreibbarer Inhalteordner")?;
+            let content=crate::startup::content_dir().ok_or("No writable content folder")?;
             self.menus.editor.as_ref().unwrap().save(&old,&self.args.map,&content,&self.args.root).map(|_|())
-                .map_err(|e|format!("Speichern fehlgeschlagen: {e}"))
+                .map_err(|e|format!("Save failed: {e}"))
         },||{
             omsi_cfg::content_changed();
             let path=omsi_cfg::resolve_path(&self.args.root,&self.args.map);
-            let world=World::open(&self.args.root,&path,self.clock.date_code()).map_err(|e|format!("Karte konnte nicht geöffnet werden: {e:#}"))?;
+            let world=World::open(&self.args.root,&path,self.clock.date_code()).map_err(|e|format!("Could not open map: {e:#}"))?;
             *world.start_clock.lock()=self.clock.clone();
             Ok(Arc::new(world))
         });
-        let world=match fresh{Ok(w)=>w,Err(e)=>{self.service_msg=Some((format!("Nicht neu geladen: {e}"),15.0));return;}};
+        let world=match fresh{Ok(w)=>w,Err(e)=>{self.service_msg=Some((format!("Not reloaded: {e}"),15.0));return;}};
         let renderer=self.renderer.take().unwrap();
         let mut scene=renderer.new_scene();
         setup_sky(&self.args,&renderer,&mut scene,self.session.envir.as_ref(),self.session.weather.as_ref());
@@ -72,7 +72,7 @@ impl App {
         self.session.populate_t=0.0;self.session.humans_populate_t=0.0;
         self.world=Some(world);self.gfx.streamer=Some(streamer);self.scene=Some(scene);self.renderer=Some(renderer);
         self.camera=Some(cam);self.cam.starting=Some(cam);self.cam.editor_reload_view=Some((cam,mode.0,mode.1));
-        self.last=Instant::now();self.service_msg=Some(("Karte wird neu geladen …".into(),10.0));
+        self.last=Instant::now();self.service_msg=Some(("Reloading map …".into(),10.0));
     }
 
     pub(crate) fn finish_editor_reload(&mut self){
@@ -80,7 +80,7 @@ impl App {
         let mut editor=crate::editor::Editor::default();editor.spline_mode=spline;editor.terrain.active=terrain;
         self.menus.editor=Some(editor);self.camera=Some(cam);self.view="free".into();self.cam.ego=false;
         self.input.keys.clear();self.input.buttons_held=(false,false);self.input.mmb_held=false;self.input.mouse_look=false;
-        self.service_msg=Some(("Karte neu geladen · Kameraposition beibehalten".into(),8.0));
+        self.service_msg=Some(("Map reloaded · Camera position kept".into(),8.0));
     }
 }
 

@@ -1,0 +1,2503 @@
+# Editor texts. English keys; German translations. Other languages use the normal openOMSI fallback.
+_version: 2
+
+"Click / Enter":
+  de: "Klick / Enter"
+
+"Selection":
+  de: "Auswahl"
+
+"Move":
+  de: "Verschieben"
+
+"Height":
+  de: "Höhe"
+
+"Rotate":
+  de: "Drehen"
+
+"Ctrl+S":
+  de: "Strg+S"
+
+"Objects":
+  de: "Objekte"
+
+"Fit to ground":
+  de: "An Boden anpassen"
+
+"Smooth shoulder":
+  de: "Rand glätten"
+
+"Next hit":
+  de: "Nächster Treffer"
+
+"Fine movement":
+  de: "Fein bewegen"
+
+"Length":
+  de: "Länge"
+
+"Curve":
+  de: "Kurve"
+
+"Home / End":
+  de: "Pos1 / Ende"
+
+"Gradient":
+  de: "Steigung"
+
+"Straight / Cancel":
+  de: "Gerade / Abbrechen"
+
+"Shift+F8":
+  de: "Umschalt+F8"
+
+"Smooth wider":
+  de: "Breiter glätten"
+
+"Extend":
+  de: "Verlängern"
+
+"Connect":
+  de: "Verbinden"
+
+"Ctrl+G":
+  de: "Strg+G"
+
+"Replace connection":
+  de: "Anschluss ersetzen"
+
+"Shift+G":
+  de: "Umschalt+G"
+
+"New road":
+  de: "Neue Strecke"
+
+"R / Shift+R":
+  de: "R / Umschalt+R"
+
+"Branch right / left":
+  de: "Seitlich rechts / links"
+
+"Snap end":
+  de: "Ende einrasten"
+
+"Split":
+  de: "Teilen"
+
+"Del":
+  de: "Entf"
+
+"Ctrl+Z":
+  de: "Strg+Z"
+
+"Undo":
+  de: "Rückgängig"
+
+"Catalogue / Objects":
+  de: "Katalog / Objekte"
+
+"Close / Cancel":
+  de: "Schließen / Abbruch"
+
+"Delete / Restore":
+  de: "Löschen / zurückholen"
+
+"Copy and place":
+  de: "Kopieren und setzen"
+
+"Ctrl+C / Ctrl+V":
+  de: "Strg+C / Strg+V"
+
+"Copy / Paste":
+  de: "Kopieren / Einfügen"
+
+"Drag":
+  de: "Ziehen"
+
+"Mouse wheel":
+  de: "Mausrad"
+
+"Shift+Wheel":
+  de: "Umschalt+Rad"
+
+"Ctrl+R":
+  de: "Strg+R"
+
+"Place last object":
+  de: "Letztes Objekt setzen"
+
+"Variant":
+  de: "Variante"
+
+"Page Up / Down":
+  de: "Bild auf / ab"
+
+"Raise / lower terrain":
+  de: "Gelände heben / senken"
+
+"Level terrain":
+  de: "Gelände ebnen"
+
+"Brush size":
+  de: "Pinselgröße"
+
+"Terrain editor 0.7.9-pre":
+  de: "Gelände-Editor 0.7.9-pre"
+
+"Spline editor 0.7.9-pre":
+  de: "Spline-Editor 0.7.9-pre"
+
+"Object editor 0.7.9-pre":
+  de: "Objekt-Editor 0.7.9-pre"
+
+"Spline connections · entire map":
+  de: "Spline-Verbindungen · ganze Karte"
+
+"Check again":
+  de: "Erneut prüfen"
+
+"Markers: ON":
+  de: "Marker: AN"
+
+"Markers: OFF":
+  de: "Marker: AUS"
+
+"Show all ends":
+  de: "Alle Enden anzeigen"
+
+"Only open / suspect ends":
+  de: "Nur offene / auffällige Enden"
+
+"Red: errors":
+  de: "Rot: Fehler"
+
+"Yellow: open":
+  de: "Gelb: offen"
+
+"Grey: unchecked":
+  de: "Grau: ungeprüft"
+
+"Green: connected":
+  de: "Grün: verbunden"
+
+"{} splines · Ends: {} errors / {} open / {} unchecked / {} connected":
+  de: "{} Splines · Enden: {} Fehler / {} offen / {} ungeprüft / {} verbunden"
+
+"INCOMPLETE: {} tiles not read · {}":
+  de: "UNVOLLSTÄNDIG: {} Tiles nicht gelesen · {}"
+
+"No results for the selected filter.":
+  de: "Keine Treffer im gewählten Filter."
+
+"Page {} / {} · Click a row to go there":
+  de: "Seite {} / {} · Zeile anklicken: zur Stelle"
+
+"Yellow may be an intentional end. Nothing is changed automatically.":
+  de: "Gelb kann ein absichtliches Ende sein. Es wird nichts automatisch verändert."
+
+"15 cm endpoint tolerance · Markers in 3D · Esc closes this list":
+  de: "15 cm Endpunkttoleranz · Marker in der 3D-Ansicht · Esc schließt diese Liste"
+
+"Tools · drag here":
+  de: "Werkzeuge · hier ziehen"
+
+"Catalogue (P)":
+  de: "Katalog (P)"
+
+"Build junction":
+  de: "Kreuzung bauen"
+
+"New tile":
+  de: "Neues Tile"
+
+"Edit terrain":
+  de: "Gelände bearbeiten"
+
+"Reload map …":
+  de: "Karte neu laden …"
+
+"Check spline connections …":
+  de: "Spline-Verbindungen prüfen …"
+
+"Fewer commands":
+  de: "Weniger Befehle"
+
+"All commands":
+  de: "Alle Befehle"
+
+"Terrain · drag here":
+  de: "Gelände · hier ziehen"
+
+"Back to building":
+  de: "Zurück zum Bauen"
+
+"Heights":
+  de: "Höhen"
+
+"Textures":
+  de: "Texturen"
+
+"Fine smoothing":
+  de: "Fein glätten"
+
+"Layer {} · {}":
+  de: "Ebene {} · {}"
+
+"Base texture":
+  de: "Grundtextur"
+
+"Ground texture":
+  de: "Bodentextur"
+
+"Texture catalogue …":
+  de: "Texturkatalog …"
+
+"Eraser":
+  de: "Radierer"
+
+"Eyedropper: pick texture":
+  de: "Pipette: Textur aufnehmen"
+
+"Hold left mouse button to paint":
+  de: "Links halten und malen"
+
+"Mouse wheel: brush size":
+  de: "Mausrad: Pinselgröße"
+
+"Paint base texture: remove overlays":
+  de: "Grundtextur malen: Aufträge entfernen"
+
+"Sample height":
+  de: "Höhe aufnehmen"
+
+"Select tile":
+  de: "Tile auswählen"
+
+"Lower tile":
+  de: "Tile tiefer"
+
+"Raise tile":
+  de: "Tile höher"
+
+"Set entire tile to target height":
+  de: "Ganzes Tile auf Zielhöhe setzen"
+
+"Blend with neighbours: 20 m":
+  de: "Übergang zu Nachbarn: 20 m"
+
+"Blending OFF · possible steps":
+  de: "Übergang AUS · mögliche Absätze"
+
+"Selected tile: ({}, {})":
+  de: "Gewähltes Tile: ({}, {})"
+
+"No tile selected yet":
+  de: "Noch kein Tile ausgewählt"
+
+"Redo":
+  de: "Wiederholen"
+
+"Save (Ctrl+S)":
+  de: "Speichern (Strg+S)"
+
+"Type number · Enter applies · Esc cancels":
+  de: "Zahl tippen · Enter übernehmen · Esc abbrechen"
+
+"Copy / place objects":
+  de: "Objekte kopieren / einsetzen"
+
+"Copy (Ctrl+C)":
+  de: "Kopieren (Strg+C)"
+
+"Paste (Ctrl+V)":
+  de: "Einfügen (Strg+V)"
+
+"Place last object again (Ctrl+R)":
+  de: "Letztes Objekt nochmals setzen (Strg+R)"
+
+"Repeat placement: ON":
+  de: "Mehrfachsetzen: AN"
+
+"Repeat placement: OFF":
+  de: "Mehrfachsetzen: AUS"
+
+"Finish placement (Esc)":
+  de: "Einsetzen beenden (Esc)"
+
+"Edit text …":
+  de: "Beschriftung bearbeiten …"
+
+"Road shoulders / terrain":
+  de: "Straßenränder / Gelände"
+
+"Select a road first":
+  de: "Zuerst Straße anklicken"
+
+"Smooth shoulder (F8)":
+  de: "Rand glätten (F8)"
+
+"Smooth wider (Shift+F8)":
+  de: "Breiter glätten (Umschalt+F8)"
+
+"Fit to ground (F6)":
+  de: "An Boden anpassen (F6)"
+
+"Objects along the road":
+  de: "Objekte entlang der Straße"
+
+"Sidewalk along the road":
+  de: "Gehweg entlang der Straße"
+
+"Objects along the road · drag here":
+  de: "Objekte entlang der Straße · hier ziehen"
+
+"Choose object in catalogue …":
+  de: "Objekt im Katalog wählen …"
+
+"Both sides":
+  de: "Beide Seiten"
+
+"Selected spline":
+  de: "Gewählter Spline"
+
+"Connected road":
+  de: "Verbundene Straße"
+
+"Height: road":
+  de: "Höhe: Straße"
+
+"Height: terrain":
+  de: "Höhe: Gelände"
+
+"Leave driveway clear":
+  de: "Zufahrt aussparen"
+
+"Clear custom gaps":
+  de: "Eigene Lücken löschen"
+
+"Place preview":
+  de: "Vorschau einsetzen"
+
+"Undo (Ctrl+Z)":
+  de: "Rückgängig (Strg+Z)"
+
+"Remove own row":
+  de: "Eigene Reihe entfernen"
+
+"Close (Esc)":
+  de: "Schließen (Esc)"
+
+"{} objects · {:.1} m · {} splines":
+  de: "{} Objekte · {:.1} m · {} Splines"
+
+"{} positions free / already occupied · {} gaps":
+  de: "{} Positionen frei / schon belegt · {} Lücken"
+
+"Enter a number · Enter applies · Esc cancels input":
+  de: "Zahl eingeben · Enter übernimmt · Esc bricht die Eingabe ab"
+
+"Sidewalk along road · drag here":
+  de: "Gehweg entlang Straße · hier ziehen"
+
+"Choose sidewalk profile in catalogue …":
+  de: "Gehwegprofil im Katalog wählen …"
+
+"Mirror profile":
+  de: "Profil spiegeln"
+
+"Choose road":
+  de: "Straße wählen"
+
+"Select sidewalk":
+  de: "Gehweg anklicken"
+
+"Create as new sidewalk":
+  de: "Als neuen Gehweg erzeugen"
+
+"Disconnect old sidewalk links":
+  de: "Alte Gehweg-Anschlüsse lösen"
+
+"Align sidewalk":
+  de: "Gehweg ausrichten"
+
+"{} sections · Total sidewalk length {:.1} m":
+  de: "{} Abschnitte · Gehweg gesamt {:.1} m"
+
+"Reference road: {:.1} m · Textures from sidewalk profile":
+  de: "Bezugsstraße: {:.1} m · Texturen aus Gehwegprofil"
+
+"Green = start · Orange = end · Drag to adjust":
+  de: "Grün = Start · Orange = Ende · zum Verstellen ziehen"
+
+"Existing sidewalk will be replaced when confirmed":
+  de: "Vorhandener Gehweg wird beim Bestätigen ersetzt"
+
+"New sidewalks · Road unchanged":
+  de: "Neue Gehwege · keine Straßenänderung"
+
+"Edit object text":
+  de: "Beschriftung bearbeiten"
+
+"(empty)":
+  de: "(leer)"
+
+"Undo text":
+  de: "Text rückgängig"
+
+"Apply (Enter)":
+  de: "Übernehmen (Enter)"
+
+"Page {} / {} · Tab: next field":
+  de: "Seite {} / {} · Tab: nächstes Feld"
+
+"Extend map":
+  de: "Karte erweitern"
+
+"View direction: {} · Grid: {:.0} × {:.0} m":
+  de: "Blickrichtung: {} · Raster: {:.0} × {:.0} m"
+
+"North ↑  ·  West ←  ·  East →  ·  South ↓":
+  de: "Nord ↑  ·  West ←  ·  Ost →  ·  Süd ↓"
+
+"existing":
+  de: "vorhanden"
+
+"free":
+  de: "frei"
+
+"New tile ({}, {})":
+  de: "Neues Tile ({}, {})"
+
+"Click a free neighbouring cell":
+  de: "Freies Nachbarfeld anklicken"
+
+"Use edge heights":
+  de: "Randhöhen übernehmen"
+
+"Custom height":
+  de: "Eigene Höhe"
+
+"Height: {:.2} m":
+  de: "Höhe: {:.2} m"
+
+"Flat terrain at custom height · Click number field":
+  de: "Eigenes ebenes Gelände · Zahlfeld anklicken"
+
+"Terrain uses neighbouring edge heights":
+  de: "Gelände übernimmt die Nachbar-Randhöhen"
+
+"May create height steps at map edges":
+  de: "Kann an Kartenrändern Höhenabsätze erzeugen"
+
+"Extend edge profile smoothly across the new tile":
+  de: "Randprofil weich über das neue Feld fortführen"
+
+"North ↑":
+  de: "Nord ↑"
+
+"South ↓":
+  de: "Süd ↓"
+
+"East →":
+  de: "Ost →"
+
+"Create tile":
+  de: "Tile anlegen"
+
+"Green: existing · Blue: selected · Grey: free":
+  de: "Grün: eingetragen · Blau: Auswahl · Grau: frei"
+
+"Arrow keys: map view · Enter: create · Esc: close":
+  de: "Pfeiltasten: Kartenausschnitt · Enter: anlegen · Esc: schließen"
+
+"Spline textures":
+  de: "Spline-Texturen"
+
+"Texture {} / {}: {}":
+  de: "Textur {} / {}: {}"
+
+"No textures in profile":
+  de: "Keine Texturen im Profil"
+
+"Loading texture information …":
+  de: "Texturinfos werden geladen …"
+
+"Previous texture":
+  de: "Vorige Textur"
+
+"Next texture":
+  de: "Nächste Textur"
+
+"Back to catalogue":
+  de: "Zurück zum Katalog"
+
+"Texture catalogue":
+  de: "Texturkatalog"
+
+"Asset catalogue":
+  de: "Bauteilkatalog"
+
+"Splines & junctions":
+  de: "Splines & Kreuzungen"
+
+"Search: type name or path …":
+  de: "Suche: Name oder Pfad tippen …"
+
+"Search: {}":
+  de: "Suche: {}"
+
+"Clear":
+  de: "Leeren"
+
+"Stop check":
+  de: "Prüfung stoppen"
+
+"Check all previews":
+  de: "Alle Vorschauen prüfen"
+
+"Select":
+  de: "Auswählen"
+
+"Textures / info …":
+  de: "Texturen / Infos …"
+
+"Loading preview …":
+  de: "Lade Vorschau …"
+
+"Path preview · No road model\nBlue: road · Green: footpath\nPurple: railway · Yellow: flight path":
+  de: "Pfad-Vorschau · kein Straßenmodell\nBlau: Straße · Grün: Fußweg\nViolett: Gleis · Gelb: Flugweg"
+
+"Texture preview · Checkerboard = transparency":
+  de: "Texturvorschau · Schachbrett = Transparenz"
+
+"Static preview from model":
+  de: "Statische Vorschau aus dem Modell"
+
+"Preview is loading …":
+  de: "Vorschau wird geladen …"
+
+"Searching installed assets …":
+  de: "Installierte Bauteile werden gesucht …"
+
+"No matching assets found":
+  de: "Keine passenden Bauteile gefunden"
+
+"{} results · {} · Page {} / {}":
+  de: "{} Treffer · {} · Seite {} / {}"
+
+"Enter selects · Esc closes":
+  de: "Enter auswählen · Esc schließen"
+
+"Junction builder 0.7.9-pre":
+  de: "Kreuzungsbaukasten 0.7.9-pre"
+
+"T-junction":
+  de: "T-Kreuzung"
+
+"Four-way junction":
+  de: "Vierarmkreuzung"
+
+"prepared":
+  de: "vorbereitet"
+
+"Width / texture from selected spline":
+  de: "Breite / Textur vom gewählten Spline"
+
+"Choose asphalt …":
+  de: "Asphalt wählen …"
+
+"Choose sidewalk …":
+  de: "Gehweg wählen …"
+
+"Centre lines: ON":
+  de: "Mittellinien: AN"
+
+"Centre lines: OFF":
+  de: "Mittellinien: AUS"
+
+"Show AI paths":
+  de: "KI-Wege anzeigen"
+
+"Rotate preview":
+  de: "Vorschau drehen"
+
+"Load project …":
+  de: "Projekt laden …"
+
+"Update placed junction":
+  de: "Platzierte Kreuzung aktualisieren"
+
+"Save & place":
+  de: "Speichern & einsetzen"
+
+"Connect road to selected arm":
+  de: "Straße an gewählten Arm anbinden"
+
+"3D preview · Dimensions in metres":
+  de: "3D-Vorschau · Maße in Metern"
+
+"No road surface texture":
+  de: "Keine Fahrbahntextur"
+
+"Step after input / Enter":
+  de: "Schritt nach Eingabe / Enter"
+
+"Step: {} · Click a digit":
+  de: "Schritt: {} · Ziffer anklicken"
+
+"Start of the texture crop.":
+  de: "Anfang des Texturausschnitts."
+
+"U: 0 to 1 = one image width.":
+  de: "U: 0 bis 1 = eine Bildbreite."
+
+"End of the texture crop.":
+  de: "Ende des Texturausschnitts."
+
+"Less than start = mirrored.":
+  de: "Kleiner als von = gespiegelt."
+
+"Width of the crop in metres.":
+  de: "Breite des Ausschnitts in m."
+
+"Larger = displayed wider.":
+  de: "Größer = breiter dargestellt."
+
+"Enter value · Enter applies · Esc cancels input":
+  de: "Wert eingeben · Enter übernehmen · Esc Eingabe abbrechen"
+
+"Connect splines":
+  de: "Splines verbinden"
+
+"[x] Profile / curve transition (openOMSI)":
+  de: "[x] Profil-/Kurvenübergang (openOMSI)"
+
+"[ ] Profile / curve transition (openOMSI)":
+  de: "[ ] Profil-/Kurvenübergang (openOMSI)"
+
+"Replace":
+  de: "Ersetzen"
+
+"Position or roads changed after the junction edit; undo those changes first":
+  de: "Seit der Kreuzungsänderung wurden Position oder Straßen verändert; diese Änderungen zuerst rückgängig machen"
+
+"Junction edit and road connections undone · Ctrl+S to save":
+  de: "Kreuzungsänderung und Straßenanschlüsse rückgängig · Strg+S speichern"
+
+"Object no longer exists":
+  de: "Objekt nicht mehr vorhanden"
+
+"Restore the deleted object first":
+  de: "Gelöschtes Objekt zuerst zurückholen"
+
+"Select the sign first":
+  de: "Zuerst das Schild anklicken"
+
+"Object no longer loaded":
+  de: "Objekt nicht mehr geladen"
+
+"Text contains invalid characters or is too long":
+  de: "Beschriftung enthält ungültige Zeichen oder ist zu lang"
+
+"No previous text in this session":
+  de: "Keine frühere Beschriftung in dieser Sitzung"
+
+"Select an object first":
+  de: "Zuerst ein Objekt anklicken"
+
+"Tile file missing":
+  de: "Tile-Datei fehlt"
+
+"Cannot read tile":
+  de: "Tile kann nicht gelesen werden"
+
+"Not a standalone map object":
+  de: "Kein eigenständiges Kartenobjekt"
+
+"Object contains too many text fields":
+  de: "Objekt enthält zu viele Beschriftungen"
+
+"Object copied · Click target · Repeat placement for more copies · Esc to finish":
+  de: "Objekt kopiert · Ziel anklicken · Mehrfachsetzen für weitere Kopien · Esc beenden"
+
+"Placement on world-coordinate maps is not supported yet":
+  de: "Einsetzen auf Weltkoordinaten-Karten wird noch nicht unterstützt"
+
+"Point lies outside the map":
+  de: "Punkt liegt außerhalb der Karte"
+
+"Object placement requires tile version 14":
+  de: "Objekt einfügen braucht Tile-Version 14"
+
+"Object not loaded: {error}":
+  de: "Objekt nicht geladen: {error}"
+
+"Object not rendered: {} · See game.log":
+  de: "Objekt nicht dargestellt: {} · siehe game.log"
+
+"Object placed · IJKL to move · N/M to rotate · U/O for height · Ctrl+S to save · Then reload map":
+  de: "Objekt eingesetzt · IJKL verschieben · N/M drehen · U/O Höhe · Strg+S speichern · danach Karte neu laden"
+
+"Junction is deleted":
+  de: "Kreuzung ist gelöscht"
+
+"Load and select the junction first":
+  de: "Kreuzung zuerst laden und auswählen"
+
+"Not a standalone junction object":
+  de: "Kein eigenständiges Kreuzungsobjekt"
+
+"Connected road no longer available":
+  de: "Angebundene Straße nicht mehr verfügbar"
+
+"Could not render updated junction":
+  de: "Geänderte Kreuzung konnte nicht dargestellt werden"
+
+"Variant not loaded: {error}":
+  de: "Variante nicht geladen: {error}"
+
+"Repeat placement ON":
+  de: "Mehrfachsetzen AN"
+
+"Place once":
+  de: "Einmal setzen"
+
+"Object {} · {name} · Deleted · Del restores it":
+  de: "Objekt {} · {name} · gelöscht · Entf stellt es wieder her"
+
+"Object {} · {name} · Height {:.2} m · Rotation {:.1}°":
+  de: "Objekt {} · {name} · Höhe {:.2} m · Drehung {:.1}°"
+
+"No object selected":
+  de: "Kein Objekt ausgewählt"
+
+"Object {id} · {name} · Deleted · Del restores it":
+  de: "Objekt {id} · {name} · gelöscht · Entf stellt es wieder her"
+
+"Object {id} · {name}":
+  de: "Objekt {id} · {name}"
+
+"Object {id} · {name} · Moved {:+.2} / {:+.2} / {:+.2} m · Rotated {:+.1}°":
+  de: "Objekt {id} · {name} · Verschoben {:+.2} / {:+.2} / {:+.2} m · Gedreht {:+.1}°"
+
+"Terrain brush: radius {:.1} m":
+  de: "Geländepinsel: Radius {:.1} m"
+
+"Point at the terrain":
+  de: "Auf das Gelände zeigen"
+
+"{} · {} tile(s) · Terrain mode: undo · Ctrl+S to save":
+  de: "{} · {} Tile(s) · Gelände-Modus: rückgängig · Strg+S speichern"
+
+"New object must remain in its tile; copy and place it in the target tile":
+  de: "Neu gesetztes Objekt muss in seinem Tile bleiben; per Kopieren am Ziel-Tile einsetzen"
+
+"Output folder missing":
+  de: "Ausgabeordner fehlt"
+
+"{} lies in the original installation":
+  de: "{} liegt in der Originalinstallation"
+
+"Object {id} exists more than once; nothing saved":
+  de: "Objekt {id} mehrfach vorhanden; nichts gespeichert"
+
+"Object {id}: damaged text fields":
+  de: "Objekt {id}: beschädigte Beschriftungen"
+
+"Invalid object record for text field {}":
+  de: "Ungültiger Objekt-Datensatz für Beschriftung {}"
+
+"An object with text is missing from the tile file; not saved":
+  de: "Ein beschriftetes Objekt fehlt in der Tile-Datei; nicht gespeichert"
+
+"Spline profiles":
+  de: "Spline-Profile"
+
+"Buildings":
+  de: "Gebäude"
+
+"Junctions":
+  de: "Kreuzungen"
+
+"Traffic logic":
+  de: "Verkehrslogik"
+
+"Street furniture":
+  de: "Straßenzubehör"
+
+"Waterways":
+  de: "Gewässer"
+
+"Other":
+  de: "Sonstiges"
+
+"Grass":
+  de: "Wiesen"
+
+"Soil":
+  de: "Erde"
+
+"Gravel":
+  de: "Schotter"
+
+"Stone":
+  de: "Steine"
+
+"Category":
+  de: "Kategorie"
+
+"Path":
+  de: "Pfad"
+
+"Checking ":
+  de: "Prüfe "
+
+"Check ended unexpectedly · Check existing tables and game.log":
+  de: "Prüfung unerwartet beendet · bisherige Tabellen und game.log prüfen"
+
+"Checking … stopping; existing results remain saved":
+  de: "Prüfe … wird beendet; bisherige Ergebnisse bleiben gespeichert"
+
+"Checking 0 / {} assets · Keep catalogue open":
+  de: "Prüfe 0 / {} Bauteile · Katalog geöffnet lassen"
+
+"Cancelled":
+  de: "Abgebrochen"
+
+"{status}: {done} checked, {failed} without preview · {}":
+  de: "{status}: {done} geprüft, {failed} ohne Vorschau · {}"
+
+"Diagnostics not saved: {error}":
+  de: "Diagnose nicht gespeichert: {error}"
+
+"Cannot read profile":
+  de: "Profil nicht lesbar"
+
+"Texture missing":
+  de: "Textur fehlt"
+
+"Not found: {}":
+  de: "Nicht gefunden: {}"
+
+" · length-dependent":
+  de: " · längenabhängig"
+
+"Object":
+  de: "Objekt"
+
+"Texture":
+  de: "Textur"
+
+"Checking {done} / {} assets · {failed} without preview":
+  de: "Prüfe {done} / {} Bauteile · {failed} ohne Vorschau"
+
+"Texture catalogue: {} textures · {} sign / text images hidden":
+  de: "Texturkatalog: {} Texturen · {} Schild-/Beschriftungsbilder ausgeblendet"
+
+"Folder missing":
+  de: "Ordner fehlt"
+
+"Invalid texture image":
+  de: "Ungültiges Texturbild"
+
+"Cannot read spline":
+  de: "Spline kann nicht gelesen werden"
+
+"No visible road profile":
+  de: "Kein sichtbares Straßenprofil"
+
+"Traffic logic without displayable paths":
+  de: "Verkehrslogik ohne darstellbare Fahrwege"
+
+"No displayable traffic path preview":
+  de: "Keine darstellbare Verkehrsweg-Vorschau"
+
+"No visible tree preview":
+  de: "Keine sichtbare Baumvorschau"
+
+"Light object without visible model":
+  de: "Beleuchtungsobjekt ohne sichtbares Modell"
+
+"No static model preview available":
+  de: "Keine statische Modellvorschau verfügbar"
+
+"Road texture missing":
+  de: "Fahrbahntextur fehlt"
+
+"No junction preview generated":
+  de: "Keine Kreuzungsvorschau erzeugt"
+
+"Model loaded, but no displayable surface":
+  de: "Modell geladen, aber keine darstellbare Fläche"
+
+"No visible model geometry defined":
+  de: "Keine sichtbare Modellgeometrie definiert"
+
+"No visible model geometry":
+  de: "Keine sichtbare Modellgeometrie"
+
+"Results of the last check – check again after changes":
+  de: "Stand der letzten Prüfung – nach Änderungen erneut prüfen"
+
+"Check cancelled – check again":
+  de: "Prüfung abgebrochen – erneut prüfen"
+
+"Spline check requires a standard OMSI map":
+  de: "Spline-Prüfung benötigt eine normale OMSI-Karte"
+
+"Checking all tiles in the background …":
+  de: "Prüfe alle Tiles im Hintergrund …"
+
+"Could not start check: {e}":
+  de: "Prüfung konnte nicht starten: {e}"
+
+"Reload map is available in the desktop editor":
+  de: "Karte neu laden ist im Desktop-Editor verfügbar"
+
+"Reload map is available in the loaded single-player editor":
+  de: "Karte neu laden ist im geladenen Einzelspieler-Editor verfügbar"
+
+"Save & reload":
+  de: "Speichern & neu laden"
+
+"Discard changes & reload":
+  de: "Änderungen verwerfen & neu laden"
+
+"Reload map":
+  de: "Karte neu laden"
+
+"The map will be reloaded from its saved state. Camera position and direction are kept.\n\nSave or discard unsaved map changes first? Undo history and selections will be reset. Vehicles and AI will be rebuilt.":
+  de: "Die Karte wird vom gespeicherten Stand neu geladen. Kameraposition und Blickrichtung bleiben erhalten.\n\nUngespeicherte Kartenänderungen vorher speichern oder verwerfen? Rückgängig-Verlauf und Auswahlen werden zurückgesetzt. Fahrzeuge und KI werden neu aufgebaut."
+
+"No writable content folder":
+  de: "Kein beschreibbarer Inhalteordner"
+
+"Save failed: {e}":
+  de: "Speichern fehlgeschlagen: {e}"
+
+"Could not open map: {e:#}":
+  de: "Karte konnte nicht geöffnet werden: {e:#}"
+
+"Not reloaded: {e}":
+  de: "Nicht neu geladen: {e}"
+
+"Reloading map …":
+  de: "Karte wird neu geladen …"
+
+"Map reloaded · Camera position kept":
+  de: "Karte neu geladen · Kameraposition beibehalten"
+
+"Texture mask requires 2–2048 pixels and a power of two":
+  de: "Texturmaske benötigt 2–2048 Pixel und eine Zweierpotenz"
+
+"Ground texture mask is not a square image with an alpha channel":
+  de: "Bodentexturmaske ist kein quadratisches Bild mit Alphakanal"
+
+"Tile lies outside the map":
+  de: "Tile liegt außerhalb der Karte"
+
+"Tile filename missing":
+  de: "Tile-Dateiname fehlt"
+
+"Texture layer missing":
+  de: "Texturebene fehlt"
+
+"Cannot read tile with Chrono data":
+  de: "Tile mit Chrono-Daten kann nicht gelesen werden"
+
+"Tile ({},{}): Chrono replaces the terrain; choose a time without this event for this area":
+  de: "Tile ({},{}): Chrono ersetzt das Gelände; für diesen Bereich einen Zeitpunkt ohne dieses Ereignis wählen"
+
+"Tile ({},{}): Chrono has its own texture masks; choose a time without this event for this area":
+  de: "Tile ({},{}): Chrono besitzt eigene Texturmasken; für diesen Bereich einen Zeitpunkt ohne dieses Ereignis wählen"
+
+"Select a ground texture first":
+  de: "Zuerst eine Bodentextur auswählen"
+
+"The map needs a base texture in global.cfg first":
+  de: "Die Karte benötigt zuerst eine Grundtextur in global.cfg"
+
+"The map already has 128 ground texture layers":
+  de: "Die Karte hat bereits 128 Bodentexturebenen"
+
+"Invalid relative map path":
+  de: "Ungültiger relativer Kartenpfad"
+
+"Map folder missing":
+  de: "Kartenordner fehlt"
+
+"Ground textures in global.cfg have changed; reload the map first":
+  de: "global.cfg-Bodentexturen wurden zwischenzeitlich verändert; Karte zuerst neu laden"
+
+"Another texture layer occupies the new index; reload the map first":
+  de: "Eine andere Texturebene belegt den neuen Index; Karte zuerst neu laden"
+
+"Additional unknown ground texture layers found; reload the map first":
+  de: "Zusätzliche unbekannte Bodentexturebenen gefunden; Karte zuerst neu laden"
+
+"Tile no longer exists":
+  de: "Tile nicht mehr vorhanden"
+
+"Chrono replaces the terrain":
+  de: "Chrono ersetzt das Gelände"
+
+"own texture masks":
+  de: "eigene Texturmasken"
+
+"Custom T-junction":
+  de: "Eigene T-Kreuzung"
+
+"Road width (m)":
+  de: "Fahrbahnbreite (m)"
+
+"Length from centre (m)":
+  de: "Länge ab Mitte (m)"
+
+"Direction (°)":
+  de: "Richtung (°)"
+
+"Bend at end (°)":
+  de: "Biegung am Ende (°)"
+
+"Sidewalk per side (m)":
+  de: "Gehweg je Seite (m)"
+
+"Corner radius (m)":
+  de: "Eckrundung (m)"
+
+"Texture width (m)":
+  de: "Texturbreite (m)"
+
+"Crop U from":
+  de: "Ausschnitt U von"
+
+"Crop U to":
+  de: "Ausschnitt U bis"
+
+"Texture length (m)":
+  de: "Texturlänge (m)"
+
+"Choose arm, adjust dimensions, then Save & place. Blue = AI paths.":
+  de: "Arm wählen, Maße einstellen, dann Speichern & einsetzen. Blau = KI-Wege."
+
+"Name requires 1–80 characters":
+  de: "Name benötigt 1–80 Zeichen"
+
+"Please enter at most 4 decimal places":
+  de: "Bitte höchstens 4 Nachkommastellen eingeben"
+
+"Custom four-way junction":
+  de: "Eigene Vierarmkreuzung"
+
+"Road texture and crop applied. Check U from/to: exclude painted lines if needed. Applies to all arms.":
+  de: "Fahrbahntextur und Ausschnitt übernommen. U von/bis prüfen: eingebrannte Linien ggf. aussparen. Gilt für alle Arme."
+
+"Junction project is too large":
+  de: "Kreuzungsprojekt ist zu groß"
+
+"Project loaded · Changes are exported as a new asset":
+  de: "Projekt geladen · Änderungen werden beim Export als neues Bauteil gespeichert"
+
+"Texture width must be 0.25–100 m":
+  de: "Texturbreite benötigt 0,25–100 m"
+
+"Texture crop U from/to must differ and lie between -16 and 16":
+  de: "Texturausschnitt U von/bis muss verschieden sein und zwischen -16 und 16 liegen"
+
+"Invalid image data":
+  de: "Ungültige Bilddaten"
+
+"Spline has no road paths":
+  de: "Spline besitzt keine Fahrbahnwege"
+
+"No unambiguous road surface; choose asphalt in the texture catalogue":
+  de: "Keine eindeutige Fahrbahnfläche; Asphalt bitte im Texturkatalog auswählen"
+
+"Patchwork or variable texture scaling: choose asphalt manually":
+  de: "Patchwork oder variable Texturskalierung: Asphalt bitte manuell auswählen"
+
+"Texture length outside 0.25–100 m; choose texture manually":
+  de: "Texturlänge außerhalb von 0,25–100 m; Textur manuell auswählen"
+
+"This junction arm is not active":
+  de: "Dieser Kreuzungsarm ist nicht aktiv"
+
+"Unknown junction project format":
+  de: "Unbekanntes Kreuzungsprojektformat"
+
+"Junction requires a name of 1–80 characters":
+  de: "Kreuzung benötigt einen Namen mit 1–80 Zeichen"
+
+"Invalid value: {}":
+  de: "Ungültiger Wert: {}"
+
+"Texture requires a relative OMSI content path":
+  de: "Textur benötigt einen relativen OMSI-Inhaltepfad"
+
+"Choose three or four road arms":
+  de: "Drei oder vier Straßenarme auswählen"
+
+"Invalid arm value: {}":
+  de: "Ungültiger Armwert: {}"
+
+"Road arms need 35–180° spacing; place main arms opposite if needed":
+  de: "Straßenarme benötigen 35–180° Abstand; Hauptarme gegebenenfalls gegenüberstellen"
+
+"Arms must be at least {:.1} m long; reduce corner radius or width":
+  de: "Arme müssen mindestens {:.1} m lang sein; Eckrundung oder Breite verkleinern"
+
+"Bend is too tight for this road width":
+  de: "Biegung ist für diese Straßenbreite zu eng"
+
+"Road arms overlap; change bend, angle or length":
+  de: "Straßenarme überschneiden sich; Biegung, Winkel oder Länge ändern"
+
+"A driving path leaves the road surface; adjust angle or corner radius":
+  de: "Ein Fahrweg verlässt die Fahrbahn; Winkel oder Eckrundung anpassen"
+
+"Junction model is too large":
+  de: "Kreuzungsmodell ist zu groß"
+
+"Export texture requires a short ASCII filename":
+  de: "Exporttextur benötigt kurzen ASCII-Dateinamen"
+
+"Texture missing: {name}":
+  de: "Textur fehlt: {name}"
+
+"Invalid texture size":
+  de: "Ungültige Texturgröße"
+
+"Texture editing is available in single-player":
+  de: "Texturen bearbeiten ist im Einzelspieler verfügbar"
+
+"Junction builder is available in single-player":
+  de: "Kreuzungsbaukasten ist im Einzelspieler verfügbar"
+
+"Editing placed junction · Update keeps position and ID. Road connections are checked too.":
+  de: "Platzierte Kreuzung bearbeiten · Aktualisieren erhält Position und ID. Straßenanschlüsse werden mitgeprüft."
+
+"Selected road: {} · {}":
+  de: "Ausgewählte Straße: {} · {}"
+
+"No road selected – select one in spline mode before opening the builder":
+  de: "Keine Straße ausgewählt – vor dem Baukasten im Spline-Modus auswählen"
+
+"Check existing connections: {e}":
+  de: "Bestehende Anschlüsse prüfen: {e}"
+
+"Load junction project":
+  de: "Kreuzungsprojekt laden"
+
+"Junction project":
+  de: "Kreuzungsprojekt"
+
+"Not loaded: {e}":
+  de: "Nicht geladen: {e}"
+
+"Select a road in spline mode first, then open the builder":
+  de: "Zuerst im Spline-Modus eine Straße auswählen, dann den Baukasten öffnen"
+
+"Road profile missing":
+  de: "Straßenprofil fehlt"
+
+"This spline has no road paths":
+  de: "Dieser Spline besitzt keine Fahrbahnwege"
+
+"Road width is outside 4–30 m":
+  de: "Fahrbahnbreite liegt außerhalb von 4–30 m"
+
+"Road texture missing or outside the content folders":
+  de: "Fahrbahntextur fehlt oder liegt außerhalb der Inhalteordner"
+
+"Select a placed builder junction in object mode first":
+  de: "Zuerst eine platzierte Baukasten-Kreuzung im Objektmodus auswählen"
+
+"Before switching to object mode, select the road to connect in spline mode":
+  de: "Vor dem Objektmodus im Spline-Modus die anzuschließende Straße auswählen"
+
+"Green: existing connections · Blue: prepared for arm {}. Update applies both; Close discards preparation.":
+  de: "Grün: bestehende Anschlüsse · Blau: Vorbereitung an Arm {}. Aktualisieren übernimmt gemeinsam; Schließen verwirft die Vorbereitung."
+
+"No writable content folder available":
+  de: "Kein beschreibbarer Inhalteordner verfügbar"
+
+"Not updated: {e}":
+  de: "Nicht aktualisiert: {e}"
+
+"Junction and connections updated · Position/ID kept · Undo in object mode · Ctrl+S to save":
+  de: "Kreuzung und Anschlüsse aktualisiert · Position/ID erhalten · Rückgängig im Objektmodus · Strg+S speichern"
+
+"Custom junctions":
+  de: "Eigene Kreuzungen"
+
+"Junction saved · Click target · N/M to rotate · U/O for height · Ctrl+S saves placement":
+  de: "Kreuzung gespeichert · Ziel anklicken · N/M drehen · U/O Höhe · Strg+S speichert die Platzierung"
+
+"Not saved: {e}":
+  de: "Nicht gespeichert: {e}"
+
+"Junction connections require a standard OMSI map":
+  de: "Kreuzungsanschlüsse brauchen eine normale OMSI-Karte"
+
+"Tilted junction: set tilt to 0 before connecting":
+  de: "Geneigte Kreuzung: Neigung vor dem Anschließen auf 0 setzen"
+
+"Road is connected to this junction at both ends; edit separately":
+  de: "Straße ist an beiden Enden mit dieser Kreuzung verbunden; separat bearbeiten"
+
+"Old road connection no longer meets junction arm; reset junction/road first":
+  de: "Alter Straßenanschluss liegt nicht mehr am Kreuzungsarm; Kreuzung/Straße zuerst zurücksetzen"
+
+"Junction arm is already connected to another road":
+  de: "Kreuzungsarm ist bereits mit einer anderen Straße verbunden"
+
+"{} · Field {}":
+  de: "{} · Feld {}"
+
+"Text field {} · {}":
+  de: "Textfeld {} · {}"
+
+"This object has no editable text fields. Text painted onto the object belongs to its texture.":
+  de: "Dieses Objekt besitzt keine editierbaren Textfelder. Fest aufgemalte Texte gehören zur Textur."
+
+"Too many text fields in object":
+  de: "Zu viele Textfelder im Objekt"
+
+"Click field and type · Apply shows the text · Ctrl+S saves the map":
+  de: "Feld anklicken und tippen · Übernehmen zeigt den Text · Strg+S speichert die Karte"
+
+"Object rows are available in single-player":
+  de: "Objektreihen sind im Einzelspieler verfügbar"
+
+"Leave driveway clear: click its start, then its end on the road":
+  de: "Zufahrt aussparen: zuerst den Anfang, dann das Ende auf der Straße anklicken"
+
+"{count} objects placed · Ctrl+S to save · Ctrl+Z to undo":
+  de: "{count} Objekte eingesetzt · Strg+S speichern · Strg+Z rückgängig"
+
+"Object row undone · Ctrl+S to save":
+  de: "Objektreihe rückgängig gemacht · Strg+S speichern"
+
+"Own row removed · Ctrl+Z restores it · Ctrl+S to save":
+  de: "Eigene Reihe entfernt · Strg+Z stellt sie wieder her · Strg+S speichern"
+
+"Blue = planned posts · Place applies the preview":
+  de: "Blau = geplante Pfosten · Einsetzen übernimmt die Vorschau"
+
+"Click the selected road":
+  de: "Auf die gewählte Straße klicken"
+
+"The two boundaries must be at least 0.5 m apart":
+  de: "Die beiden Grenzen müssen mindestens 0,5 m auseinander liegen"
+
+"Area from {a:.1} to {b:.1} m stays clear":
+  de: "Bereich {a:.1} bis {b:.1} m bleibt frei"
+
+"Start at {station:.1} m · Now click the end of the driveway":
+  de: "Anfang bei {station:.1} m · jetzt Ende der Zufahrt anklicken"
+
+"Spacing or height is outside the allowed range":
+  de: "Abstand oder Höhe liegt außerhalb des erlaubten Bereichs"
+
+"Choose at least one side of the road":
+  de: "Mindestens eine Straßenseite wählen"
+
+"Invalid excluded area":
+  de: "Ungültiger ausgesparter Bereich"
+
+"Object rows require a standard OMSI map":
+  de: "Objektreihen brauchen eine normale OMSI-Karte"
+
+"Object row belongs to another tile":
+  de: "Objektreihe gehört zu einem anderen Tile"
+
+"Duplicate object row ID":
+  de: "Doppelte Kennung einer Objektreihe"
+
+"Saved object row has too many entries":
+  de: "Gespeicherte Objektreihe hat zu viele Einträge"
+
+"Object row {}: attachment {} missing or ambiguous":
+  de: "Objektreihe {}: Anhang {} fehlt oder ist nicht eindeutig"
+
+"Ambiguous road connection: check the connection first":
+  de: "Mehrdeutiger Straßenanschluss: zuerst die Verbindung prüfen"
+
+"More than 500 splines: choose a shorter range":
+  de: "Mehr als 500 Splines: einen kürzeren Bereich wählen"
+
+"Select an editable road with driving paths, not a marking":
+  de: "Eine bearbeitbare Straße mit Fahrbahnwegen auswählen, keine Markierung"
+
+"Road not found":
+  de: "Straße nicht gefunden"
+
+"Mark the gap directly on the selected road":
+  de: "Die Lücke direkt auf der gewählten Straße markieren"
+
+"Road has no valid length":
+  de: "Straße hat keine gültige Länge"
+
+"Start offset is beyond the end of the road":
+  de: "Startversatz liegt hinter dem Ende der Straße"
+
+"More than 4000 objects: increase spacing or shorten range":
+  de: "Mehr als 4000 Objekte: Abstand erhöhen oder Bereich verkürzen"
+
+"Terrain for post height not available":
+  de: "Gelände für die Pfostenhöhe nicht verfügbar"
+
+"No free object ID":
+  de: "Keine freie Objektkennung"
+
+"No free positions: check gaps, start offset and existing objects":
+  de: "Keine freien Positionen: Lücken, Startversatz und vorhandene Objekte prüfen"
+
+"No free row ID":
+  de: "Keine freie Reihenkennung"
+
+"Object row {id}: {count} objects placed":
+  de: "Objektreihe {id}: {count} Objekte eingesetzt"
+
+"No new object row to undo":
+  de: "Keine neue Objektreihe zum Rückgängigmachen"
+
+"No custom object row has been created on this road yet":
+  de: "Auf dieser Straße wurde noch keine eigene Objektreihe angelegt"
+
+"Object text fields missing":
+  de: "Objektbeschriftungen fehlen"
+
+"Too many object text fields":
+  de: "Zu viele Objektbeschriftungen"
+
+"Incomplete object attachment":
+  de: "Unvollständiger Objekt-Anhang"
+
+"Incomplete object row":
+  de: "Unvollständige Objektreihe"
+
+"Cannot read object row: {e}":
+  de: "Objektreihe nicht lesbar: {e}"
+
+"Spline ID missing":
+  de: "Spline-Kennung fehlt"
+
+"Object ID missing":
+  de: "Objektkennung fehlt"
+
+"Road of object row missing when saving":
+  de: "Straße der Objektreihe fehlt beim Speichern"
+
+"Spacing (m)":
+  de: "Abstand (m)"
+
+"Distance from edge (m)":
+  de: "Abstand zum Rand (m)"
+
+"Start offset (m)":
+  de: "Startversatz (m)"
+
+"Range (m; 0 = all)":
+  de: "Bereich (m; 0 = ganz)"
+
+"Height offset (m)":
+  de: "Höhenversatz (m)"
+
+"Rotation (degrees)":
+  de: "Drehung (Grad)"
+
+"Distance from junction (m)":
+  de: "Abstand zur Einmündung (m)"
+
+"Click road · Blue = planned objects · Place applies the preview":
+  de: "Straße anklicken · Blau = geplante Objekte · Einsetzen übernimmt die Vorschau"
+
+"Enter a number":
+  de: "Eine Zahl eingeben"
+
+"Saved row selected · Adjust settings and place preview":
+  de: "Gespeicherte Reihe gewählt · Einstellungen ändern und Vorschau einsetzen"
+
+"Click a road first":
+  de: "Zuerst eine Straße anklicken"
+
+"Invalid spline profile":
+  de: "Ungültiges Spline-Profil"
+
+"Profile needs two visible side edges":
+  de: "Profil braucht zwei sichtbare Seitenränder"
+
+"Select a visible sidewalk profile":
+  de: "Sichtbares Gehwegprofil auswählen"
+
+"Invalid start, length, edge distance or height":
+  de: "Start, Länge, Randabstand oder Höhe ungültig"
+
+"Range ends beyond the road ({total:.2} m); reduce start/length":
+  de: "Bereich endet hinter der Straße ({total:.2} m); Start/Länge verkleinern"
+
+"Invalid road length":
+  de: "Straßenlänge ungültig"
+
+"Inner curve too tight for this sidewalk profile":
+  de: "Innenkurve zu eng für dieses Gehwegprofil"
+
+"More than 4000 sections; shorten sidewalk range":
+  de: "Mehr als 4000 Teilstücke; Gehwegbereich kürzen"
+
+"Road edges do not meet at a connection; connect the road first":
+  de: "Straßenränder treffen an einem Anschluss nicht zusammen; Straße zuerst verbinden"
+
+"Sidewalk section too short":
+  de: "Gehwegabschnitt zu kurz"
+
+"Edge correction outside valid range":
+  de: "Randkorrektur außerhalb des gültigen Bereichs"
+
+"Road transition too distorted; choose a shorter or smoother road range":
+  de: "Straßenübergang zu stark verformt; einen kürzeren oder glatteren Straßenbereich wählen"
+
+"No sidewalk range selected":
+  de: "Kein Gehwegbereich gewählt"
+
+"Start on road (m)":
+  de: "Start auf Straße (m)"
+
+"Length along road (m)":
+  de: "Länge entlang Straße (m)"
+
+"Choose a sidewalk profile or click an existing sidewalk. Drag the start/end of the blue preview.":
+  de: "Gehwegprofil wählen oder vorhandenen Gehweg anklicken. Start/Ende der blauen Vorschau lassen sich ziehen."
+
+"Value must be between {lo} and {hi}":
+  de: "Wert muss zwischen {lo} und {hi} liegen"
+
+"Invalid number":
+  de: "Ungültige Zahl"
+
+"Select road":
+  de: "Straße auswählen"
+
+"Choose sidewalk profile in catalogue or an existing sidewalk":
+  de: "Gehwegprofil im Katalog oder vorhandenen Gehweg wählen"
+
+"Existing sidewalk no longer available":
+  de: "Vorhandener Gehweg nicht mehr verfügbar"
+
+"Align existing sidewalk on exactly one side":
+  de: "Vorhandenen Gehweg auf genau einer Seite ausrichten"
+
+"Sidewalk and reference road must differ":
+  de: "Gehweg und Bezugsstraße müssen verschieden sein"
+
+"Sidewalk editing is available in single-player":
+  de: "Gehwege bearbeiten ist im Einzelspieler verfügbar"
+
+"Existing sidewalk selected – now click the reference road":
+  de: "Vorhandener Gehweg übernommen – jetzt die Bezugsstraße anklicken"
+
+"Click existing sidewalk; profile and textures will be used":
+  de: "Vorhandenen Gehweg anklicken; Profil und Texturen werden übernommen"
+
+"Click reference road":
+  de: "Bezugsstraße anklicken"
+
+"Create new sidewalk; existing splines are kept":
+  de: "Neuen Gehweg erzeugen; bestehende Splines bleiben erhalten"
+
+"Sidewalk applied: {count} sections · Ctrl+Z to undo · Ctrl+S to save":
+  de: "Gehweg übernommen: {count} Abschnitte · Strg+Z rückgängig · Strg+S speichern"
+
+"Drag start or end marker; to switch, click Choose road/sidewalk first":
+  de: "Start- oder Endmarkierung ziehen; zum Wechseln zuerst Straße/Gehweg wählen anklicken"
+
+"Select a road with driving paths":
+  de: "Eine Straße mit Fahrbahnwegen auswählen"
+
+"Sidewalk and road must differ":
+  de: "Gehweg und Straße müssen verschieden sein"
+
+"Check preview; profile and textures are kept":
+  de: "Vorschau prüfen; Profil und Texturen bleiben erhalten"
+
+"OPEN":
+  de: "OFFEN"
+
+"UNCHECKED":
+  de: "UNGEPRÜFT"
+
+"CONNECTED":
+  de: "VERBUNDEN"
+
+"Invalid spline geometry":
+  de: "Ungültige Spline-Geometrie"
+
+"Own ID assigned more than once":
+  de: "Eigene ID mehrfach vergeben"
+
+"No reference – may be an intentional end":
+  de: "Kein Verweis – kann ein beabsichtigtes Ende sein"
+
+"Reference to itself":
+  de: "Verweis auf sich selbst"
+
+"ID {link} not found; check incomplete":
+  de: "ID {link} nicht gefunden; Prüfung unvollständig"
+
+"Target ID {link} missing":
+  de: "Ziel-ID {link} fehlt"
+
+"Target ID {link} assigned more than once":
+  de: "Ziel-ID {link} mehrfach vergeben"
+
+"Target spline {link} is deleted":
+  de: "Ziel-Spline {link} ist gelöscht"
+
+"Spline {link} does not link back":
+  de: "Spline {link} verweist nicht zurück"
+
+"Spline {link}: endpoint distance {gap:.2} m":
+  de: "Spline {link}: Endpunktabstand {gap:.2} m"
+
+"Spline {link}: mutual reference, distance {gap:.3} m":
+  de: "Spline {link}: beidseitiger Verweis, Abstand {gap:.3} m"
+
+"Target object {link} is deleted":
+  de: "Ziel-Objekt {link} ist gelöscht"
+
+"Junction {link}: arm {}, distance {gap:.3} m":
+  de: "Kreuzung {link}: Arm {}, Abstand {gap:.3} m"
+
+"Junction {link}: distance to nearest arm {gap:.2} m":
+  de: "Kreuzung {link}: Abstand zum nächsten Arm {gap:.2} m"
+
+"Object {link}: no verifiable arms":
+  de: "Objekt {link}: keine prüfbaren Arme"
+
+"Object {link} exists; connection geometry unchecked":
+  de: "Objekt {link} vorhanden; Anschlussgeometrie ungeprüft"
+
+"Multiple spline ends occupy the same junction arm":
+  de: "Mehrere Spline-Enden belegen denselben Kreuzungsarm"
+
+"Start {:.2}/{:.2}/{:.2}: point at target and press Shift+G · B cancels":
+  de: "Start {:.2}/{:.2}/{:.2}: Ziel anvisieren und Umschalt+G drücken · B bricht ab"
+
+"No road selected":
+  de: "Keine Straße ausgewählt"
+
+"Spline {} deleted · Ctrl+Z restores it":
+  de: "Spline {} gelöscht · Strg+Z stellt ihn wieder her"
+
+"Spline {} · {} · Tile ({},{}) · Length {:.2} m · Radius {:.2} m · Gradient {:.2}/{:.2}% · Height {:.2} m":
+  de: "Spline {} · {} · Tile ({},{}) · Länge {:.2} m · Radius {:.2} m · Steigung {:.2}/{:.2}% · Höhe {:.2} m"
+
+"Select two splines with an occupied connection first":
+  de: "Zuerst zwei Splines mit belegtem Anschluss auswählen"
+
+"Spline {} ↔ {} · Distance {:.2} m\n{}\nClick Connect or press G/Enter":
+  de: "Spline {} ↔ {} · Abstand {:.2} m\n{}\nVerbinden anklicken oder G/Enter drücken"
+
+"Old connections will be replaced · Ctrl+Z to undo":
+  de: "Alte Anschlüsse werden ersetzt · Strg+Z rückgängig"
+
+"Both edge points checked · Preview in light blue":
+  de: "Beide Randpunkte geprüft · Vorschau hellblau"
+
+"Click Replace connection or press Ctrl+G":
+  de: "Anschluss ersetzen anklicken oder Strg+G drücken"
+
+"Choose another spline or cancel":
+  de: "Anderen Spline wählen oder abbrechen"
+
+"Spline {} is marked in blue\nNow click the second spline":
+  de: "Spline {} ist blau markiert\nJetzt den zweiten Spline anklicken"
+
+"Click the first spline, then press G to connect":
+  de: "Ersten Spline anklicken, dann G für Verbinden drücken"
+
+"Spline no longer available":
+  de: "Spline nicht mehr verfügbar"
+
+"Source profile not found":
+  de: "Quellprofil nicht gefunden"
+
+"Target profile not found":
+  de: "Zielprofil nicht gefunden"
+
+"Connection too long; choose closer spline ends":
+  de: "Anschluss reicht zu weit; nähere Spline-Enden wählen"
+
+"Connection leaves the map":
+  de: "Anschluss verlässt die Karte"
+
+"Load both splines and the space between them first":
+  de: "Beide Splines und den Zwischenraum zuerst laden"
+
+"Press G on the first spline first":
+  de: "Zuerst G auf dem ersten Spline drücken"
+
+"Click second spline, then choose Connect":
+  de: "Zweiten Spline anklicken, dann Verbinden wählen"
+
+"Spline no longer available; connection cancelled":
+  de: "Spline nicht mehr verfügbar; Verbindung abgebrochen"
+
+"Old neighbour no longer available; connection cancelled":
+  de: "Alter Nachbar nicht mehr verfügbar; Verbindung abgebrochen"
+
+"These spline ends are already connected":
+  de: "Diese Spline-Enden sind bereits verbunden"
+
+"Splines {} and {} connected · Ctrl+Z to undo · Ctrl+S to save":
+  de: "Splines {} und {} verbunden · Strg+Z rückgängig · Strg+S speichern"
+
+"This edit crosses the tile boundary. G connects ends; Shift+G creates a separate road":
+  de: "Diese Bearbeitung überschreitet die Tile-Grenze. G verbindet Enden; Umschalt+G erzeugt eine eigene Strecke"
+
+"Connection cancelled; nothing changed":
+  de: "Verbindung abgebrochen; nichts verändert"
+
+"Choose Connect or Cancel first":
+  de: "Erst Verbinden oder Abbrechen wählen"
+
+"Profile change: undo the transition connection first":
+  de: "Profilwechsel: Übergangsverbindung zuerst rückgängig machen"
+
+"Undo the newer terrain brush change in terrain mode first":
+  de: "Neuere Gelände-Pinseländerung zuerst im Gelände-Modus rückgängig machen"
+
+"No action to undo":
+  de: "Keine Aktion zum Rückgängigmachen"
+
+"Point at the split location, then press F7":
+  de: "Auf die Teilungsstelle zeigen, dann F7 drücken"
+
+"Select a spline first":
+  de: "Zuerst einen Spline auswählen"
+
+"Split location must lie on the spline, at least 0.5 m from its ends":
+  de: "Teilungsstelle muss auf dem Spline und mindestens 0,5 m von seinen Enden liegen"
+
+"Load neighbouring spline first; nothing changed":
+  de: "Nachbar-Spline zuerst laden; nichts verändert"
+
+"Spline split; shape and height kept · Ctrl+Z undoes both parts":
+  de: "Spline geteilt; Verlauf und Höhe erhalten · Strg+Z macht beide Teile rückgängig"
+
+"Road profile not found":
+  de: "Straßenprofil nicht gefunden"
+
+"Road profile has no visible surface":
+  de: "Straßenprofil hat keine sichtbare Fläche"
+
+"Terrain not fully loaded; nothing changed":
+  de: "Gelände nicht vollständig geladen; nichts verändert"
+
+"Section leaves its tile; create shorter sections first":
+  de: "Abschnitt verlässt sein Tile; zuerst kürzere Stücke erzeugen"
+
+"Height and road edges adjusted: {} sections · F8 smooths shoulder, Shift+F8 wider · Ctrl+Z to undo":
+  de: "Höhe und Straßenränder angepasst: {} Abschnitte · F8 Rand glätten, Umschalt+F8 breiter · Strg+Z rückgängig"
+
+"Select a road first, then press F8 or click Smooth shoulder":
+  de: "Zuerst eine Straße auswählen, dann F8 drücken oder Rand glätten anklicken"
+
+"Select an existing road first":
+  de: "Zuerst eine vorhandene Straße auswählen"
+
+"Road edges are already adjusted":
+  de: "Straßenränder sind bereits angepasst"
+
+"Road shoulder smoothed: {} section(s), {shoulder:.0} m blend, {count} tile(s) · Ctrl+Z to undo · Ctrl+S to save":
+  de: "Straßenrand geglättet: {} Abschnitt(e), {shoulder:.0} m weicher Übergang, {count} Tile(s) · Strg+Z rückgängig · Strg+S speichern"
+
+"Road profile not found: {}":
+  de: "Straßenprofil nicht gefunden: {}"
+
+"Road profile has no surface to smooth":
+  de: "Straßenprofil hat keine Fläche zum Glätten"
+
+"Load road and edge tile ({tx},{ty}) first; nothing changed":
+  de: "Straße und Rand-Tile ({tx},{ty}) zuerst laden; nichts verändert"
+
+"Terrain of tile ({tx},{ty}) contains invalid heights; nothing changed":
+  de: "Gelände von Tile ({tx},{ty}) enthält ungültige Höhen; nichts verändert"
+
+"Load terrain first; nothing changed":
+  de: "Gelände zuerst laden; nichts verändert"
+
+"Point at the connection location, then press R":
+  de: "Auf die Anschlussstelle zeigen, dann R drücken"
+
+"Select the existing road first":
+  de: "Zuerst die vorhandene Straße auswählen"
+
+"Point at a location on the selected road":
+  de: "Auf einen Punkt der ausgewählten Straße zeigen"
+
+"Road type not found":
+  de: "Straßenart nicht gefunden"
+
+"{result} · Side connection; place a junction object for a T-junction with AI":
+  de: "{result} · seitlicher Anschluss; für eine T-Kreuzung mit KI ein Kreuzungsobjekt einsetzen"
+
+"Point at the target road, then press H":
+  de: "Auf die Zielstraße zeigen, dann H drücken"
+
+"Select the spline to connect first":
+  de: "Zuerst den anzuschließenden Spline auswählen"
+
+"No other road found at the target":
+  de: "Keine andere Straße an der Zielstelle gefunden"
+
+"Point at the terrain and press Shift+G":
+  de: "Auf das Gelände zeigen und Umschalt+G drücken"
+
+"P opens the road catalogue; alternatively select an existing spline":
+  de: "P öffnet den Straßenkatalog; alternativ vorhandenen Spline auswählen"
+
+"Road no longer loaded":
+  de: "Straße nicht mehr geladen"
+
+"Sidewalks require a standard OMSI map":
+  de: "Gehwege brauchen eine normale OMSI-Karte"
+
+"Invalid sidewalk preview":
+  de: "Ungültige Gehwegvorschau"
+
+"Sidewalk no longer exists":
+  de: "Gehweg nicht mehr vorhanden"
+
+"Sidewalk has been deleted":
+  de: "Gehweg wurde gelöscht"
+
+"Sidewalk is connected. Enable Disconnect old sidewalk links to realign it":
+  de: "Gehweg ist verbunden. Zum Neuausrichten ausdrücklich Alte Gehweg-Anschlüsse lösen einschalten"
+
+"Existing sidewalk start would change tiles; create as a new sidewalk":
+  de: "Der Anfang des vorhandenen Gehwegs würde das Tile wechseln; als neuen Gehweg erzeugen"
+
+"Sidewalk has attached objects; create as new sidewalk to keep their references":
+  de: "Gehweg besitzt angehängte Objekte; als neuen Gehweg erzeugen, damit deren Bezug erhalten bleibt"
+
+"Old sidewalk connection {id} missing or ambiguous; unchanged":
+  de: "Alter Gehweg-Anschluss {id} fehlt oder ist mehrdeutig; unverändert"
+
+"Invalid sidewalk geometry":
+  de: "Ungültige Gehweggeometrie"
+
+"Sidewalk leaves the existing map":
+  de: "Gehweg verlässt die vorhandene Karte"
+
+"Sidewalk requires tile version 14":
+  de: "Gehweg benötigt Tile-Version 14"
+
+"No free spline ID":
+  de: "Keine freie Spline-ID"
+
+"Distance must be 0.5 to 500 m":
+  de: "Abstand muss 0,5 bis 500 m betragen"
+
+"The road leaves the map; nothing created":
+  de: "Die Strecke verlässt die Karte; nichts erzeugt"
+
+"New spline: {count} section(s) · Ctrl+S to save · Then reload map":
+  de: "New spline: {count} Abschnitt(e) · Strg+S speichern · Karte danach neu laden"
+
+"Both profiles need two visible side edges":
+  de: "Beide Profile brauchen zwei sichtbare Seitenränder"
+
+"Widths {width:.2}/{target_width:.2} m: optionally enable profile transition":
+  de: "Breiten {width:.2}/{target_width:.2} m: Profilübergang optional einschalten"
+
+"Profile shapes do not match (e.g. different kerb). A matching transition profile is required":
+  de: "Profilformen passen nicht (z.B. anderer Bordstein). Passendes Übergangsprofil nötig"
+
+"Profile transition would be too large":
+  de: "Profilübergang wäre zu groß"
+
+"Use a source spline at least {:.1} m long for this transition":
+  de: "Für diesen Übergang mindestens {:.1} m langen Quell-Spline verwenden"
+
+"Could not align edge points flush":
+  de: "Randpunkte konnten nicht bündig ausgerichtet werden"
+
+"Inner profile or crossfall does not match; a matching transition profile is required":
+  de: "Innenprofil oder Querneigung passt nicht; passendes Übergangsprofil nötig"
+
+"The other connection would detach; use a free section first":
+  de: "Der andere Anschluss würde sich lösen; zuerst einen freien Abschnitt verwenden"
+
+"Target lies behind the start; align using N/M first":
+  de: "Ziel liegt hinter dem Start; zuerst mit N/M ausrichten"
+
+"Curve radius would be below 20 m; move or rotate start":
+  de: "Kurve wäre enger als 20 m; Start verschieben oder drehen"
+
+"Connection must be 0.5 to 500 m long":
+  de: "Anschluss muss 0,5 bis 500 m lang sein"
+
+"Old connection {old_id} is ambiguous; unchanged":
+  de: "Alter Anschluss {old_id} ist nicht eindeutig; unverändert"
+
+"Check old connection first":
+  de: "Alten Anschluss zuerst prüfen"
+
+"Load old neighbouring spline {old_id} for editing first":
+  de: "Alten Nachbar-Spline {old_id} zuerst zum Bearbeiten laden"
+
+"Map not fully read; leave old connection unchanged":
+  de: "Karte nicht vollständig gelesen; alten Anschluss unverändert lassen"
+
+"Load old neighbouring spline {old_id} first":
+  de: "Alten Nachbar-Spline {old_id} zuerst laden"
+
+"Old neighbouring spline {old_id} unavailable":
+  de: "Alter Nachbar-Spline {old_id} nicht verfügbar"
+
+"Neighbour {old_id} has two return links; connection ambiguous":
+  de: "Nachbar {old_id} hat zwei Rückanschlüsse; Verbindung nicht eindeutig"
+
+"Both splines must exist and be valid":
+  de: "Beide Splines müssen vorhanden und gültig sein"
+
+"Select two different splines":
+  de: "Zwei verschiedene Splines auswählen"
+
+"Spline ends are more than 50 m apart":
+  de: "Spline-Enden sind mehr als 50 m auseinander"
+
+"Spline {} {} occupied by {}":
+  de: "Spline {} {} belegt durch {}"
+
+"End directions differ by more than 30°; insert an additional curve section":
+  de: "Endrichtungen weichen mehr als 30° ab; zusätzlichen Kurvenabschnitt einsetzen"
+
+"End directions do not match; enable profile / curve transition":
+  de: "Endrichtungen passen nicht; Profil-/Kurvenübergang einschalten"
+
+"Connection has invalid values":
+  de: "Anschluss hat ungültige Werte"
+
+"Invalid road":
+  de: "Ungültige Straße"
+
+"Road {}: {:.2} m distance to arm (max. 50 m). Select a matching road":
+  de: "Straße {}: {:.2} m Abstand zum Arm (max. 50 m). Passende Straße auswählen"
+
+"Road {}: {} occupied by ID {}. Active connection not overwritten":
+  de: "Straße {}: {} belegt durch ID {}. Aktiven Anschluss nicht überschrieben"
+
+"Connection angle above 30°; align road or junction arm first":
+  de: "Anschlusswinkel über 30°; Straße oder Kreuzungsarm zunächst ausrichten"
+
+"Invalid junction connection":
+  de: "Ungültiger Kreuzungsanschluss"
+
+"Invalid saved profile transition; nothing written":
+  de: "Ungültiger gespeicherter Profilübergang; nichts geschrieben"
+
+"occupied":
+  de: "belegt"
+
+"End directions":
+  de: "Endrichtungen"
+
+"occupied by 9":
+  de: "belegt durch 9"
+
+"99 for editing first":
+  de: "99 zuerst"
+
+"not fully":
+  de: "nicht vollständig"
+
+"99 first":
+  de: "99 zuerst laden"
+
+"Raise hill":
+  de: "Berg heben"
+
+"Lower hollow":
+  de: "Senke senken"
+
+"Smooth":
+  de: "Glätten"
+
+"Paint height":
+  de: "Höhe zeichnen"
+
+"Strength / sec.":
+  de: "Stärke / Sek."
+
+"Soft edge (%)":
+  de: "Weicher Rand (%)"
+
+"Target height (m)":
+  de: "Zielhöhe (m)"
+
+"Tile step (m)":
+  de: "Tile-Schritt (m)"
+
+"Hold left mouse button to sculpt · Mouse wheel: brush size · Ctrl+S: save":
+  de: "Links halten und zeichnen · Mausrad: Pinselgröße · Strg+S: speichern"
+
+"Enter a number between {min} and {max}":
+  de: "Zahl zwischen {min} und {max} eingeben"
+
+"Terrain with an active Chrono change cannot be edited here":
+  de: "Gelände mit aktiver Chrono-Änderung ist hier nicht bearbeitbar"
+
+"Invalid terrain grid in tile ({},{})":
+  de: "Ungültiges Geländeraster in Tile ({},{})"
+
+"Adjacent tiles have different terrain grids":
+  de: "Angrenzende Tiles haben unterschiedliche Geländeraster"
+
+"Ground textures · {} · {} · Radius {:.1} m · {} undo / {} redo":
+  de: "Bodentexturen · {} · {} · Radius {:.1} m · {} Rückgängig / {} Wiederholen"
+
+"Terrain · {} · Radius {:.1} m · Target height {:.2} m · {} undo / {} redo":
+  de: "Gelände · {} · Radius {:.1} m · Zielhöhe {:.2} m · {} Rückgängig / {} Wiederholen"
+
+"Texture sampled: {}":
+  de: "Textur aufgenommen: {}"
+
+"Target height {:.2} m sampled":
+  de: "Zielhöhe {:.2} m aufgenommen"
+
+"Tile selected; height buttons edit the entire cell":
+  de: "Tile ausgewählt; Höhenbuttons bearbeiten das ganze Feld"
+
+"No height change; increase brush radius if needed":
+  de: "Keine Höhenänderung; gegebenenfalls den Pinselradius erhöhen"
+
+"Brush stroke: {count} tile(s) · Ctrl+Z to undo · Ctrl+S to save":
+  de: "Pinselstrich: {count} Tile(s) · Strg+Z rückgängig · Strg+S speichern"
+
+"No texture change":
+  de: "Keine Texturänderung"
+
+"No height change; increase the radius if the brush is small":
+  de: "Keine Höhenänderung; bei kleinem Pinsel gegebenenfalls den Radius erhöhen"
+
+"Texture brush · Layer {} '{}' · {}":
+  de: "Texturpinsel · Ebene {} '{}' · {}"
+
+"Select tile first":
+  de: "Zuerst Tile auswählen"
+
+"Selected tile is unavailable":
+  de: "Gewähltes Tile ist nicht verfügbar"
+
+"Tile ({},{}) set to {:.2} m":
+  de: "Tile ({},{}) auf {:.2} m gesetzt"
+
+"Tile ({},{}) moved by {value:+.2} m":
+  de: "Tile ({},{}) um {value:+.2} m verschoben"
+
+"No terrain change available":
+  de: "Keine Geländeänderung verfügbar"
+
+"Newer terrain change from another tool: undo it there first":
+  de: "Neuere Geländeänderung aus anderem Werkzeug: diese zuerst dort rückgängig machen"
+
+"Ground textures have changed; nothing undone":
+  de: "Bodentexturen wurden zwischenzeitlich geändert; nichts rückgängig gemacht"
+
+"Terrain change redone":
+  de: "Geländeänderung wiederholt"
+
+"Terrain change undone":
+  de: "Geländeänderung rückgängig"
+
+"North":
+  de: "Nord"
+
+"Northeast":
+  de: "Nordost"
+
+"East":
+  de: "Ost"
+
+"Southeast":
+  de: "Südost"
+
+"South":
+  de: "Süd"
+
+"Southwest":
+  de: "Südwest"
+
+"Northwest":
+  de: "Nordwest"
+
+"Choose a free neighbouring cell. Green = existing, blue = selected.":
+  de: "Freies Nachbarfeld wählen. Grün = vorhanden, Blau = Auswahl."
+
+"Tile ({}, {}) is already registered.":
+  de: "Tile ({}, {}) ist bereits eingetragen."
+
+"The new cell must share an edge with the map.":
+  de: "Das neue Feld muss eine gemeinsame Kante mit der Karte haben."
+
+"Set custom height; the new tile will be flat at this height.":
+  de: "Eigene Höhe einstellen; das neue Tile wird eben auf dieser Höhe angelegt."
+
+"Terrain uses neighbouring tile edges. Saved immediately.":
+  de: "Gelände übernimmt die Ränder der Nachbar-Tiles. Sofort gespeichert."
+
+"No terrain neighbour found":
+  de: "Kein Gelände-Nachbar gefunden"
+
+"Terrain grid not supported (1–256 cells)":
+  de: "Geländeraster wird nicht unterstützt (1–256 Zellen)"
+
+"Neighbouring tiles have different or damaged terrain grids":
+  de: "Nachbar-Tiles haben unterschiedliche oder beschädigte Geländeraster"
+
+"Neighbouring terrain has conflicting corner heights; smooth and save the shared corner first":
+  de: "Nachbar-Gelände hat widersprüchliche Eckhöhen; zuerst die gemeinsame Ecke glätten und speichern"
+
+"New tiles are currently supported only for standard OMSI maps":
+  de: "Neue Tiles werden bisher nur für normale OMSI-Karten unterstützt"
+
+"This tile is already registered in global.cfg":
+  de: "Dieses Tile ist bereits in global.cfg eingetragen"
+
+"The map must be opened with a relative path such as maps/MapName/global.cfg":
+  de: "Die Karte muss mit einem relativen Pfad wie maps/Kartenname/global.cfg geöffnet sein"
+
+"Content folder has no existing parent folder":
+  de: "Inhaltsordner ohne existierenden Elternordner"
+
+"The content folder is inside the original installation":
+  de: "Der Inhaltsordner liegt in der Originalinstallation"
+
+"Map folder points outside the content folder":
+  de: "Kartenordner verweist außerhalb des Inhaltsordners"
+
+"Ambiguous letter case for {name}":
+  de: "Mehrdeutige Groß-/Kleinschreibung für {name}"
+
+"global.cfg is not a regular file":
+  de: "global.cfg ist keine normale Datei"
+
+"global.cfg has changed; reopen the window":
+  de: "global.cfg wurde inzwischen verändert; Fenster erneut öffnen"
+
+"global.cfg changed while saving":
+  de: "global.cfg wurde während des Speicherns verändert"
+
+"Invalid tile height":
+  de: "Ungültige Tile-Höhe"
+
+"Tile creation requires a standard OMSI map":
+  de: "Tile-Erstellung braucht eine normale OMSI-Karte"
+
+"This tile already exists":
+  de: "Dieses Tile ist bereits vorhanden"
+
+"New tile must directly border the map":
+  de: "Neues Tile muss direkt an die Karte angrenzen"
+
+"{name} already exists; no overwrite":
+  de: "{name} existiert bereits; kein Überschreiben"
+
+"Tile list in global.cfg changed outside the editor; reload map":
+  de: "Die Tile-Liste in global.cfg wurde außerhalb des Editors verändert; Karte neu laden"
+
+"Neighbouring tile has no file":
+  de: "Nachbar-Tile hat keine Datei"
+
+"Neighbouring tile file missing":
+  de: "Nachbar-Tile-Datei fehlt"
+
+"Neighbouring tile has no filename":
+  de: "Nachbar-Tile ohne Dateiname"
+
+"Terrain ({}, {}): {e}":
+  de: "Gelände ({}, {}): {e}"
+
+"Neighbouring tile terrain was edited: Ctrl+S to save first, then create tile":
+  de: "Gelände am Nachbar-Tile wurde bearbeitet: zuerst Strg+S speichern, dann Tile anlegen"
+
+"Terrain grid not supported":
+  de: "Geländeraster wird nicht unterstützt"
+
+"Could not save editor camera position: {e}":
+  de: "Editor-Kameraposition konnte nicht gespeichert werden: {e}"
+
+"Placement finished; placed objects are kept · Ctrl+S to save":
+  de: "Einsetzen beendet; gesetzte Objekte bleiben erhalten · Strg+S speichern"
+
+"Object text editing is currently available in single-player":
+  de: "Beschriftung bearbeiten ist bisher im Einzelspieler verfügbar"
+
+"Click text field and enter text":
+  de: "Textfeld anklicken und Beschriftung eingeben"
+
+"Placement finished · Ctrl+S to save":
+  de: "Einsetzen beendet · Strg+S speichern"
+
+"Repeat placement ON · Click each target · Esc to finish":
+  de: "Mehrfachsetzen AN · jeden Zielpunkt anklicken · Esc beenden"
+
+"Switch to object mode before copying an object":
+  de: "Zum Kopieren eines Objekts erst in den Objekt-Modus wechseln"
+
+"Object copied · Ctrl+V and click target":
+  de: "Objekt kopiert · Strg+V und Ziel anklicken"
+
+"Click target · Repeat placement for more copies · Esc to finish":
+  de: "Ziel anklicken · Mehrfachsetzen für weitere Exemplare · Esc beenden"
+
+"No object stored for placement yet":
+  de: "Noch kein Objekt zum Einsetzen gespeichert"
+
+"T for splines, then click first spline and press G":
+  de: "T für Splines, dann ersten Spline anklicken und G drücken"
+
+"T for splines, then G to connect":
+  de: "T für Splines, dann G zum Verbinden"
+
+"This function requires spline mode (T)":
+  de: "Diese Funktion braucht den Spline-Modus (T)"
+
+"{} file(s) saved in mod folder ({}){}":
+  de: "{} Datei(en) im Modordner gespeichert ({}){}"
+
+"Terrain mode requires single-player and a standard OMSI map":
+  de: "Gelände-Modus braucht Einzelspieler und eine normale OMSI-Karte"
+
+"Object rows after terrain change: {error}":
+  de: "Objektreihen nach Geländeänderung: {error}"
+
+"Click ground to sample its visible texture":
+  de: "Boden anklicken, um dessen sichtbare Textur aufzunehmen"
+
+"Click terrain to sample its height":
+  de: "Gelände anklicken, um dessen Höhe aufzunehmen"
+
+"Click the desired tile on the terrain":
+  de: "Gewünschtes Tile auf dem Gelände anklicken"
+
+"New tiles are currently available only in single-player":
+  de: "Neue Tiles sind bisher nur im Einzelspieler möglich"
+
+"New tiles are currently available only for standard OMSI maps":
+  de: "Neue Tiles sind bisher nur für normale OMSI-Karten möglich"
+
+"Set new tile height in the number field":
+  de: "Neue Tile-Höhe im Zahlfeld einstellen"
+
+"Neighbouring edge heights will be used":
+  de: "Die Randhöhen der Nachbarn werden übernommen"
+
+"No content folder configured":
+  de: "Kein Inhaltsordner eingerichtet"
+
+"Tile saved; rendering failed: {e}. Reload map.":
+  de: "Tile gespeichert; Darstellung fehlgeschlagen: {e}. Karte neu laden."
+
+"Tile ({}, {}) saved. Close and continue building the road.":
+  de: "Tile ({}, {}) gespeichert. Schließen und Straße weiterbauen."
+
+"Not created: {e}":
+  de: "Nicht angelegt: {e}"
+
+"Text applied · Ctrl+S saves the map":
+  de: "Beschriftung übernommen · Strg+S speichert die Karte"
+
+"Asset catalogue: type search · Click tile · Select · Esc closes":
+  de: "Bauteilkatalog: Suchbegriff tippen · Kachel anklicken · Auswählen · Esc schließen"
+
+"Select a sidewalk spline profile":
+  de: "Ein Gehweg-Spline-Profil auswählen"
+
+"Profile and textures selected – check preview":
+  de: "Profil und Texturen gewählt – Vorschau prüfen"
+
+"Choose a scenery object for an object row":
+  de: "Für eine Objektreihe ein Szenerieobjekt wählen"
+
+"Object selected · Blue = planned positions":
+  de: "Objekt gewählt · Blau = geplante Positionen"
+
+"Texture brush requires a standard OMSI map":
+  de: "Texturpinsel braucht eine normale OMSI-Karte"
+
+"Texture brush: selected layer {layer} '{}'":
+  de: "Texturpinsel: gewählt Ebene {layer} '{}'"
+
+"Texture selected · Hold left mouse button to paint · Ctrl+Z to undo · Ctrl+S to save":
+  de: "Textur gewählt · links halten und malen · Strg+Z rückgängig · Strg+S speichern"
+
+"Texture brush: '{}' not selected: {error}":
+  de: "Texturpinsel: '{}' nicht gewählt: {error}"
+
+"Road type selected · Click start on ground, then target · Esc/B cancels":
+  de: "Straßenart gewählt · Start auf dem Boden anklicken, dann Ziel · Esc/B Abbruch"
+
+"Object selected · Click target · Repeat placement for more copies · Esc to finish":
+  de: "Objekt gewählt · Ziel anklicken · Mehrfachsetzen für weitere Exemplare · Esc beenden"
+
+"Object rows after road change: {error}":
+  de: "Objektreihen nach Straßenänderung: {error}"
+
+"Check object rows: {error}":
+  de: "Objektreihen prüfen: {error}"
+
+"Click loaded terrain inside the map":
+  de: "Auf geladenes Gelände innerhalb der Karte klicken"
+
+"Texture brush: no terrain hit · {}":
+  de: "Texturpinsel: kein Geländetreffer · {}"
+
+"Click a ground location inside the map":
+  de: "Auf einen Bodenpunkt innerhalb der Karte klicken"
+
+"Start selected (blue marker) · Now click target · Esc/B cancels":
+  de: "Start gewählt (blaue Markierung) · jetzt Ziel anklicken · Esc/B Abbruch"
+
+"Object placed":
+  de: "Objekt eingesetzt"
+
+"Please end the current session before starting a map in the editor.":
+  de: "Bitte die laufende Sitzung beenden, bevor du eine Karte im Editor startest."
+
+"Create a new map or edit an existing map directly.":
+  de: "Neue Karte erstellen oder eine vorhandene Karte direkt bearbeiten."
+
+"New empty map":
+  de: "Neue leere Karte"
+
+"Map name":
+  de: "Kartenname"
+
+"My new map":
+  de: "Meine neue Karte"
+
+"Author (optional)":
+  de: "Autor (optional)"
+
+"Name or nickname":
+  de: "Name oder Pseudonym"
+
+"Description":
+  de: "Beschreibung"
+
+"Short description (optional)":
+  de: "Kurze Beschreibung (optional)"
+
+"Please configure the game folder under Setup first.":
+  de: "Bitte zuerst den Spielordner unter Setup einrichten."
+
+"Save location: {destination}":
+  de: "Speicherort: {destination}"
+
+"Start with one flat tile (300 × 300 m), a ground texture and a free camera. Add more tiles in the editor.":
+  de: "Start mit einer flachen Kachel (300 × 300 m), Grundtextur und freier Kamera. Weitere Kacheln kannst du im Editor ergänzen."
+
+"Create and edit map":
+  de: "Karte erstellen und bearbeiten"
+
+"Please configure Setup first.":
+  de: "Bitte zuerst Setup einrichten."
+
+"Edit existing map":
+  de: "Vorhandene Karte bearbeiten"
+
+"No maps found. Please check Setup.":
+  de: "Keine Karten gefunden. Bitte Setup prüfen."
+
+"Open in editor":
+  de: "Im Editor öffnen"
+
+"Enter a map name without special characters such as /, \\, : or [] (max. 80 bytes).":
+  de: "Bitte einen Kartennamen ohne Sonderzeichen wie /, \\, : oder [] eingeben (max. 80 Bytes)."
+
+"This map name is reserved on Windows.":
+  de: "Dieser Kartenname ist unter Windows reserviert."
+
+"Author and description must not contain control characters or square brackets (max. 160 / 2000 bytes).":
+  de: "Autor und Beschreibung dürfen keine Steuerzeichen oder eckigen Klammern enthalten (max. 160 / 2000 Bytes)."
+
+"Game content folder is not accessible":
+  de: "Spielinhaltsordner ist nicht erreichbar"
+
+"OMSI 2 folder is not accessible":
+  de: "OMSI-2-Ordner ist nicht erreichbar"
+
+"New maps must be outside the original OMSI 2 installation.":
+  de: "Neue Karten müssen außerhalb der originalen OMSI-2-Installation liegen."
+
+"The maps folder points outside the game content folder.":
+  de: "Der Kartenordner verweist außerhalb des Spielinhaltsordners."
+
+"A map or folder with this name already exists.":
+  de: "Eine Karte oder ein Ordner mit diesem Namen existiert bereits."
+
+"Could not create map folder":
+  de: "Kartenordner konnte nicht neu angelegt werden"
+
+
+"Road tile missing":
+  de: "Tile der Straße fehlt"
+
+"Active tile missing":
+  de: "Aktives Tile fehlt"
+
+"SCO file missing: {}":
+  de: "SCO-Datei fehlt: {}"
+
+"SCO file {}: {e:#}":
+  de: "SCO-Datei {}: {e:#}"
+
+"Invalid object path: {}":
+  de: "Ungültiger Objektpfad: {}"
+
+"Model definition missing: {}":
+  de: "Modelldefinition fehlt: {}"
+
+"Model definition {}: {e:#}":
+  de: "Modelldefinition {}: {e:#}"
+
+"Invalid model path: {}":
+  de: "Ungültiger Modellpfad: {}"
+
+"This editor is updated through its own package. The official installation can be updated separately.":
+  de: "Dieser Spline-Editor wird über sein eigenes Paket aktualisiert. Die offizielle Installation kann separat aktualisiert werden."
+
+"{} · ID {} · {} · Tile ({}, {})":
+  de: "{} · ID {} · {} · Tile ({}, {})"
+
+"Spline {} · {} · {} · {}":
+  de: "Spline {} · {} · {} · {}"
+
+"Spline {} ↔ {}\n{error}\n{}":
+  de: "Spline {} ↔ {}\n{error}\n{}"
+
+"Sort: {}":
+  de: "Sort: {}"
+
+
+"Place object · {} · {} · Click: place · Esc: finish":
+  de: "Objekt setzen · {} · {} · Klick: einsetzen · Esc: fertig"
+
+"{} · Rotation {:.1}° · Height {:+.2} m":
+  de: "{} · Drehung {:.1}° · Höhe {:+.2} m"
+
+"Slot {} · Profiles: {}":
+  de: "Slot {} · Profile: {}"
+
+"Slot {} · Profiles: {} · Patchwork":
+  de: "Slot {} · Profile: {} · Patchwork"
+
+"Slot {} · Profiles: {} · length-dependent":
+  de: "Slot {} · Profile: {} · längenabhängig"
+
+"Slot {} · Profiles: {} · Patchwork · length-dependent":
+  de: "Slot {} · Profile: {} · Patchwork · längenabhängig"
+
+" - reload the map to update AI traffic":
+  de: " - Karte neu laden, um den KI-Verkehr zu aktualisieren"
+
+"Model file {}: {error}":
+  de: "Modelldatei {}: {error}"
+
+"Build roundabout":
+  de: "Kreisverkehr"
+
+"Roundabout builder 0.7.9-pre":
+  de: "Kreisverkehrbaukasten 0.7.9-pre"
+
+"3 entrances":
+  de: "3 Zufahrten"
+
+"4 entrances":
+  de: "4 Zufahrten"
+
+"Island radius (m)":
+  de: "Inselradius (m)"
+
+"Ring road width (m)":
+  de: "Ringfahrbahn (m)"
+
+"Island height (m)":
+  de: "Inselhöhe (m)"
+
+"Custom roundabout":
+  de: "Eigener Kreisverkehr"
+
+"Single lane · Choose an entrance and dimensions · Save & place · Reload map for AI":
+  de: "Einspurig · Zufahrt und Maße wählen · Speichern & platzieren · Karte für KI neu laden"
+
+"Choose island texture …":
+  de: "Inseltextur wählen …"
+
+"Island edge line: ON":
+  de: "Inselrandlinie: AN"
+
+"Island edge line: OFF":
+  de: "Inselrandlinie: AUS"
+
+"Update placed roundabout":
+  de: "Platzierten Kreisverkehr aktualisieren"
+
+"Roundabout entrances must be straight and without sidewalks":
+  de: "Kreisverkehrzufahrten müssen gerade und ohne Gehwege sein"
+
+"Entrance length must be at least {:.1} m from the centre":
+  de: "Zufahrtslänge muss mindestens {:.1} m ab Mittelpunkt betragen"
+
+"Entrance too wide: reduce its width or enlarge the ring":
+  de: "Zufahrt zu breit: Breite verringern oder Ring vergrößern"
+
+"Roundabout entrances overlap: change angles or enlarge the ring":
+  de: "Kreisverkehrzufahrten überlappen: Winkel ändern oder Ring vergrößern"
+
+"Roundabout boundary intersects itself":
+  de: "Kreisverkehrumriss überschneidet sich selbst"
+
+"Entry curve leaves the road: enlarge the ring width or reduce entrance width":
+  de: "Einfahrkurve verlässt die Fahrbahn: Ringfahrbahn verbreitern oder Zufahrt verschmälern"
+
+"Invalid object record while saving roundabout rules":
+  de: "Ungültiger Objektdatensatz beim Speichern der Kreisverkehrregeln"
+
+"Incomplete roundabout rule block":
+  de: "Unvollständiger Kreisverkehr-Regelblock"
+
+"Entrance too short for a smooth entry curve":
+  de: "Zufahrt zu kurz für eine gleichmäßige Einfahrkurve"
+
+"Builder pitch":
+  de: "Baukasten: Längsneigung"
+
+"Builder bank":
+  de: "Baukasten: Querneigung"
+
+"Invalid object tilt":
+  de: "Ungültige Objektneigung"
+
+"Tilt controls currently support builder junctions and roundabouts":
+  de: "Neigung wird derzeit für Kreuzungen und Kreisverkehre aus dem Baukasten unterstützt"
+
+"Object tilt requires a standard OMSI map":
+  de: "Objektneigung benötigt eine normale OMSI-Karte"
+
+"Pitch {:.2}° · Bank {:.2}° · Ctrl+S to save · Reload map for traffic":
+  de: "Längsneigung {:.2}° · Querneigung {:.2}° · Strg+S zum Speichern · Karte für KI-Verkehr neu laden"
+
+"Object tilt reset · Ctrl+S to save · Reload map for traffic":
+  de: "Objektneigung zurückgesetzt · Strg+S zum Speichern · Karte für KI-Verkehr neu laden"
+
+"{} · Rotation {:.1}° · Height {:+.2} m · Pitch {:.2}° · Bank {:.2}°":
+  de: "{} · Drehung {:.1}° · Höhe {:+.2} m · Längsneigung {:.2}° · Querneigung {:.2}°"
+
+"Object {} · {name} · Height {:.2} m · Rotation {:.1}° · Pitch {:.2}° · Bank {:.2}°":
+  de: "Objekt {} · {name} · Höhe {:.2} m · Drehung {:.1}° · Längsneigung {:.2}° · Querneigung {:.2}°"
