@@ -281,6 +281,14 @@ pub(crate) fn launcher_statics() {
 /// installation and the content roots (mods, archives). None when the program has
 /// nothing more to do (a fatal error was shown).
 pub(crate) fn prepare(mut args: Args, bare: bool) -> Result<Option<(Args, Option<server::ServerCfg>)>> {
+    if args.editor {
+        anyhow::ensure!(args.server.is_none() && args.lan_join.is_none() && args.situation.is_none() && args.tutorial.is_none(), "The direct editor start needs a map, not a server, tutorial or saved situation.");
+        args.no_menu = true;
+        args.view = "free".into();
+        args.bus = None;
+        args.on_foot = false;
+        args.schedule = false;
+    }
     ui_language(&settings::Settings::load().language);
     // (a server has no interface to translate)
     mt::enable(settings::Settings::load().machine_translation && args.server.is_none());

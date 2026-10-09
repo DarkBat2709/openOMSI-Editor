@@ -555,6 +555,10 @@ impl App {
                 self.menus.editor = None;
                 self.menus.editor_paused = None;
                 self.menus.editor_drag = false;
+                if self.args.editor {
+                    self.args.editor = false;
+                    self.toggle_editor();
+                }
             }
         }
         self.last = Instant::now();

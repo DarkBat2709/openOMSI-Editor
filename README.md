@@ -1,10 +1,14 @@
-# openOMSI Editor — 0.7.4-pre
+# openOMSI Editor — 0.7.6-pre (development)
 
 A free, experimental map editor fork by DarkBat2709,
 based on openOMSI 0.2.20.
 
 ## Editor features
 
+- Per-map editor camera position, remembered on saving or leaving the editor
+
+- Launcher Editor page below Sessions: create a blank map or edit an existing map directly
+- New map form with name, optional author and description; one flat tile and a generated ground texture
 - Object and spline editing
 - Asset catalogue with spline texture information
 - Junction builder
@@ -19,7 +23,11 @@ based on openOMSI 0.2.20.
 
 ## Current status
 
-Automated validation and release builds have passed on Linux and Windows.
+The 0.7.5-pre map creation, saving/reopening and existing-map editor start have been manually checked on Linux.
+The 0.7.6-pre camera bookmarks and above-ground start still need an interactive check.
+See [Editor start / Editor-Start](docs/EDITOR_START.md).
+
+For the published 0.7.4-pre release: automated validation and release builds have passed on Linux and Windows.
 Manual editing, saving and reloading have been tested by the maintainer
 on Linux. Interactive Windows testing is still pending.
 

@@ -13,6 +13,7 @@ pub(crate) mod mapview;
 pub mod mobile;
 pub mod phone;
 mod multiplayer;
+mod editor_page;
 pub(crate) mod pages;
 mod showroom;
 mod season;
@@ -47,19 +48,21 @@ pub enum Page {
     Settings,
     Controls,
     Sessions,
+    Editor,
     Mods,
     Tutorials,
     Timetable,
     Setup,
 }
 
-const PAGES: [(Page, &str, &str); 10] = [
+const PAGES: [(Page, &str, &str); 11] = [
     (Page::Drive, "Drive", "directions_bus"),
     (Page::Multiplayer, "Multiplayer", "groups"),
     (Page::Profile, "Profile", "badge"),
     (Page::Settings, "Settings", "tune"),
     (Page::Controls, "Controls", "keyboard"),
     (Page::Sessions, "Sessions", "sports_esports"),
+    (Page::Editor, "Editor", "map"),
     (Page::Mods, "Mods", "extension"),
     (Page::Tutorials, "Tutorials", "help"),
     (Page::Timetable, "Timetable", "schedule"),
@@ -870,11 +873,10 @@ impl Launcher {
         self.map_rect = None;
         self.ui.begin(size, scale, dt);
         self.draw_ui();
+        if (mobile::mobile() || self.page == Page::Editor) && !self.ui.wheel_taken() && self.browser.is_none() {
+            self.page_scroll = (self.page_scroll - self.ui.input.wheel.y * 42.0).clamp(0.0, self.page_max);
+        }
         if mobile::mobile() {
-            // what no list took of a finger's drag scrolls the page
-            if !self.ui.wheel_taken() && self.browser.is_none() {
-                self.page_scroll = (self.page_scroll - self.ui.input.wheel.y * 42.0).clamp(0.0, self.page_max);
-            }
             // the on-screen keyboard while a text field has the focus
             let want = self.ui.focus.is_some();
             if want != self.ime {
@@ -1122,7 +1124,7 @@ impl Launcher {
         let w = avail.min(1760.0);
         let seen = size.y - top - 40.0;
         // (a phone: laid out for a taller screen, scrolled)
-        let h = if mobile { seen.max(mobile::PAGE_H) } else { seen };
+        let h = if mobile { seen.max(mobile::PAGE_H) } else if self.page == Page::Editor { seen.max(670.0) } else { seen };
         self.page_max = (h - seen).max(0.0);
         self.page_scroll = self.page_scroll.clamp(0.0, self.page_max);
         let content = Rect::new(rail_w + margin * 0.5 + (avail - w) * 0.5, top - self.page_scroll, w, h);
@@ -1135,6 +1137,7 @@ impl Launcher {
             Page::Settings => pages::settings(self, content),
             Page::Controls => pages::controls(self, content),
             Page::Sessions => pages::sessions(self, content),
+            Page::Editor => editor_page::draw(self, content),
             Page::Mods => pages::mods(self, content),
             Page::Tutorials => pages::tutorials(self, content),
             Page::Timetable => timetable::draw(self, content),
@@ -1298,6 +1301,7 @@ impl Launcher {
                 Page::Profile => self.state.load_profile(),
                 Page::Mods => self.state.load_mods(),
                 Page::Sessions => self.state.poll_now(),
+                Page::Editor => self.pages.editor_content = core::content_dir(),
                 _ => {}
             }
         }

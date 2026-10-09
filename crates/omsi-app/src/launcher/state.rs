@@ -613,6 +613,18 @@ impl State {
         self.spawn(move || Msg::Installed(core::start_install(std::path::Path::new(&path), &mode).map_err(|e| format!("{e:#}"))));
     }
 
+    pub fn launch_editor(&mut self, map: String) {
+        if !self.save_pending_settings() { return; }
+        let duty = core::Duty { map, editor: true, ..Default::default() };
+        match core::duty_args(&duty) {
+            Ok(_) => {
+                self.set_status("Starting the editor…", false);
+                self.queued_launch = Some(duty);
+            }
+            Err(e) => self.set_status(&format!("{e:#}"), true),
+        }
+    }
+
     pub fn launch(&mut self) {
         if !self.save_pending_settings() {
             return;
@@ -644,6 +656,7 @@ impl State {
             .and_then(|k| self.server_info.get(&k).and_then(|x| x.1.as_ref().ok()).map(|i| i.map.trim().replace('\\', "/")))
             .filter(|m| m.to_ascii_lowercase().contains("maps/"));
         core::Duty {
+            editor: false,
             map: host_map.unwrap_or_else(|| c.map.clone()),
             bus: c.bus.clone(),
             paint: Some(c.paint.clone()).filter(|p| !p.is_empty()),

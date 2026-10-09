@@ -7,6 +7,7 @@ impl App {
     /// Save the personnel file and the session summary (once: every caller ends the game,
     /// and the frames the loop still runs before it stops count no more time).
     pub(crate) fn finish_session(&mut self) {
+        self.remember_editor_camera();
         crate::game_lists::flush_settings(true);
         self.exiting = true;
         // (the tiles loaded on the way added to what the map lacks)

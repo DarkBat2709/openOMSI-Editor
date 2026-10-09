@@ -3,9 +3,24 @@
 use super::*;
 
 impl App {
+    pub(crate) fn remember_editor_camera(&self) {
+        if self.menus.editor.is_none() || self.world.is_none() { return; }
+        let Some(c) = self.camera.as_ref() else { return };
+        let key = omsi_launcher_lib::editor_views::key(&self.args.root, &self.args.map);
+        let view = omsi_launcher_lib::editor_views::View {
+            position: [c.position.x, c.position.y, c.position.z],
+            yaw: c.yaw, pitch: c.pitch, roll: c.roll, fov: c.fov_deg,
+        };
+        let dir = omsi_launcher_lib::data_dir().join("editor-views");
+        if let Err(e) = omsi_launcher_lib::editor_views::save(&dir, &key, view) {
+            log::warn!("Editor-Kameraposition konnte nicht gespeichert werden: {e}");
+        }
+    }
+
     /// A key while the game menu is open.
     /// The object editor on or off; on, it starts with the free camera where the view is.
     pub(crate) fn toggle_editor(&mut self) {
+        self.remember_editor_camera();
         self.editor_terrain_finish();
         // (in a LAN session the host edits the map for everybody: its edits go to the
         // others' games, a client's would stay its own)
@@ -207,7 +222,9 @@ impl App {
             crate::editor::Action::Save => {
                 let content = crate::startup::content_dir();
                 let ed = self.menus.editor.as_ref().unwrap();
-                match content.map(|c| ed.save(&world, &self.args.map, &c, &self.args.root)) {
+                let result = content.map(|c| ed.save(&world, &self.args.map, &c, &self.args.root));
+                if result.as_ref().is_some_and(|r| r.is_ok()) { self.remember_editor_camera(); }
+                match result {
                     Some(Ok(files)) if files.is_empty() => "Nothing to save".to_string(),
                     Some(Ok(files)) => {
                         let spline_changed = {

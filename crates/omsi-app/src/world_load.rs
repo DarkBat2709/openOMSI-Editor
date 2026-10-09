@@ -55,7 +55,26 @@ pub(crate) fn open_world(args: &Args) -> Result<(World, Camera, DVec3)> {
     }
     let camera = match &args.cam {
         Some(c) => parse_cam(c)?,
-        None => default_camera(&world),
+        None => {
+            let mut camera = default_camera(&world);
+            if args.editor {
+                let key = omsi_launcher_lib::editor_views::key(&args.root, &args.map);
+                let dir = omsi_launcher_lib::data_dir().join("editor-views");
+                camera.pitch = -30.0;
+                let saved = omsi_launcher_lib::editor_views::load(&dir, &key);
+                let remembered = saved.is_some();
+                if let Some(view) = saved {
+                    camera.position = DVec3::from_array(view.position);
+                    camera.yaw = view.yaw;
+                    camera.pitch = view.pitch;
+                    camera.roll = view.roll;
+                    camera.fov_deg = view.fov;
+                    log::info!("Editor: letzte Kameraposition für {} wiederhergestellt", args.map);
+                }
+                editor_start_above_ground(&world, &mut camera, remembered);
+            }
+            camera
+        },
     };
     // centre the loaded area on the spawn point (a requested vehicle's entry point, unless a
     // camera is given too)
@@ -195,4 +214,35 @@ pub(crate) fn load_world(args: &Args, renderer: &Renderer, scene: &mut Scene) ->
         stats.empty_spaces
     );
     Ok((world, camera))
+}
+
+/// Read the starting tile before streaming so elevated maps do not start underground.
+fn editor_start_above_ground(world: &World, camera: &mut Camera, remembered: bool) {
+    let size = omsi_map::tile_size();
+    let xy = ((camera.position.x / size).floor() as i32, (camera.position.y / size).floor() as i32);
+    let tile = world.global.tiles.iter().find(|t| (t.x, t.y) == xy).or_else(|| {
+        world.global.tiles.iter().min_by(|a, b| {
+            let distance = |t: &omsi_map::global::MapTileRef| {
+                let dx = (t.x as f64 + 0.5) * size - camera.position.x;
+                let dy = (t.y as f64 + 0.5) * size - camera.position.y;
+                dx * dx + dy * dy
+            };
+            distance(a).total_cmp(&distance(b))
+        })
+    });
+    let ground = tile.and_then(|t| {
+        if (t.x, t.y) != xy {
+            camera.position.x = (t.x as f64 + 0.5) * size;
+            camera.position.y = (t.y as f64 + 0.5) * size;
+        }
+        let path = omsi_cfg::resolve_path(world.global.dir(), &t.file);
+        let parsed = crate::tiles::read_tile(&path, &world.chrono_dirs.read());
+        let terrain_path = parsed.as_ref().map(|t| crate::tiles::terrain_file(t, &path))
+            .unwrap_or_else(|| crate::scene::tile_companion(&path, ".terrain"));
+        let terrain = omsi_map::Terrain::load(&terrain_path).ok()?;
+        Some(terrain.sample((camera.position.x - t.x as f64 * size) as f32,
+            (camera.position.y - t.y as f64 * size) as f32) as f64)
+    }).unwrap_or(0.0);
+    let height = if remembered { camera.position.z } else { ground + 35.0 };
+    camera.position.z = omsi_launcher_lib::editor_views::start_height(height, ground);
 }

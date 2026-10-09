@@ -7,6 +7,8 @@
 //! `install` runs mod installs as background jobs, `index` caches the content lists and
 //! tells the page when they changed, `instances` keeps track of the games started.
 
+pub mod editor_maps;
+pub mod editor_views;
 pub mod index;
 pub mod install;
 pub mod instances;
@@ -2600,6 +2602,9 @@ pub fn bus_preview(bus: &str, paint: &str) -> Result<String> {
 
 #[derive(Deserialize, Default, Debug, Clone)]
 pub struct Duty {
+    /// Open the map directly in the editor, without a player vehicle.
+    #[serde(default)]
+    pub editor: bool,
     pub map: String,
     pub bus: String,
     pub paint: Option<String>,
@@ -2744,6 +2749,12 @@ pub fn duty_args(d: &Duty) -> Result<Vec<String>> {
 
 // The installation is validated by duty_args; argument tests supply their own path.
 fn duty_args_for_root(d: &Duty, root: &Path) -> Result<Vec<String>> {
+    if d.editor {
+        if d.map.trim().is_empty() { anyhow::bail!("Please select a map."); }
+        return Ok(vec!["--root".into(), root.to_string_lossy().to_string(),
+            "--no-menu".into(), "--map".into(), d.map.clone(), "--editor".into(),
+            "--view".into(), "free".into(), "--time".into(), "12:00".into()]);
+    }
     if let Some(t) = d.tutorial {
         return Ok(vec!["--root".into(), root.to_string_lossy().to_string(), "--no-menu".into(), "--tutorial".into(), t.to_string()]);
     }
@@ -3068,6 +3079,24 @@ pub fn cli(cmd: &str, arg: &str) -> Result<Value> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn editor_launch_does_not_inherit_driving_options() {
+        let duty = super::Duty {
+            editor: true, map: "maps/Neue Karte/global.cfg".into(),
+            bus: "Vehicles/Bus.bus".into(), on_foot: Some(true), schedule: Some(true),
+            lan: Some("host".into()), tutorial: Some(1), situation: Some("old.osn".into()),
+            ..Default::default()
+        };
+        let args = super::duty_args_for_root(&duty, std::path::Path::new("original")).unwrap();
+        assert!(args.windows(2).any(|w| w == ["--map", "maps/Neue Karte/global.cfg"]));
+        assert!(args.windows(2).any(|w| w == ["--view", "free"]));
+        assert!(args.iter().any(|a| a == "--editor"));
+        for flag in ["--bus", "--on-foot", "--schedule", "--lan-host", "--tutorial", "--situation"] {
+            assert!(!args.iter().any(|a| a == flag), "{flag}");
+        }
+        assert!(super::duty_args_for_root(&super::Duty { editor: true, ..Default::default() }, std::path::Path::new("original")).is_err());
+    }
+
     include!("../../../tools/test-support/original_root.rs");
     #[test]
     fn vehicle_type_label_falls_back_to_the_file_name() {

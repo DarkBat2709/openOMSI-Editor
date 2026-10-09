@@ -19,6 +19,11 @@ use keybind_picker::{controller_action_choices, KeyActionOption};
 
 #[derive(Default)]
 pub struct PagesView {
+    pub editor_name: String,
+    pub editor_author: String,
+    pub editor_description: String,
+    pub editor_map: usize,
+    pub editor_content: Option<std::path::PathBuf>,
     pub new_driver: String,
     pub confirm_delete: Option<std::time::Instant>,
     /// The "reset every setting" dialog is open.

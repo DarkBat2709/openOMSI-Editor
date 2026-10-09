@@ -820,7 +820,7 @@ impl Ui {
         let flat = self.text.flat;
         self.text.flat = true;
         self.editor_surface(r, scene, layout.panel, 5.0 * s, PANEL);
-        let title = if terrain { "Gelände-Editor 0.7.4-pre" } else if spline { "Spline-Editor 0.7.4-pre" } else { "Objekt-Editor 0.7.4-pre" };
+        let title = if terrain { "Gelände-Editor 0.7.6-pre" } else if spline { "Spline-Editor 0.7.6-pre" } else { "Objekt-Editor 0.7.6-pre" };
         self.put(r, scene, title, ((13.0 * s) as u32).max(1) | BOLD,
             MUTED, layout.panel[0] + 10.0 * s, layout.panel[1] + 12.0 * s);
         self.editor_surface(r, scene, layout.selection, 3.0 * s, PANEL_ALT);
@@ -1630,7 +1630,7 @@ impl Ui {
         let flat=self.text.flat;self.text.flat=true;
         self.catalog_plate(r,scene,[0, 0, 0, 150],[viewport[0],viewport[1],viewport[0]+viewport[2],viewport[1]+viewport[3]]);
         self.editor_surface(r,scene,rect(0.0,0.0,1020.0,740.0),7.0*s,PANEL);
-        self.catalog_text(r,scene,"Kreuzungsbaukasten 0.7.4-pre",(x+22.0*s,y+18.0*s),680.0*s,24.0*s,WHITE);
+        self.catalog_text(r,scene,"Kreuzungsbaukasten 0.7.6-pre",(x+22.0*s,y+18.0*s),680.0*s,24.0*s,WHITE);
         self.catalog_text(r,scene,&window.source_label,(x+22.0*s,y+46.0*s),970.0*s,10.0*s,SOFT);
         self.editor_surface(r,scene,rect(20.0,62.0,358.0,576.0),5.0*s,PANEL);
         let cross=window.project.arms[3].enabled;
