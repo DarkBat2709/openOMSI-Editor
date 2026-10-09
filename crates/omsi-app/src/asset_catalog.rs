@@ -1319,7 +1319,7 @@ mod tests {
         let texture=fixture.0.join("Splines/Test/texture/road.png");std::fs::create_dir_all(texture.parent().unwrap()).unwrap();
         image::RgbaImage::from_pixel(2,2,image::Rgba([80,90,100,255])).save(&texture).unwrap();omsi_cfg::content_changed();
         let details=spline_texture_info(&fixture.0,&path,&AtomicBool::new(false));assert_eq!(details.len(),2);
-        assert_eq!(details[0].path,texture.display().to_string());assert!(details[0].image.is_ok());
+        assert_eq!(std::path::Path::new(&details[0].path),texture.as_path());assert!(details[0].image.is_ok());
         assert!(details[0].usage.contains("Profile: 1"));assert!(details[1].image.is_err());assert_eq!(details[1].name,"missing.png");
     }
 
