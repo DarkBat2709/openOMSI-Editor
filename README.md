@@ -24,7 +24,10 @@ Manual editing, saving and reloading have been tested by the maintainer
 on Linux. Interactive Windows testing is still pending.
 
 This is a preview, not version 1.0. Back up your maps before editing.
-A packaged editor release is being prepared.
+[Download the Linux x64 editor preview 0.7.4-pre](https://github.com/DarkBat2709/openOMSI-Editor/releases/tag/v0.7.4-pre)
+
+Requires an existing openOMSI 0.2.20 installation with original OMSI 2 content.
+German and English PDF guides are included. No Windows download is available yet.
 
 This fork builds on the work of the openOMSI contributors.
 It is not an official openOMSI release. Original OMSI 2 content is required
