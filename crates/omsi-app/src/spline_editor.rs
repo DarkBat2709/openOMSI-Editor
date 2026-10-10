@@ -800,6 +800,29 @@ impl SplineEditor {
         for(k,s)in pieces{if edits.added.contains_key(&k){edits.added.insert(k,s);}else{edits.changed.insert(k,s);}edits.dirty_tiles.insert(k.0);}edits.dirty=true;
     }
 
+    pub(crate) fn replace_traffic(&mut self,world:&World,changes:Vec<(Key,MapSpline,MapSpline)>)->Result<usize,String> {
+        if changes.is_empty()||changes.len()>500{return Err("Ungültiger KI-Ersetzungsbereich".into());}
+        let mut seen=HashSet::new();
+        // Validate the complete transaction before touching any map record.
+        for (key,before,after) in &changes {
+            if !seen.insert(*key)||before.deleted||after.deleted||after.id!=key.1||!valid_spline(after)
+                ||crate::traffic_editor::source_of_generated_path(&before.file).is_none()
+                ||crate::traffic_editor::source_of_generated_path(&before.file)!=crate::traffic_editor::source_of_generated_path(&after.file) {
+                return Err("Ungültige KI-Ersetzung; Karte unverändert".into());
+            }
+            let (mut tile,_)=world.editor_row_source(key.0)?;world.spline_edits.lock().overlay(key.0,&mut tile);
+            if tile.splines.iter().find(|s|s.id==key.1)!=Some(before){return Err("KI-Pfad wurde zwischenzeitlich geändert; Vorschau aktualisieren".into());}
+        }
+        self.remember(changes.iter().map(|(k,b,_)|(*k,b.clone())).collect());
+        let count=changes.len();let mut edits=world.spline_edits.lock();
+        for (key,before,after) in changes {
+            edits.originals.entry(key).or_insert(before);
+            if edits.added.contains_key(&key){edits.added.insert(key,after);}else{edits.changed.insert(key,after);}
+            edits.dirty_tiles.insert(key.0);
+        }
+        edits.dirty=true;Ok(count)
+    }
+
     pub(crate) fn apply_sidewalk(&mut self,world:&World,mut pieces:Vec<((i32,i32),MapSpline)>,existing:Option<Key>,detach:bool)->Result<usize,String>{
         if world.global.world_coordinates{return Err("Sidewalks require a standard OMSI map".into());}
         if pieces.is_empty()||pieces.len()>4000{return Err("Invalid sidewalk preview".into());}
@@ -845,7 +868,7 @@ impl SplineEditor {
 
     fn add(&mut self, world: &World, file: &str, start: DVec3, end: DVec3, offset: f64) -> String {
         let Some(ty) = world.spline_type(file) else { return format!("Spline type not found: {file}") };
-        if ty.def.only_editor || ty.def.profiles.is_empty() { return "Choose a visible road type".into(); }
+        if (ty.def.only_editor || ty.def.profiles.is_empty()) && ty.def.paths.is_empty() { return "Choose a road or traffic path type".into(); }
         if omsi_map::world_coordinates() { return "Spline editing on world-coordinate maps is not supported yet".into(); }
         let length = (end - start).truncate().length();
         if !length.is_finite() || !(0.5..=500.0).contains(&length) { return "Distance must be 0.5 to 500 m".into(); }
@@ -859,7 +882,14 @@ impl SplineEditor {
             let Ok(base) = Tile::load(&source) else { return "Cannot read tile".into() };
             if base.version != 0 && base.version < 14 { return "Spline editing needs a version 14 tile".into(); }
             let Some(id) = world.allocate_editor_id() else { return "No free map ID".into() };
-            sections.push((tile, between(file, id, tile, a, b, offset + length * pair[0])));
+            let mut piece=between(file,id,tile,a,b,offset+length*pair[0]);
+            if ty.def.only_editor || ty.def.profiles.is_empty() {
+                for (i,path) in ty.def.paths.iter().enumerate().filter(|(_,p)|p.kind==0) {
+                    let _=path;
+                    for kind in ["bus","trucks"] {piece.rules.push(omsi_map::MapRule {path_index:i as i32,kind:kind.into(),value:1.0,..Default::default()});}
+                }
+            }
+            sections.push((tile,piece));
         }
         for i in 0..sections.len() {
             sections[i].1.prev_id = if i == 0 { 0 } else { sections[i - 1].1.id };
@@ -1295,7 +1325,13 @@ fn profile_edges(s: &omsi_scenery::Spline) -> ((f64, f64), (f64, f64)) {
         if (p.x as f64) < left.0 { left = (p.x as f64, p.z as f64); }
         if (p.x as f64) > right.0 { right = (p.x as f64, p.z as f64); }
     }
-    if !left.0.is_finite() { return ((0.0, 0.0), (0.0, 0.0)); }
+    if !left.0.is_finite() {
+        for p in &s.paths {
+            let lo=p.start[0] as f64-p.width as f64*0.5;let hi=p.start[0] as f64+p.width as f64*0.5;
+            if lo<left.0{left=(lo,p.start[2] as f64);}if hi>right.0{right=(hi,p.start[2] as f64);}
+        }
+        if !left.0.is_finite(){return ((0.0,0.0),(0.0,0.0));}
+    }
     (left, right)
 }
 
@@ -1713,6 +1749,22 @@ mod tests {
         assert_eq!(r.pos, s.pos);
         assert!((r.delta_h.unwrap() + 0.9).abs() < 1e-10);
         assert_eq!(record(&s, "0", "\n").lines().count(), 20);
+    }
+
+    #[test]
+    fn generated_ai_rules_survive_map_save_and_reload() {
+        let settings=crate::traffic_editor::Settings {forward_bus:true,..Default::default()};
+        let source=MapSpline {id:1,length:20.0,cant_start:3.0,cant_end:7.0,skew_start:0.2,skew_end:-0.1,profile_transitions:[None,Some(omsi_map::ProfileTransition {station:20.0,span:5.0,x:[-4.0,4.0],offsets:[[0.5,-0.05,-0.1],[-0.5,0.05,-0.1]]})],..Default::default()};
+        let mut plan=crate::traffic_editor::build(&[(((0,0),1),source,false)],&settings).unwrap();
+        let s=&mut plan.pieces[0].1;s.id=2;
+        let edits=HashMap::from([(2,s.clone())]);
+        let (text,n)=rewrite("[version]\n14\n",&edits,&[2]).unwrap();assert_eq!(n,1);
+        let tile=parsed(&text);assert_eq!(tile.splines.len(),1);
+        assert_eq!(tile.splines[0].rules,s.rules);
+        assert_eq!(tile.splines[0].cant_start,s.cant_start);assert_eq!(tile.splines[0].cant_end,s.cant_end);
+        assert_eq!(tile.splines[0].skew_start,s.skew_start);assert_eq!(tile.splines[0].skew_end,s.skew_end);
+        assert_eq!(tile.splines[0].profile_transitions,s.profile_transitions);
+        assert_eq!(rewrite(&text,&edits,&[2]).unwrap().0,text);
     }
 
     #[test]

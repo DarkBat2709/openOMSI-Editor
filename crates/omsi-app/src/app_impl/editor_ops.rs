@@ -20,6 +20,9 @@ impl App {
     /// A key while the game menu is open.
     /// The object editor on or off; on, it starts with the free camera where the view is.
     pub(crate) fn toggle_editor(&mut self) {
+        if self.photo_on() {
+            self.exit_photo();
+        }
         self.remember_editor_camera();
         self.editor_terrain_finish();
         // (in a LAN session the host edits the map for everybody: its edits go to the
@@ -154,6 +157,9 @@ impl App {
                 match stamp {Some(stamp)=>{self.menus.editor_drag=false;ed.start_object(stamp);"Click target · Repeat placement for more copies · Esc to finish".into()},None=>"No object stored for placement yet".into()}
             }
             crate::editor::Action::TerrainMode=>{self.editor_open_terrain();return true;}
+            crate::editor::Action::TrafficOverlay=>{if let Some(ed)=self.menus.editor.as_mut(){ed.show_traffic_paths=!ed.show_traffic_paths;ed.traffic_overlay.invalidate();
+                self.service_msg=Some((if ed.show_traffic_paths {"KI-Pfade sichtbar (blau/orange)"} else {"KI-Pfade ausgeblendet"}.into(),5.0));}return true;}
+            crate::editor::Action::TrafficPaths=>{self.editor_open_traffic_paths();return true;}
             crate::editor::Action::SidewalkWindow=>{self.editor_open_sidewalk();return true;}
             crate::editor::Action::RoadsideWindow=>{self.editor_open_roadside();return true;}
             crate::editor::Action::RoundaboutWindow=>{self.editor_open_roundabout();return true;}
@@ -287,7 +293,7 @@ impl App {
         self.editor_terrain_finish();
         let (Some(ed),Some(w),Some(cam))=(self.menus.editor.as_mut(),self.world.as_ref(),self.camera.as_ref()) else {return;};
         ed.splines.finish_drag();ed.end_object_drag();ed.splines.cancel_connection();ed.splines.cancel_generation();
-        ed.catalog=None;ed.texture_target=None;ed.junction_window=None;ed.roadside_window=None;ed.sidewalk_window=None;ed.tile_window=None;ed.text_window=None;ed.placing_asset=None;ed.object_stamp=None;
+        ed.catalog=None;ed.texture_target=None;ed.junction_window=None;ed.roadside_window=None;ed.sidewalk_window=None;ed.traffic_window=None;ed.tile_window=None;ed.text_window=None;ed.placing_asset=None;ed.object_stamp=None;
         ed.terrain.active=true;ed.terrain.input=None;
         ed.terrain.choose_layer(w,ed.terrain.texture_layer);
         if ed.terrain.tile.is_none() {
@@ -402,7 +408,7 @@ impl App {
             self.service_msg = Some(("New tiles are currently available only for standard OMSI maps".into(), 5.0)); return;
         }
         ed.splines.finish_drag(); ed.end_object_drag(); ed.splines.cancel_connection(); ed.splines.cancel_generation();
-        ed.placing_asset = None;ed.object_stamp=None;ed.catalog = None;ed.text_window = None;ed.junction_window=None;ed.roadside_window=None;ed.sidewalk_window=None;ed.texture_target=None;
+        ed.placing_asset = None;ed.object_stamp=None;ed.catalog = None;ed.text_window = None;ed.junction_window=None;ed.roadside_window=None;ed.sidewalk_window=None;ed.traffic_window=None;ed.texture_target=None;
         ed.terrain.input=None;ed.terrain.cursor=None;ed.terrain.sample_height=false;ed.terrain.pick_tile=false;
         ed.tile_window = Some(crate::tile_editor::Window::new(world, cam.position, cam.yaw));
         self.menus.editor_drag = false; self.input.keys.clear(); self.input.mouse_look = false; self.input.mmb_held = false;
@@ -563,7 +569,7 @@ impl App {
         ed.placing_asset = None;ed.object_stamp=None;
         ed.tile_window = None;
         ed.text_window = None;
-        ed.junction_window = None;ed.roadside_window=None;ed.sidewalk_window=None;ed.texture_target=None;
+        ed.junction_window = None;ed.roadside_window=None;ed.sidewalk_window=None;ed.traffic_window=None;ed.texture_target=None;
         ed.terrain.active = false;
         let kind = kind.unwrap_or(if ed.spline_mode { crate::asset_catalog::Kind::Spline } else { crate::asset_catalog::Kind::Object });
         ed.catalog = Some(crate::asset_catalog::Catalog::with_map(world.root.clone(), kind,Some(world.map_dir.clone())));
@@ -667,6 +673,7 @@ impl App {
     /// Rebuild the surfaces when an edit is committed. During a drag only the markers
     /// follow the cursor; release rebuilds once, rather than reloading at every pixel.
     pub(crate) fn editor_reload_splines(&mut self) {
+        let _diagnostic = crate::editor_diagnostics::Span::new("editor_tile_reload", "");
         let Some(world) = self.world.clone() else { return; };
         let (changed, mut tiles): (bool, hashbrown::HashSet<_>) = {
             let mut edits = world.spline_edits.lock();
@@ -674,6 +681,7 @@ impl App {
             (changed, edits.dirty_tiles.drain().collect())
         };
         if changed {
+            if let Some(ed)=self.menus.editor.as_mut(){ed.traffic_overlay.invalidate();}
             if let Err(error) = crate::roadside_objects::initialize(&world).and_then(|_| crate::roadside_objects::refresh(&world)) {
                 log::warn!("Object rows after road change: {error}");
                 self.service_msg = Some((format!("Check object rows: {error}"), 6.0));
@@ -755,6 +763,7 @@ impl App {
             let command=if pressed {window.hit(self.input.cursor)} else {None};
             if let Some(command)=command {self.editor_junction_command(command);}return true;
         }
+        if self.editor_traffic_mouse(pressed){return true;}
         if self.editor_sidewalk_mouse(pressed){return true;}
         if self.editor_roadside_mouse(pressed) { return true; }
         if self.menus.editor.as_ref().is_some_and(crate::audit_events::panel_active) {
@@ -931,7 +940,7 @@ impl App {
                 self.editor_catalog_command(if info {crate::asset_catalog::Command::InfoStep(if amount>0.0 {-1} else {1})} else {crate::asset_catalog::Command::Page(if amount > 0.0 { -1 } else { 1 })}); }
             return true;
         }
-        if self.menus.editor.as_ref().is_some_and(|ed|ed.sidewalk_window.is_some() || ed.junction_window.is_some() || ed.roadside_window.is_some()) {return true;}
+        if self.menus.editor.as_ref().is_some_and(|ed|ed.traffic_window.is_some() || ed.sidewalk_window.is_some() || ed.junction_window.is_some() || ed.roadside_window.is_some()) {return true;}
         if self.ui.as_mut().is_some_and(|ui| ui.editor_dock_scroll(self.input.cursor, amount)) {
             return true;
         }

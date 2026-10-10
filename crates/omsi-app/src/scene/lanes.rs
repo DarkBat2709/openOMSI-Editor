@@ -42,14 +42,14 @@ pub(super) fn spline_lanes(
     let side = if s.mirror { -1.0 } else { 1.0 };
     let curve = &curve.with_sli(def);
     for (pi, p) in def.paths.iter().enumerate() {
-        let n = ((curve.length / 3.0).ceil() as usize).clamp(1, 300);
+        let n = ((curve.length / if def.editor_path_nodes.is_empty(){3.0}else{0.5}).ceil() as usize).clamp(1, 2000);
         let pts: Vec<DVec3> = (0..=n)
             .map(|i| {
-                curve.offset_point(
-                    curve.length * i as f64 / n as f64,
-                    side * p.start[0] as f64,
-                    p.start[2] as f64,
-                )
+                let station=curve.length*i as f64/n as f64;
+                let x=side*p.start[0] as f64;let z=p.start[2] as f64;
+                if s.rules.iter().any(|r|r.path_index==pi as i32 && r.kind=="editor_surface_path" && !r.kill) {
+                    omsi_geometry::editor_path_point(curve,&def.editor_path_nodes,pi,station,x,z)
+                } else {curve.offset_point(station,x,z)}
             })
             .collect();
         let kind = LaneKind::from_code(p.kind);
@@ -97,6 +97,11 @@ pub(super) fn spline_lanes(
             l.group_density = group_density.clone();
             l.no_cars = no_cars;
             l.rule_bus = rule_bus;
+            l.editor_bus_only = rule_of("editor_bus_only").is_some();
+            for (_,outgoing,v) in def.editor_path_connections.iter().filter(|(i,_,_)|*i==pi) {
+                let target=(LaneKey {tile:(v[0] as i32,v[1] as i32),id:v[2],path:v[3] as u16},v[4]!=0);
+                if *outgoing {l.editor_next=Some(target);}else{l.editor_previous=Some(target);}
+            }
             l.rule_trucks = rule_trucks;
             l.source = 1;
             l.key = Some(LaneKey {
@@ -304,5 +309,11 @@ pub(crate) fn resolve_scenery_freetex_name<'a>(
         None
     } else {
         Some(name)
+    }
+}
+
+impl World {
+    pub(crate) fn editor_path_lanes(&self,def:&Spline,spline:&omsi_map::MapSpline,curve:&SplineCurve,tile:(i32,i32))->Vec<Lane> {
+        spline_lanes(def,spline,curve,tile)
     }
 }

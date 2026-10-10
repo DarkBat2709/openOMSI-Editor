@@ -10,7 +10,7 @@ impl App {
         if self.net.lan.is_some() {self.service_msg=Some(("Texture editing is available in single-player".into(),5.0));return;}
         self.editor_terrain_finish();
         let (Some(ed),Some(world))=(self.menus.editor.as_mut(),self.world.as_ref()) else {return;};
-        ed.texture_target=Some(target);ed.tile_window=None;ed.text_window=None;ed.roadside_window=None;ed.sidewalk_window=None;ed.placing_asset=None;ed.object_stamp=None;
+        ed.texture_target=Some(target);ed.tile_window=None;ed.text_window=None;ed.roadside_window=None;ed.sidewalk_window=None;ed.traffic_window=None;ed.placing_asset=None;ed.object_stamp=None;
         ed.splines.cancel_connection();ed.splines.cancel_generation();ed.splines.finish_drag();ed.end_object_drag();
         ed.catalog=Some(crate::asset_catalog::Catalog::with_map(world.root.clone(),crate::asset_catalog::Kind::Texture,Some(world.map_dir.clone())));
         self.menus.editor_drag=false;self.input.keys.clear();self.input.mouse_look=false;self.input.mmb_held=false;self.input.buttons_held=(false,false);
@@ -24,7 +24,7 @@ impl App {
         self.editor_terrain_finish();
         let (Some(ed),Some(world))=(self.menus.editor.as_mut(),self.world.as_ref()) else {return;};
         ed.splines.finish_drag();ed.end_object_drag();ed.splines.cancel_connection();ed.splines.cancel_generation();
-        ed.catalog=None;ed.texture_target=None;ed.tile_window=None;ed.text_window=None;ed.roadside_window=None;ed.sidewalk_window=None;ed.terrain.active=false;
+        ed.catalog=None;ed.texture_target=None;ed.tile_window=None;ed.text_window=None;ed.roadside_window=None;ed.sidewalk_window=None;ed.traffic_window=None;ed.terrain.active=false;
         ed.placing_asset=None;ed.object_stamp=None;
         ed.junction_window=Some(if roundabout {crate::junction_builder::Window::new_roundabout(world.global.left_hand_traffic)} else {crate::junction_builder::Window::new(world.global.left_hand_traffic)});
         let target=ed.editing_added.and_then(|i|ed.added.get(i)).map(|o|o.id).or(ed.selected);

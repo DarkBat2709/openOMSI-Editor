@@ -1,0 +1,28 @@
+Prüfung 0.7.14-pre – 10.10.2026
+
+Das neue game.log weist Spline 722334 als Blocker der verbundenen Kette aus.
+Er wird in 0.7.13 wegen Überhöhung oder Schrägstellung abgewiesen. Dieser
+Spline ist nicht in der bereitgestellten Kachel enthalten; seine konkreten
+Geometriewerte und die vollständige Benutzerkarte wurden hier nicht geprüft.
+
+Linux-Testprogramm mit Rust 1.99.0, standalone-editor und unverändertem Cargo.lock
+kompiliert. Neun gezielte Tests erfolgreich:
+- Drei traffic_editor-Tests: Referenzgeometrie und Richtungen, fehlende Abschnitte
+  zwischen vorhandenen Pfaden ergänzen, ungültige Geometrie und Lücken ablehnen.
+- Fünf generated_ai-Tests: Fahrzeugfreigaben und umgekehrte Referenzen,
+  Profilkorrekturen, Überhöhungsbreite/Überhöhung/Schrägstellung mit Profilkorrektur
+  (Vorschau und tatsächliche Lanes gegen Mesh-Geometrie), Verknüpfung einer
+  überhöhten/schrägen Testkette in beiden Richtungen, Speichern/Laden von
+  Geometrie, Regeln und Profilkorrekturen.
+- Originale hochgeladene Kachel und SLI mit den echten Parsern geladen:
+  Einzelabschnitt 9859278 funktioniert; Kette enthält 20 Abschnitte, davon 2 mit
+  Profilkorrekturen. Test ausgeführt mit OMSI_TEST_TRAFFIC_TILE und
+  OMSI_TEST_TRAFFIC_SPLINE. Anhänge sind nicht im Paket enthalten.
+
+Sprachprüfung: 841 Schlüssel erfolgreich.
+ZIP-Integrität und Installer-Paketprüfsummen geprüft.
+
+Kein interaktiver Lauf mit der vollständigen Karte, kein Windows-Lauf und kein
+Release-Build hier. Der Linux-Installer führt auf dem Zielrechner Check, Tests
+und Release-Build aus, bevor er die neue Installation anlegt. Keine Änderung
+an der Benutzerkarte auf dem Zielrechner und keine GitHub-Veröffentlichung.

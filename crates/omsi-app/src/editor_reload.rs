@@ -25,6 +25,7 @@ impl App {
         if let Some(ed)=self.menus.editor.as_mut(){ed.splines.finish_drag();ed.end_object_drag();}
         self.input.keys.clear();self.input.buttons_held=(false,false);self.input.mmb_held=false;
         self.menus.editor_drag=false;self.input.dragging=false;self.input.mouse_look=false;
+        self.sync_look_hold();
         let save_label=omsi_ui::tr("Save & reload").into_owned();
         let discard_label=omsi_ui::tr("Discard changes & reload").into_owned();
         let result=rfd::MessageDialog::new().set_title(omsi_ui::tr("Reload map").as_ref())
@@ -59,14 +60,17 @@ impl App {
         // Every owner of scene-local GPU IDs must go with the old scene.
         self.gfx.streamer=None;self.session.traffic=None;self.session.schedule=None;self.session.humans=None;
         self.player=None;self.session.placed.clear();self.session.duty=None;self.session.duty_places=false;
-        self.sound.ambience=None;self.sound.audio=None;self.menus.navigator=None;self.session.on_foot=None;
+        self.sound.soundscape=None;self.sound.ambience=None;self.sound.audio=None;self.menus.navigator=None;self.session.on_foot=None;
         self.menus.placing=None;self.menus.remote_added.clear();self.gfx.route_arrows=Default::default();
         self.session.rain=rain::Rain::new();self.session.spray=puddles::Spray::new();
         self.gfx.frozen_mirrors=None;self.gfx.mirror_hud=Default::default();self.input.touch.drop_gpu();
         self.ui=ui::Ui::new();self.menus.hud=Some(hud::Hud::new(&mut world.fonts.lock()));
         if let Some(mut plugins)=self.integrations.plugins.take(){plugins.finalize();}
         self.integrations.plugin_keys.clear();self.integrations.plugin_events.clear();self.integrations.plugin_panels=Default::default();
+        self.integrations.plugin_events_ex.clear();self.integrations.plugin_voices.clear();
+        self.integrations.plugin_seen=Default::default();
         self.menus.editor=None;self.menus.editor_paused=None;
+        self.input.pressed_scenery_object=None;self.input.cruise=None;
         self.session.safe_pose=None;self.menus.hover_key=None;self.input.html_pressed=None;self.input.html_object_pressed=None;
         self.session.lamps_on=None;self.session.world_day=None;self.session.first_populate=true;
         self.session.populate_t=0.0;self.session.humans_populate_t=0.0;

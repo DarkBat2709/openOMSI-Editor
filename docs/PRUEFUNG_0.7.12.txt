@@ -1,0 +1,35 @@
+Prüfung des Quellpakets 0.7.12-pre, 10.10.2026
+Basis: vom Benutzer bereitgestelltes 0.7.11-pre / openOMSI 0.2.27.
+
+Erfolgreich:
+- cargo check -p omsi-app --features standalone-editor --locked
+- Testprogramm der App mit standalone-editor vollständig kompiliert.
+- 105 unterschiedliche Rust-Tests erfolgreich in diesen Gruppen:
+  traffic_editor::tests (2)
+  generated_ai (2)
+  junction_builder:: (18)
+  asset_catalog::tests (27)
+  spline_editor::tests (22; enthält einen bereits in generated_ai gezählten Test)
+  ui::tests (35; einschließlich passender Launcher-UI-Tests)
+- Verifizierte neue Fälle: Bus-/Taxi-/LKW-/PKW-Freigaben, native Kartenspeicherung
+  und erneutes Einlesen, gegenläufig verlegte Referenzsplines, Anschluss im
+  KI-Netz, Erhalt der Referenzgeometrie und Ablehnung ungültiger Geometrie.
+- Armidentitäten für T-/X-Kreuzungen, drei/vier Kreisverkehrarme, gebogene
+  Kreuzungsarme und vier Vorschauwinkel; Auswahl erhält vorbereitete Verbindung.
+- Ein durch die neuen Schaltflächen ausgelöster Überlauf bei kleinen Fenstern
+  wurde korrigiert; alle 35 UI-Tests einschließlich dieses Falls sind erfolgreich.
+- Sprachprüfung: 841 vorhandene Schlüssel, DE-/EN-Umschaltung und Rückfalltexte.
+- Bestehende Python-Installertests: 5 erfolgreich.
+- Neuer Installer: Staging, Ablehnung existierender Installationsziele,
+  Quellprüfsummen und Erkennung veränderter Quelldateien geprüft;
+  Python-/Shell-Syntax geprüft.
+
+Prüfumgebung: Linux x86_64, Rust 1.99.0. Abhängigkeiten gemäß Cargo.lock.
+Kein interaktiver Kartentest, kein Windows-Lauf, kein Release-Build in dieser
+Umgebung und keine GitHub-Veröffentlichung. Der mitgelieferte Installer führt
+auf dem Zielrechner Kompilierungscheck, gezielte Tests und Release-Build aus,
+bevor er einen neuen Installationsordner anlegt.
+
+Die neue KI-Oberfläche verwendet deutsche Beschriftungen. Die strikte
+Nur-Busse-Regel setzt diese angepasste Engine voraus; Details und Grenzen
+stehen in UPDATE_0.7.12.md.

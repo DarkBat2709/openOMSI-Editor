@@ -1,0 +1,27 @@
+Prüfung 0.7.17-pre – 10.10.2026
+
+Kompilierung unter Linux mit Rust 1.99.0, standalone-editor, Cargo.lock unverändert.
+Zwölf gezielte Tests bestanden:
+- Acht generated_ai-Tests: Freiformpunkte in Vorschau und tatsächlichen KI-Lanes,
+  unveränderte Gegenrichtung, Schreiben/Parsen der Definition, Rechtsanschluss
+  mit passender Endrichtung, Ausschluss eines alternativen Ziels am gleichen Ort,
+  Einschränkung zulässiger Eingangsverbindungen und Nachladen per Network::extend.
+- Zwei gleichgerichtete Fahrspuren mit unabhängiger Kurvenform.
+- Integration mit temporärer Karte: Ersetzen, konstante IDs, gespeicherte Freiform-
+  Metadaten, Rückgängig, Anzeige unabhängig von der geleerten Verkehrsqueue.
+- Bisherige Überhöhungs-/Schrägstellungs-/Profilkorrektur- und Fahrzeugregeltests.
+- Vier traffic_editor-Tests für Referenzgeometrie, ungültige Geometrie/Lücken,
+  fehlende Abschnitte ergänzen, Positionserhalt beim Entfernen der Gegenspur.
+Sprachprüfung mit 841 Schlüsseln erfolgreich.
+ZIP-Integrität und Installer-Prüfsummen geprüft.
+
+Anschlussbeschränkungen werden sowohl beim vollständigen Netzaufbau als auch beim
+Nachladen berücksichtigt. Fahrplan-Lückenverbinder dürfen explizite Anschluss-
+zuordnungen ebenfalls nicht umgehen. Ohne gesetzte Anschlusszuordnung bleibt die
+bisherige geometrische Verknüpfung erhalten.
+
+Keine interaktive Grafik-/Mausprüfung auf der vollständigen Benutzerkarte, kein
+Windows-Lauf und kein Release-Build hier. Der Linux-Installer führt Check, Tests
+und Release-Build auf dem Zielrechner aus. Keine GitHub-Veröffentlichung.
+Freiform/Anschluss-Metadaten sind eine Erweiterung dieses angepassten Runtime;
+eine unveränderte Hauptversion berücksichtigt sie nicht.

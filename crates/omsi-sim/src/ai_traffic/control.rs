@@ -46,7 +46,7 @@ impl TrafficSim {
         let (p0, p1) = (la.end(), lb.start());
         let d = (p1 - p0).truncate();
         let len = d.length();
-        if !(2.0..=150.0).contains(&len) || la.kind != lb.kind {
+        if !(2.0..=150.0).contains(&len) || la.kind != lb.kind || !la.accepts_editor_connection(lb) {
             return None;
         }
         let dir = |h: f32| {

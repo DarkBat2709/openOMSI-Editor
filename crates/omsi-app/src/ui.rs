@@ -568,13 +568,13 @@ pub struct Ui {
 }
 
 /// Between the information bar's parts.
-pub(crate) const INFO_SEP: &str = "   ·   ";
+pub(crate) const INFO_SEP: &str = "   |   ";
 
 fn editor_scale(scale: f32, viewport: [f32; 4]) -> f32 {
-    // HUD + dock buttons + one hint row + largest (connection) footer need
-    // 558 logical pixels including margins. Leave room for rounding at small sizes.
+    // HUD + dock buttons + one hint row + the seven spline tools need
+    // 616 logical pixels including margins. Leave room for rounding at small sizes.
     scale.max(0.5).min((viewport[2] / 544.0).max(0.1))
-        .min((viewport[3] / 576.0).max(0.1))
+        .min((viewport[3] / 640.0).max(0.1))
 }
 
 fn editor_contains(rect: [f32; 4], cursor: (f32, f32)) -> bool {
@@ -824,7 +824,7 @@ impl Ui {
         let flat = self.text.flat;
         self.text.flat = true;
         self.editor_surface(r, scene, layout.panel, 5.0 * s, PANEL);
-        let title = if terrain { "Terrain editor 0.7.10-pre" } else if spline { "Spline editor 0.7.10-pre" } else { "Object editor 0.7.10-pre" };
+        let title = if terrain { "Terrain editor 0.7.21-pre" } else if spline { "Spline editor 0.7.21-pre" } else { "Object editor 0.7.21-pre" };
         self.put(r, scene, title, ((13.0 * s) as u32).max(1) | BOLD,
             MUTED, layout.panel[0] + 10.0 * s, layout.panel[1] + 12.0 * s);
         self.editor_surface(r, scene, layout.selection, 3.0 * s, PANEL_ALT);
@@ -924,7 +924,7 @@ impl Ui {
             self.editor_hint_mode = Some((spline, expanded));
         }
         let shortcuts = editor_shortcuts(spline, expanded);
-        let footer = if connection.is_some() { 198.0 } else if tools.is_some() { 192.0 } else if objects.is_some() {192.0} else { 0.0 };
+        let footer = if connection.is_some() { 198.0 } else if tools.is_some() { 256.0 } else if objects.is_some() {192.0} else { 0.0 };
         let hud_bottom = self.editor_hud_rect.map_or(viewport[1], |rect| rect[3]);
         let layout = editor_dock_layout(viewport, s, hud_bottom, shortcuts.len(), footer, self.editor_dock_position);
         self.editor_help_scroll_max = layout.max_scroll;
@@ -1173,7 +1173,7 @@ impl Ui {
         use crate::editor::Action;
         let Some(enabled) = enabled else { return; };
         let [x, y] = origin;
-        let panel = [x, y, x + 284.0 * s, y + 192.0 * s];
+        let panel = [x, y, x + 284.0 * s, y + 256.0 * s];
         self.editor_tools_rect = Some(panel);
         self.editor_surface(r, scene, panel, 3.0 * s, PANEL);
         self.catalog_text(r, scene, if enabled { "Road shoulders / terrain" } else { "Select a road first" },
@@ -1184,6 +1184,8 @@ impl Ui {
             (Action::FitTerrain, "Fit to ground (F6)"),
             (Action::RoadsideWindow, "Objects along the road"),
             (Action::SidewalkWindow, "Sidewalk along the road"),
+            (Action::TrafficPaths, "KI-Fahrwege entlang der Straße"),
+            (Action::TrafficOverlay, "KI-Pfade anzeigen / ausblenden"),
         ].into_iter().enumerate() {
             let top = y + (27.0 + row as f32 * 32.0) * s;
             let rect = [x + 6.0 * s, top, x + 278.0 * s, top + 27.0 * s];
@@ -1272,6 +1274,65 @@ impl Ui {
             if enabled { window.rects.push((area, command)); }
         }
         self.text.flat = flat;
+    }
+
+    pub fn draw_traffic_window(&mut self,r:&Renderer,scene:&mut Scene,window:Option<&mut crate::traffic_editor::Window>,show_paths:bool,scale:f32,viewport:[f32;4],cursor:(f32,f32)) {
+        use crate::traffic_editor::Command;
+        let Some(w)=window else{return;};w.rects.clear();
+        let top=self.editor_hud_rect.map_or(viewport[1],|r|r[3])+10.0;
+        let s=scale.max(0.5).min((viewport[2]/440.0).max(0.1)).min(((viewport[1]+viewport[3]-top-12.0)/748.0).max(0.1));
+        let x=viewport[0]+12.0*s;let y=top;
+        let rect=|a:f32,b:f32,ww:f32,h:f32|[x+a*s,y+b*s,x+(a+ww)*s,y+(b+h)*s];
+        w.rect=Some(rect(0.0,0.0,410.0,748.0));self.editor_dock_rect=w.rect;
+        self.editor_dock_header=None;self.editor_help_rect=None;self.editor_tools_rect=None;
+        self.editor_connection_rect=None;self.spline_tool_rects.clear();self.terrain_tool_rects.clear();
+        self.catalog_open_rect=None;self.tile_open_rect=None;self.terrain_open_rect=None;
+        self.junction_open_rect=None;self.roundabout_open_rect=None;
+        let flat=self.text.flat;self.text.flat=true;
+        self.editor_surface(r,scene,w.rect.unwrap(),5.0*s,PANEL);
+        self.put(r,scene,"KI-Fahrwege entlang der Straße",((15.0*s)as u32).max(1)|BOLD,WHITE,x+12.0*s,y+18.0*s);
+        let settings=&w.settings;
+        let mut buttons=vec![
+            (rect(10.0,40.0,390.0,30.0),if settings.connected{"Bereich: verbundene Splinekette"}else{"Bereich: ausgewählter Spline"}.to_string(),Command::Connected,true),
+            (rect(10.0,78.0,390.0,30.0),if settings.two_way{if settings.parallel{"Zwei Spuren in gleicher Richtung"}else{"Zwei Spuren mit Gegenverkehr"}}else{"Eine Spur / Einbahnstraße"}.to_string(),Command::TwoWay,true),
+            (rect(10.0,116.0,390.0,30.0),if settings.reverse{"Richtung: umgekehrt"}else{"Richtung: entlang der Referenz"}.to_string(),Command::Reverse,true),
+            (rect(10.0,154.0,390.0,30.0),format!("Spur 1: {}",if settings.forward_bus{"Nur Busse"}else{"Alle Fahrzeuge"}),Command::ForwardBus,true),
+            (rect(10.0,192.0,390.0,30.0),format!("Fahrspur 2: {}",if settings.backward_bus{"Nur Busse"}else{"Alle Fahrzeuge"}),Command::BackwardBus,settings.two_way),
+        ];
+        for (i,(label,value,minus,plus)) in [
+            ("Spurbreite",settings.width,Command::Width(-0.25),Command::Width(0.25)),
+            ("Seitlicher Versatz",settings.offset,Command::Offset(-0.25),Command::Offset(0.25)),
+            ("Höhe über Spline",settings.height,Command::Height(-0.05),Command::Height(0.05)),
+        ].into_iter().enumerate(){let row=234.0+i as f32*36.0;
+            self.catalog_text(r,scene,&format!("{label}: {value:.2} m"),(x+12.0*s,y+(row+8.0)*s),290.0*s,12.0*s,SOFT);
+            buttons.push((rect(310.0,row,40.0,28.0),"−".into(),minus,true));
+            buttons.push((rect(360.0,row,40.0,28.0),"+".into(),plus,true));
+        }
+        self.catalog_text(r,scene,"Blau: alle Fahrzeuge · Orange: nur Busse",(x+12.0*s,y+354.0*s),386.0*s,12.0*s,SOFT);
+        self.catalog_text(r,scene,if w.free {"Grün: ziehen · Lila: Anschluss · Loslassen: einrasten"}else{"Pfeile zeigen die Fahrtrichtung. Busfahrpläne separat."},(x+12.0*s,y+374.0*s),386.0*s,11.0*s,MUTED);
+        let message=w.error.as_deref().unwrap_or(&w.preview.message);
+        for (i,line) in wrap(&self.text,message,12.0*s,382.0*s).iter().take(3).enumerate(){
+            self.catalog_text(r,scene,line,(x+12.0*s,y+(398.0+i as f32*17.0)*s),382.0*s,12.0*s,SOFT);
+        }
+        buttons.extend([
+            (rect(10.0,456.0,390.0,30.0),if w.free {"Freiform aktiv: Punkte mit linker Maus ziehen"}else{"Freiformpunkte bearbeiten"}.into(),Command::Free,true),
+            (rect(10.0,490.0,190.0,30.0),format!("Fahrspur {} wählen",if w.active_lane==0{2}else{1}),Command::Lane,w.free&&settings.two_way),
+            (rect(210.0,490.0,190.0,30.0),"Punkt zurücksetzen".into(),Command::ResetNode,w.free&&w.selected_node.is_some()),
+            (rect(10.0,524.0,190.0,30.0),"Punkt tiefer (0,1 m)".into(),Command::NodeHeight(-0.1),w.free&&w.selected_node.is_some()),
+            (rect(210.0,524.0,190.0,30.0),"Punkt höher (0,1 m)".into(),Command::NodeHeight(0.1),w.free&&w.selected_node.is_some()),
+            (rect(10.0,564.0,390.0,30.0),if w.replace {"Modus: vorhandene KI-Pfade ersetzen"}else{"Modus: fehlende KI-Pfade ergänzen"}.into(),Command::Replace,true),
+            (rect(10.0,604.0,390.0,30.0),if show_paths {"KI-Pfade: sichtbar – ausblenden"}else{"KI-Pfade: ausgeblendet – anzeigen"}.into(),Command::Overlay,true),
+            (rect(10.0,644.0,390.0,32.0),if w.replace {"KI-Pfade ersetzen (Enter)"}else{"KI-Pfade anlegen (Enter)"}.into(),Command::Apply,w.error.is_none()&&!w.preview.pieces.is_empty()),
+            (rect(10.0,686.0,190.0,30.0),"Vorschau aktualisieren".into(),Command::Refresh,true),
+            (rect(210.0,686.0,190.0,30.0),"Schließen (Esc)".into(),Command::Close,true),
+        ]);
+        self.catalog_text(r,scene,"Danach: Strg+Z rückgängig · Strg+S speichern",(x+12.0*s,y+727.0*s),386.0*s,11.0*s,MUTED);
+        for(area,title,command,enabled) in buttons {
+            self.editor_surface(r,scene,area,3.0*s,if !enabled{PANEL_ALT}else if editor_contains(area,cursor){LIT}else{CHIP});
+            self.catalog_text(r,scene,&title,(area[0]+6.0*s,area[1]+8.0*s),area[2]-area[0]-12.0*s,12.0*s,WHITE);
+            if enabled{w.rects.push((area,command));}
+        }
+        self.text.flat=flat;
     }
 
     pub fn draw_sidewalk_window(&mut self, r: &Renderer, scene: &mut Scene,
@@ -1640,7 +1701,7 @@ impl Ui {
         self.catalog_plate(r,scene,[0, 0, 0, 150],[viewport[0],viewport[1],viewport[0]+viewport[2],viewport[1]+viewport[3]]);
         self.editor_surface(r,scene,rect(0.0,0.0,1020.0,740.0),7.0*s,PANEL);
         let roundabout=window.project.roundabout.is_some();
-        self.catalog_text(r,scene,if roundabout {"Roundabout builder 0.7.10-pre"} else {"Junction builder 0.7.10-pre"},(x+22.0*s,y+18.0*s),680.0*s,24.0*s,WHITE);
+        self.catalog_text(r,scene,if roundabout {"Roundabout builder"} else {"Junction builder"},(x+22.0*s,y+18.0*s),680.0*s,24.0*s,WHITE);
         self.catalog_text(r,scene,&window.source_label,(x+22.0*s,y+46.0*s),970.0*s,10.0*s,SOFT);
         self.editor_surface(r,scene,rect(20.0,62.0,358.0,576.0),5.0*s,PANEL);
         let cross=window.project.arms[3].enabled;
@@ -1683,7 +1744,14 @@ impl Ui {
         self.catalog_text(r,scene,"3D preview · Dimensions in metres",(x+416.0*s,y+86.0*s),556.0*s,17.0*s,SOFT);
         let texture=if window.project.road_texture.is_empty() {"No road surface texture"} else {&window.project.road_texture};
         self.catalog_text(r,scene,texture,(x+416.0*s,y+108.0*s),556.0*s,10.0*s,SOFT);
-        if let Some((_,tex))=self.junction_image {scene.overlays.push((tex,rect(408.0,124.0,584.0,389.33)));}
+        if let Some((_,tex))=self.junction_image {
+            scene.overlays.push((tex,rect(408.0,124.0,584.0,389.33)));
+            for &(i,p) in &window.arm_labels {
+                let left=408.0+584.0*p.x-17.0;let top=124.0+389.33*p.y-15.0;
+                buttons.push((rect(left,top,34.0,30.0),['A','B','C','D'][i].to_string(),Command::Arm(i),true,window.arm==i));
+            }
+            self.catalog_text(r,scene,&format!("Arm {}",['A','B','C','D'][window.arm]),(x+416.0*s,y+516.0*s),200.0*s,13.0*s,[255,192,55,0]);
+        }
         else if let Some(error)=&window.error {
             for (i,line) in wrap(&self.text,error,15.0*s,530.0*s).iter().take(5).enumerate() {
                 self.catalog_text(r,scene,line,(x+424.0*s,y+(236.0+i as f32*23.0)*s),530.0*s,15.0*s,[255,203,173,0]);
@@ -2102,7 +2170,7 @@ impl Ui {
                 y += 5.0 * s;
             }
             let tr = |t: &str| omsi_ui::tr(t).into_owned();
-            let foot = format!("{} {}/{}   ·   {}   ·   {}   ·   {}", tr("Page"), at + 1, count, tr("Enter next"), tr("Page Up back"), tr("Ctrl+T hide"));
+            let foot = format!("{} {}/{}   |   {}   |   {}   |   {}", tr("Page"), at + 1, count, tr("Enter next"), tr("Page Up back"), tr("Ctrl+T hide"));
             let l = self.text.label(r, scene, &foot, (12.0 * s) as u32, [150, 150, 150, 0]);
             y += 4.0 * s;
             items.push((l.tex, [x + pad, y, x + pad + l.w as f32, y + l.h as f32]));
@@ -2561,10 +2629,10 @@ fn clip_bold(tc: &TextCache, text: &str, px: f32, width: f32) -> String {
         return text.to_string();
     }
     let mut out: String = text.chars().collect();
-    while !out.is_empty() && tc.width_bold(&format!("{out}…"), px) > width {
+    while !out.is_empty() && tc.width_bold(&format!("{out}..."), px) > width {
         out.pop();
     }
-    format!("{}…", out.trim_end())
+    format!("{}...", out.trim_end())
 }
 
 /// The distance of the point (`px`, `py`) from the rounded rectangle at (`x0`, `y0`) of
@@ -3268,7 +3336,7 @@ impl Ui {
         }
         // the keys, quietly at the bottom, where there is a keyboard
         if keys {
-            let hint = omsi_ui::tr("Esc resumes  ·  P pauses").into_owned();
+            let hint = omsi_ui::tr("Esc resumes  |  P pauses").into_owned();
             let hint = clip_to(&self.text, &hint, 11.0 * s, rail_w - bx * 2.0);
             self.put(r, scene, &hint, (11.0 * s) as u32, OFF_INK, bx, f.height - 20.0 * s);
         }
@@ -3705,7 +3773,7 @@ mod tests {
                 for spline in [false, true] {
                     for expanded in [false, true] {
                         let count = editor_shortcuts(spline, expanded).len();
-                        for footer in [0.0, 128.0, 160.0, 164.0, 192.0, 198.0] {
+                        for footer in [0.0, 128.0, 160.0, 164.0, 192.0, 198.0, 256.0] {
                             for position in [None, Some([1.0, 1.0]), Some([-5.0, 8.0])] {
                                 let dock = editor_dock_layout(viewport, s, hud.panel[3], count, footer, position);
                                 assert!(dock.panel[0] >= viewport[0]);

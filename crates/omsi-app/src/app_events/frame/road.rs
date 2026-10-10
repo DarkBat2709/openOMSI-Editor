@@ -6,6 +6,7 @@ impl App {
     /// The AI traffic: what it needs to know, the timetable's departures, its step, its
     /// sound and its pictures.
     pub(super) fn frame_traffic(&mut self, dt: f32) {
+        let _diagnostic = crate::editor_diagnostics::Span::new("traffic_simulation", "");
         let __t = Instant::now();
         // (with a triple screen, all of its three panels are in sight)
         let sight = self.camera.as_ref().zip(self.gfx.surface.as_ref())
@@ -102,7 +103,12 @@ impl App {
                 // heard round the camera (the ear), not round the player's bus: a
                 // free camera following an AI bus lost its sound 250 m from the bus
                 let ear = self.camera.as_ref().map(|c| c.position).unwrap_or(center);
-                t.update_audio(a, ear, street, muffled);
+                // (riding in an AI bus on foot: that bus is heard from inside, #1286)
+                let riding = self.session.on_foot.as_ref().and_then(|f| match f.inside {
+                    Some((omsi_sim::people::BusId::Ai(id), _)) => Some(id),
+                    _ => None,
+                });
+                t.update_audio(a, ear, street, muffled || riding.is_some(), riding);
             }
             *self.perf.profile.entry("traffic.audio").or_default() +=
                 __t3.elapsed().as_secs_f64();

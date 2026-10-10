@@ -1,0 +1,11 @@
+INSTALLIEREN.sh
+README.md
+crates/omsi-app/locales/editor.yml
+crates/omsi-app/src/roadside_objects.rs
+crates/omsi-app/src/scene/props.rs
+crates/omsi-app/src/tiles.rs
+crates/omsi-app/src/traffic_editor.rs
+crates/omsi-app/src/ui.rs
+docs/UPDATE_0.7.19.md
+scripts/editor/install_0_7_19.py
+scripts/editor/windows_editor.py

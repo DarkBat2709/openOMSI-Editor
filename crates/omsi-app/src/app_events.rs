@@ -65,6 +65,8 @@ impl ApplicationHandler for App {
         self.input.touch.drop_gpu();
         self.input_lost();
         self.save_last_situation();
+        // (a phone's app in the background is often ended without `exiting`)
+        omsi_render::pipeline_cache::save();
     }
 
     fn window_event(&mut self, event_loop: &ActiveEventLoop, _id: WindowId, event: WindowEvent) {
@@ -123,6 +125,9 @@ impl ApplicationHandler for App {
             // back count only when pressed anew)
             WindowEvent::KeyboardInput { is_synthetic, ref event, .. } if self.input.input_away || (is_synthetic && event.state == ElementState::Pressed) => {}
             WindowEvent::MouseInput { .. } | WindowEvent::MouseWheel { .. } if self.input.input_away => {}
+            // a background test window driven by an input script takes no real mouse (the
+            // person at the computer moving theirs over it clicked through the test)
+            WindowEvent::MouseInput { .. } | WindowEvent::MouseWheel { .. } | WindowEvent::CursorMoved { .. } if scripted_window() => {}
             WindowEvent::ModifiersChanged(modifiers) => {
                 for code in input_script::release_inactive_modifiers(&mut self.input.keys, modifiers.state()) {
                     self.on_key(event_loop, code, false, false);
@@ -134,7 +139,17 @@ impl ApplicationHandler for App {
                 if event.state == ElementState::Released
                     && matches!(event.physical_key, PhysicalKey::Code(c) if input_script::is_modifier(c) && !self.input.keys.contains(&c)) => {}
             WindowEvent::KeyboardInput { event, .. } => {
+                // a plugin's text field being typed into takes the keys pressed (their
+                // releases go on, so that nothing held stays held)
+                if event.state == ElementState::Pressed {
+                    if let PhysicalKey::Code(code) = event.physical_key {
+                        if self.plugin_typing_key(code, event.text.as_deref()) {
+                            return;
+                        }
+                    }
+                }
                 let catalog_code = match event.physical_key { PhysicalKey::Code(code) => Some(code), _ => None };
+                if self.editor_traffic_input(catalog_code,event.state==ElementState::Pressed,event.repeat){return;}
                 if self.editor_sidewalk_input(catalog_code,event.text.as_deref(),event.state==ElementState::Pressed,event.repeat){return;}
                 if self.editor_roadside_input(catalog_code,event.text.as_deref(),event.state==ElementState::Pressed,event.repeat) {return;}
                 if self.editor_junction_input(catalog_code,event.text.as_deref(),event.state==ElementState::Pressed) {return;}
@@ -249,6 +264,8 @@ impl ApplicationHandler for App {
                 }
                 self.input.mouse_look = state == ElementState::Pressed;
                 self.input.mmb_held = state == ElementState::Pressed;
+                self.sync_look_hold();
+                self.sync_mouse_grab();
                 self.update_hover();
             }
             WindowEvent::MouseWheel { delta, .. } => {
@@ -295,6 +312,7 @@ impl ApplicationHandler for App {
                 } else {
                     self.on_mouse_moved(position.x as f32, position.y as f32);
                     self.editor_sidewalk_drag();
+                    self.editor_traffic_queue_drag();
                 }
             }
             WindowEvent::MouseInput {
@@ -330,6 +348,7 @@ impl ApplicationHandler for App {
                     if !pressed && self.input.both_drag.is_some() && !(self.input.buttons_held.1 && self.right_zooms()) {
                         self.input.both_drag = None;
                         self.input.mouse_look = self.input.buttons_held.1;
+                        self.sync_look_hold();
                         self.update_hover();
                     }
                     self.left_button(event_loop, pressed);
@@ -357,8 +376,16 @@ impl ApplicationHandler for App {
             }
         }
         if let DeviceEvent::MouseMotion { delta } = event {
+            if scripted_window() {
+                return;
+            }
             if self.xr.vr_nav_edit.is_some() {
                 if self.input.window_focused { self.vr_nav_drag(delta.0 as f32, delta.1 as f32); }
+                return;
+            }
+            // (the cursor locked for looking round: the mouse's own movement turns the view
+            // of the bus and the photo camera, in points on macOS - logical pixels)
+            if self.input.window_focused && self.look_raw(delta.0 as f32, delta.1 as f32) {
                 return;
             }
             // (in a view of the bus the cursor's own way turns it: move_cursor)
@@ -416,6 +443,8 @@ impl ApplicationHandler for App {
     fn exiting(&mut self, _event_loop: &ActiveEventLoop) {
         crate::game_lists::flush_settings(true);
         self.finish_session();
+        // (with the pipelines made since the start: puddles, Enhanced+)
+        omsi_render::pipeline_cache::save();
         // ("playing now" ends with the game)
         self.integrations.presence = None;
         if let Some(lan) = self.net.lan.take() {
@@ -444,6 +473,15 @@ impl App {
 
     /// The mouse wheel (or a pinch of two fingers): `amount` notches, up positive.
     pub(crate) fn wheel(&mut self, amount: f32) {
+        // the photo mode: the lens zooms, or its panel scrolls under the mouse
+        if self.photo_on() {
+            if self.shell.over_ui {
+                self.shell.wheel(amount);
+            } else if let Some(ph) = self.photo.as_mut() {
+                ph.zoom(amount);
+            }
+            return;
+        }
         if self.xr.vr_nav_edit.is_some() { self.vr_nav_scroll(amount); return; }
         // over a mirror panel the wheel resizes it (Shift: wider or narrower)
         if let Some(size) = self.mirror_hud_size() {
@@ -509,6 +547,13 @@ impl App {
                     return;
                 }
             }
+            if let (Some(w), Some((o, d, spread))) = (self.world.as_ref(), self.cursor_ray_now()) {
+                let blocked = self.player.as_ref().and_then(|p| p.opaque_body_hit(o, d));
+                if let Some(hit) = w.scenery_object_hit(o, d, crate::input_script::SCENERY_OBJECT_REACH, spread).filter(|h| blocked.map_or(true, |t| t >= h.t)) {
+                    w.scenery_object_wheel(hit.map_id, &hit.event, -amount * 40.0);
+                    return;
+                }
+            }
         }
         let ctrl = self.input.keys.contains(&KeyCode::ControlLeft) || self.input.keys.contains(&KeyCode::ControlRight);
         if self.view == "outside" && self.player.is_some() && ctrl {
@@ -533,6 +578,20 @@ impl App {
     /// The left mouse button (or a finger's tap) where the cursor is.
     pub(crate) fn left_button(&mut self, event_loop: &ActiveEventLoop, pressed: bool) {
         if let Some(edit) = self.xr.vr_nav_edit.as_mut() { edit.moving = pressed; return; }
+        // the pause menu (and the photo mode) of the launcher's toolkit take the clicks
+        if self.shell_takes_mouse() {
+            if pressed {
+                self.menus.menu_kbd = false;
+            }
+            self.shell.button(pressed);
+            // (the left button dragged over the photo turns the photo camera)
+            let over = self.shell.over_ui;
+            if let Some(ph) = self.photo.as_mut() {
+                ph.looking = pressed && !over;
+            }
+            self.sync_look_hold();
+            return;
+        }
         // a mirror panel is dragged with the left button (a release always ends a drag)
         if let Some(size) = self
             .mirror_hud_size()
@@ -926,4 +985,10 @@ mod vr_mirror_tests {
         assert_eq!(vr_mirror_updates(&mut budget, 0.1, 360.0, 0), 0);
         assert_eq!(budget, 0.0);
     }
+}
+
+/// A test window in the background driven by an input script (`OMSI_BACKGROUND` with
+/// `OMSI_INPUT`): its mouse is the script's alone.
+fn scripted_window() -> bool {
+    omsi_cfg::flags::OMSI_BACKGROUND.is_set() && omsi_cfg::flags::OMSI_INPUT.var().is_some()
 }

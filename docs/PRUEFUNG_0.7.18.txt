@@ -1,0 +1,16 @@
+Prüfung 0.7.18-pre – 10.10.2026
+
+Linux standalone-editor: Cargo check und Kompilierung des Testprogramms erfolgreich.
+13 gezielte Tests bestanden: 1 Watchdog-Test (Schwelle, Wiederholungsintervall,
+Abmelden abgeschlossener Schritte), 4 traffic_editor-Tests, 8 generated_ai-Tests.
+Der Integrationstest für Pfadanzeige/Änderungen/Undo wurde zusätzlich mit aktivierter
+Diagnose ausgeführt und bestanden. Die KI-Geometrie wurde in diesem Update nicht geändert.
+841 Übersetzungsschlüssel geprüft. Python-Installer und beide Shell-Startskripte
+syntaktisch geprüft. Startskripte mit Ersatzprogramm ausgeführt: normal ohne
+Variable, Diagnose mit Wert 1, anschließend normal wieder ohne Variable.
+ZIP-Integrität und Quellpaket-Prüfsummen geprüft.
+
+Keine interaktive Prüfung auf der Benutzerkarte, kein Windows-Lauf und kein lokaler
+Release-Build. Der Installer baut die Release-Version auf dem Zielrechner.
+Die genaue Ursache der gemeldeten Hänger ist noch nicht bekannt. Dieses Update
+liefert Messdaten, es ist kein bereits nachgewiesener Performance-Fix.

@@ -1,0 +1,11 @@
+INSTALLIEREN.sh
+README.md
+crates/omsi-app/locales/editor.yml
+crates/omsi-app/src/app_events/frame.rs
+crates/omsi-app/src/app_events.rs
+crates/omsi-app/src/traffic_editor.rs
+crates/omsi-app/src/traffic_editor_events.rs
+crates/omsi-app/src/ui.rs
+docs/UPDATE_0.7.20.md
+scripts/editor/install_0_7_20.py
+scripts/editor/windows_editor.py

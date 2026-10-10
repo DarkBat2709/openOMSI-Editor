@@ -15,7 +15,7 @@ pub enum Section { Roads, Objects, Textures }
 impl Section {
     pub fn categories(self) -> &'static [Category] {
         match self {
-            Self::Roads => &[Category::All, Category::Profiles, Category::Junctions, Category::Traffic, Category::Water],
+            Self::Roads => &[Category::All, Category::Profiles, Category::Junctions, Category::Traffic, Category::AiPaths, Category::Water],
             Self::Objects => &[Category::All, Category::Vegetation, Category::Buildings,
                 Category::Street, Category::Water, Category::Other],
             Self::Textures => &[Category::All,Category::Grass,Category::Soil,Category::Gravel,Category::Stone,Category::Asphalt,Category::Other],
@@ -27,9 +27,9 @@ impl Section {
     }
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Category { All, Profiles, Vegetation, Buildings, Junctions, Traffic, Street, Water, Other, Grass, Soil, Gravel, Stone, Asphalt }
+pub enum Category { All, AiPaths, Profiles, Vegetation, Buildings, Junctions, Traffic, Street, Water, Other, Grass, Soil, Gravel, Stone, Asphalt }
 impl Category {
-    pub fn title(self)->&'static str {match self {Self::All=>"All",Self::Profiles=>"Spline profiles",Self::Vegetation=>"Vegetation",Self::Buildings=>"Buildings",
+    pub fn title(self)->&'static str {match self {Self::All=>"All",Self::AiPaths=>"KI-Pfade",Self::Profiles=>"Spline profiles",Self::Vegetation=>"Vegetation",Self::Buildings=>"Buildings",
         Self::Junctions=>"Junctions",Self::Traffic=>"Traffic logic",Self::Street=>"Street furniture",Self::Water=>"Waterways",Self::Other=>"Other",
         Self::Grass=>"Grass",Self::Soil=>"Soil",Self::Gravel=>"Gravel",Self::Stone=>"Stone",Self::Asphalt=>"Asphalt"}}
 }
@@ -384,7 +384,7 @@ fn asset_metadata(path:&Path,kind:Kind,file:String,fallback:String)->Asset {
         while let Some(k)=r.next_keyword() {match k.as_str() {
             "friendlyname"=>{let text=r.str().trim();if !text.is_empty() {name=text.to_string();}},
             "groups"=>{let count=r.usize().min(64);for _ in 0..count {groups.push(r.str().to_string());}},
-            "tree"=>tree=true,"maplight"=>light=true,"mesh"|"model"=>geometry=true,
+            "tree"=>tree=true,"maplight"=>light=true,"mesh"|"model"|"profile"=>geometry=true,
             "path"|"path_2"=>paths=true,"onlyeditor"=>editor_only=true,_=>{},
         }}
     }
@@ -394,7 +394,7 @@ fn asset_metadata(path:&Path,kind:Kind,file:String,fallback:String)->Asset {
 fn classify_asset(kind: Kind, file: &str, name: &str, groups: &str, tree: bool, light: bool, geometry: bool, paths: bool, editor_only: bool) -> Category {
     let category = classify(file, name, groups, tree);
     match kind {
-        Kind::Spline => if category == Category::Water { Category::Water } else { Category::Profiles },
+        Kind::Spline => if category == Category::Water { Category::Water } else if paths && (!geometry || editor_only || file.to_lowercase().contains("invis") || file.contains("openOMSI_Editor/AI/")) { Category::AiPaths } else { Category::Profiles },
         Kind::Object if paths && (editor_only || !geometry) && !tree => Category::Traffic,
         Kind::Object if light && !geometry && !tree => Category::Other,
         Kind::Object => category,
@@ -560,6 +560,15 @@ fn preview(root: &Path, asset: &Asset, view: u8, stop: &AtomicBool) -> Result<Im
         }
         Kind::Spline => {
             let def = omsi_scenery::Spline::load(&asset.path).map_err(|_| "Cannot read spline")?;
+            if (def.only_editor || def.profiles.is_empty()) && !def.paths.is_empty() {
+                let mut sco=omsi_scenery::SceneryObject::default();
+                for p in &def.paths {
+                    sco.paths.push(omsi_scenery::PathDef {kind:p.kind,width:p.width,
+                        params:vec![p.start[0],0.0,p.start[2],0.0,0.0,20.0,0.0,0.0,0.0,p.width,0.0,1.0],..Default::default()});
+                }
+                let part=traffic_preview_part(&sco,stop).ok_or("Keine darstellbaren KI-Pfade")?;
+                return rasterize_camera(&[&part],view as f32*std::f32::consts::FRAC_PI_2,true,stop).ok_or_else(||"Keine Pfadvorschau".into());
+            }
             if def.only_editor || def.profiles.is_empty() { return Err("No visible road profile".into()); }
             let s = omsi_map::MapSpline { length: 20.0, ..Default::default() };
             let curve = SplineCurve::from_map(&s, DVec2::ZERO);
@@ -806,21 +815,34 @@ fn rasterize(parts: &[Part], yaw: f32, stop: &AtomicBool) -> Option<Image> {
 fn rasterize_parts(parts: &[&Part], yaw: f32, stop: &AtomicBool) -> Option<Image> {
     rasterize_camera(parts, yaw, false, stop)
 }
+struct PreviewCamera { right:Vec3, up:Vec3, center:Vec3, scale:f32 }
+impl PreviewCamera {
+    fn new(points:impl Iterator<Item=Vec3>,yaw:f32,top_down:bool)->Option<Self> {
+        let rotation=glam::Quat::from_rotation_z(yaw);
+        let right=rotation*if top_down {Vec3::X}else{Vec3::new(0.8,-0.6,0.0)};
+        let up=rotation*if top_down {Vec3::Y}else{Vec3::new(0.3,0.4,0.8660254)};
+        let mut min=Vec3::splat(f32::INFINITY);let mut max=Vec3::splat(f32::NEG_INFINITY);
+        for p in points.filter(|p|p.is_finite()) {
+            let q=Vec3::new(p.dot(right),-p.dot(up),p.dot(right.cross(up)));min=min.min(q);max=max.max(q);
+        }
+        if !min.is_finite() || !max.is_finite(){return None;}
+        let span=max-min;
+        Some(Self {right,up,center:(min+max)*0.5,scale:(864.0/span.x.max(0.01)).min(544.0/span.y.max(0.01))})
+    }
+    fn screen(&self,p:Vec3)->Vec3 {
+        let p=(Vec3::new(p.dot(self.right),-p.dot(self.up),p.dot(self.right.cross(self.up)))-self.center)*self.scale;
+        Vec3::new(p.x+480.0,p.y+320.0,p.z)
+    }
+}
+pub fn junction_label_positions(mesh:&omsi_o3d::Mesh,points:&[(usize,glam::DVec3)],view:u8)->Vec<(usize,Vec2)> {
+    let Some(camera)=PreviewCamera::new(omsi_geometry::mesh_from_o3d(mesh).positions.into_iter(),preview_yaw(Kind::Object,view),false)else{return Vec::new();};
+    points.iter().map(|(i,p)|(*i,camera.screen(p.as_vec3()).truncate()/Vec2::new(960.0,640.0))).collect()
+}
+
 fn rasterize_camera(parts: &[&Part], yaw: f32, top_down: bool, stop: &AtomicBool) -> Option<Image> {
     const W: usize = 960; const H: usize = 640;
-    let rotation = glam::Quat::from_rotation_z(yaw);
-    let right = rotation * if top_down { Vec3::X } else { Vec3::new(0.8, -0.6, 0.0) };
-    let up = rotation * if top_down { Vec3::Y } else { Vec3::new(0.3, 0.4, 0.8660254) };
-    let toward = right.cross(up);
-    let project = |p: Vec3| Vec3::new(p.dot(right), -p.dot(up), p.dot(toward));
-    let mut min = Vec3::splat(f32::INFINITY); let mut max = Vec3::splat(f32::NEG_INFINITY);
-    for p in parts.iter().flat_map(|p| &p.mesh.positions).filter(|p| p.is_finite()) {
-        let p = project(*p); min = min.min(p); max = max.max(p);
-    }
-    if !min.is_finite() || !max.is_finite() { return None; }
-    let span = max - min; let center = (min + max) * 0.5;
-    let scale = ((W - 96) as f32 / span.x.max(0.01)).min((H - 96) as f32 / span.y.max(0.01));
-    let screen = |p: Vec3| { let p = (project(p) - center) * scale; Vec3::new(p.x + W as f32 * 0.5, p.y + H as f32 * 0.5, p.z) };
+    let camera=PreviewCamera::new(parts.iter().flat_map(|p|p.mesh.positions.iter().copied()),yaw,top_down)?;
+    let screen=|p:Vec3|camera.screen(p);
     let mut rgba = vec![0u8; W * H * 4];
     for y in 0..H { for x in 0..W { let c = if (x / 64 + y / 64) % 2 == 0 { [38, 48, 61, 255] } else { [42, 53, 67, 255] }; rgba[(y * W + x) * 4..(y * W + x) * 4 + 4].copy_from_slice(&c); } }
     let mut depth = vec![f32::NEG_INFINITY; W * H]; let mut drawn = false;

@@ -681,19 +681,19 @@ fn spline_batches_keep_materials_cells_shadows_and_long_segments_separate() {
         textures: vec![SplineTexture { file: file.into(), ..Default::default() }],
         ..Default::default()
     };
-    let ty = Arc::new(SplineType { def: def("curb.dds"), dir: PathBuf::new(), surf: Vec::new() });
-    let other = Arc::new(SplineType { def: def("other.dds"), dir: PathBuf::new(), surf: Vec::new() });
-    let other_dir = Arc::new(SplineType { def: def("curb.dds"), dir: PathBuf::from("another_pack"), surf: Vec::new() });
+    let ty = Arc::new(SplineType { def: def("curb.dds"), dir: PathBuf::new(), surf: Vec::new(), surface: Vec::new() });
+    let other = Arc::new(SplineType { def: def("other.dds"), dir: PathBuf::new(), surf: Vec::new(), surface: Vec::new() });
+    let other_dir = Arc::new(SplineType { def: def("curb.dds"), dir: PathBuf::from("another_pack"), surf: Vec::new(), surface: Vec::new() });
     let mut tested = def("curb.dds");
     tested.textures[0].alpha = 1;
-    let tested = Arc::new(SplineType { def: tested, dir: PathBuf::new(), surf: Vec::new() });
+    let tested = Arc::new(SplineType { def: tested, dir: PathBuf::new(), surf: Vec::new(), surface: Vec::new() });
     let mut blended = def("curb.dds");
     blended.textures[0].alpha = 2;
-    let blended = Arc::new(SplineType { def: blended, dir: PathBuf::new(), surf: Vec::new() });
+    let blended = Arc::new(SplineType { def: blended, dir: PathBuf::new(), surf: Vec::new(), surface: Vec::new() });
     let mut compatible = def("curb.dds");
     compatible.path = PathBuf::from("another_profile.sli");
     compatible.textures.push(SplineTexture { file: "unused-grass.dds".into(), ..Default::default() });
-    let compatible = Arc::new(SplineType { def: compatible, dir: PathBuf::new(), surf: Vec::new() });
+    let compatible = Arc::new(SplineType { def: compatible, dir: PathBuf::new(), surf: Vec::new(), surface: Vec::new() });
     let mesh = |x: f32, length: f32| Arc::new(MeshData {
         positions: vec![glam::Vec3::new(x, 0.0, 0.0), glam::Vec3::new(x + length, 0.0, 0.0), glam::Vec3::new(x, 1.0, 0.0)],
         normals: vec![glam::Vec3::Z; 3],
@@ -795,6 +795,10 @@ fn a_forest_named_map_is_no_plant() {
     assert!(vegetation_give_of(&sco("[groups]\n2\nThüringer Wald\nGebäude\n[mesh]\nhaus.o3d\n")).is_none());
     assert!(vegetation_give_of(&sco("[groups]\n2\nThüringer Wald\nBäume\n[mesh]\nbaum.o3d\n")).is_some());
     assert!(vegetation_give_of(&sco("[groups]\n1\nHedges\n[mesh]\nh.o3d\n")).is_some());
+    // ("street" holds "tree": OMSI's street objects are no plants)
+    assert!(vegetation_give_of(&sco("[groups]\n2\nGerman Street Side\nLights\n[mesh]\nlamp.o3d\n")).is_none());
+    assert!(vegetation_give_of(&sco("[groups]\n2\nTrees LQ\nShrubbery\n[mesh]\ns.o3d\n")).is_some());
+    assert!(vegetation_give_of(&sco("[groups]\n1\nStreet Side\n[groups]\n1\nPlants\n[mesh]\nt.o3d\n")).is_some());
 }
 
 /// A bus bay's lines made as a plain object (NCCR's `Parkbox(bus).sco`: a flat mesh 5 mm
@@ -1215,6 +1219,7 @@ fn a_crossing_far_over_the_ground_is_draped_by_its_height_field() {
         drive: Vec::new(),
         lanes: Mutex::new(Vec::new()),
         street_points: Vec::new(),
+        sound_lines: Vec::new(),
         objects: vec![StagedObject {
             ot: ot.clone(),
             id: 1,
@@ -1296,3 +1301,275 @@ fn standard_traffic_lamps_are_state_driven() {
     assert_eq!(standard_traffic_lamp("custom_channel", true, true, true, false), None);
 }
 
+#[test]
+fn scenery_mouseevent_hit_and_trigger() {
+    let dir = std::env::temp_dir().join(format!("openomsi-scenery-mouseevent-{}", std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos()));
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(dir.join("global.cfg"), "[map]\n0\n0\n0\n").unwrap();
+    let world = World::open(&dir, &dir.join("global.cfg"), 20261001).unwrap();
+
+    let mut mesh_data = omsi_geometry::MeshData::default();
+    mesh_data.positions = vec![
+        glam::Vec3::new(-1.0, 5.0, -1.0),
+        glam::Vec3::new(1.0, 5.0, -1.0),
+        glam::Vec3::new(1.0, 5.0, 1.0),
+        glam::Vec3::new(-1.0, 5.0, 1.0),
+    ];
+    mesh_data.indices = vec![0, 1, 2, 0, 2, 3];
+
+    let mut model = omsi_model::Model::default();
+    let mut mdef = omsi_model::MeshDef::default();
+    mdef.mouse_event = Some("toggle_switch".to_string());
+    model.meshes.push(mdef);
+
+    let mut prog = omsi_script::Program::default();
+    let var_id = prog.declare_var("Switch");
+    prog.blocks.push(omsi_script::compile::Block {
+        name: "toggle_switch".into(),
+        ops: vec![
+            omsi_script::Op::Load(var_id),
+            omsi_script::Op::Not,
+            omsi_script::Op::Store(var_id),
+        ],
+        ..Default::default()
+    });
+    prog.triggers.insert("toggle_switch".into(), 0);
+    prog.blocks.push(omsi_script::compile::Block {
+        name: "toggle_switch_drag".into(),
+        ops: vec![
+            omsi_script::Op::LoadSys(omsi_script::SysVar::MouseX),
+            omsi_script::Op::Store(var_id),
+        ],
+        ..Default::default()
+    });
+    prog.triggers.insert("toggle_switch_drag".into(), 1);
+    prog.blocks.push(omsi_script::compile::Block {
+        name: "toggle_switch_off".into(),
+        ops: vec![
+            omsi_script::Op::Push(0.0),
+            omsi_script::Op::Store(var_id),
+        ],
+        ..Default::default()
+    });
+    prog.triggers.insert("toggle_switch_off".into(), 2);
+
+    let inst = omsi_sim::scenery::SceneryInstance::new(
+        Arc::new(prog),
+        &[],
+        omsi_sim::SimClock::default(),
+        &[],
+    );
+
+    let ot = Arc::new(ObjectType {
+        sco: omsi_scenery::sco::SceneryObject::default(),
+        sound_path: Default::default(),
+        model,
+        model_dir: dir.clone(),
+        meshes: vec![(mesh_data, Vec::new(), Vec::new())],
+        mesh_visible: vec![None],
+        mesh_def_index: vec![0],
+        mesh_pivots: vec![glam::Mat4::IDENTITY],
+        mesh_shadow: vec![false],
+        mesh_casts: vec![false],
+        has_mouse_events: true,
+        editor_pick_bounds: Default::default(),
+        embedded_lights: Default::default(),
+        program: None,
+        lower_lods: Vec::new(),
+        lod0_min: 0.0,
+        paint_scheme_count: 0,
+        dynamic_textures: Vec::new(),
+        holes: Vec::new(),
+        deform: None,
+        collision: None,
+        paint: false,
+        camera: Default::default(),
+        collision_shape: Default::default(),
+    });
+
+    world.scripted.lock().push(ScriptedObject {
+        ty: ot,
+        pos: DVec3::ZERO,
+        xf: glam::Mat4::IDENTITY,
+        instances: vec![0],
+        inst,
+        controller: None,
+        light_index: 0,
+        light_parent: None,
+        map_id: 42,
+        variants: Vec::new(),
+        sounds: None,
+        tile: (0, 0),
+        var_parent: None,
+        texts: Vec::new(),
+        arrivals: false,
+        htmls: Vec::new(),
+        alpha_slots: Vec::new(),
+        alpha_last: Vec::new(),
+    });
+
+    // 1. Raycast towards (0, 1, 0) should hit the quad at (0, 5, 0)
+    let hit = world.scenery_object_hit(DVec3::ZERO, glam::Vec3::Y, 50.0, 0.0);
+    assert!(hit.is_some(), "scenery object hit should find the switch");
+    let h = hit.unwrap();
+    assert_eq!(h.map_id, 42);
+    assert_eq!(h.event, "toggle_switch");
+    assert!((h.t - 5.0).abs() < 1e-3);
+
+    // 2. Raycast in opposite direction should miss
+    let miss = world.scenery_object_hit(DVec3::ZERO, -glam::Vec3::Y, 50.0, 0.0);
+    assert!(miss.is_none());
+
+    // 3. Test click triggers toggle_switch: Switch was 0, becomes 1
+    assert_eq!(world.scripted.lock()[0].inst.var("Switch"), Some(0.0));
+    assert!(world.scenery_object_click(42, "toggle_switch"));
+    assert_eq!(world.scripted.lock()[0].inst.var("Switch"), Some(1.0));
+
+    // 4. Test drag triggers toggle_switch_drag with mouse_x
+    assert!(world.scenery_object_drag(42, "toggle_switch", 0.75, 0.0));
+    assert_eq!(world.scripted.lock()[0].inst.var("Switch"), Some(0.75));
+
+    // 5. Test release triggers toggle_switch_off
+    assert!(world.scenery_object_release(42, "toggle_switch"));
+    assert_eq!(world.scripted.lock()[0].inst.var("Switch"), Some(0.0));
+
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+
+#[test]
+fn generated_ai_paths_filter_vehicles_and_join_reversed_reference_segments() {
+    let settings=crate::traffic_editor::Settings {forward_bus:true,..Default::default()};
+    let a=omsi_map::MapSpline {id:1,length:20.0,..Default::default()};
+    // Second authored spline faces backwards, but the route continues north.
+    let b=omsi_map::MapSpline {id:2,length:20.0,pos:[0.0,40.0,0.0],heading:180.0,..Default::default()};
+    let plan=crate::traffic_editor::build(&[(((0,0),1),a,false),(((0,0),2),b,true)],&settings).unwrap();
+    let mut network=omsi_sim::traffic::Network::default();
+    for ((tile,piece),(_,body)) in plan.pieces.iter().zip(&plan.definitions) {
+        let def=Spline::parse(&omsi_cfg::CfgFile::from_str(&piece.file,body));
+        let curve=SplineCurve::from_map(piece,glam::DVec2::ZERO);
+        let lanes=lanes::spline_lanes(&def,piece,&curve,*tile);
+        assert_eq!(lanes.len(),2);
+        for vehicle in [0,1,3] {assert!(!lanes[0].allows(vehicle));assert!(lanes[1].allows(vehicle));}
+        for vehicle in [2,-1] {assert!(lanes[0].allows(vehicle));assert!(lanes[1].allows(vehicle));}
+        network.lanes.extend(lanes);
+    }
+    assert!(network.lanes[0].end().distance(network.lanes[2].start())<1e-5);
+    assert!(network.lanes[3].end().distance(network.lanes[1].start())<1e-5);
+    network.link(0.5);
+    assert!(network.lanes[0].next.contains(&2));assert!(network.lanes[3].next.contains(&1));
+}
+
+#[test]
+fn generated_ai_profile_correction_matches_surface_and_saved_lanes() {
+    let correction=omsi_map::ProfileTransition {station:11.398266499412,span:5.699133249706,x:[-4.0,4.0],
+        offsets:[[0.500418508815,-0.054123807654,-0.100000001490],[-0.500418508815,0.054123807654,-0.100000001490]]};
+    let source=omsi_map::MapSpline {id:9859278,length:correction.station,radius:23.566275784890,
+        heading:38.173887354201,profile_transitions:[None,Some(correction)],..Default::default()};
+    let settings=crate::traffic_editor::Settings::default();
+    let plan=crate::traffic_editor::build(&[(((0,0),source.id),source.clone(),false)],&settings).unwrap();
+    let piece=&plan.pieces[0].1;let def=Spline::parse(&omsi_cfg::CfgFile::from_str(&piece.file,&plan.definitions[0].1));
+    let c=SplineCurve::from_map(piece,glam::DVec2::ZERO);
+    let lanes=lanes::spline_lanes(&def,piece,&c,(0,0));
+    assert_eq!(lanes.len(),2);assert_eq!(piece.profile_transitions,source.profile_transitions);
+    let reference=SplineCurve::from_map(&source,glam::DVec2::ZERO);
+    for (i,lane) in lanes.iter().enumerate() {
+        let x=if i==0 {1.5}else{-1.5};
+        let endpoint=reference.offset_point(source.length,x,0.1);
+        assert!(endpoint.distance(if i==0{lane.end()}else{lane.start()})<1e-6);
+        assert!(plan.endpoints.iter().any(|(p,_,_)|p.distance(endpoint)<1e-6));
+    }
+}
+
+#[test]
+fn generated_ai_cant_skew_matches_surface_preview_and_runtime() {
+    let source_def=Spline::parse(&omsi_cfg::CfgFile::from_str("test-cant-skew-v14.sli","[halfcantwidth]\n1.25\n"));
+    omsi_geometry::register_half_cant_width("test-cant-skew-v14.sli",&source_def);
+    let source=omsi_map::MapSpline {id:722334,file:"test-cant-skew-v14.sli".into(),length:24.0,radius:80.0,
+        cant_start:-6.0,cant_end:12.0,skew_start:0.4,skew_end:-0.3,grad_start:2.0,grad_end:4.0,
+        profile_transitions:[None,Some(omsi_map::ProfileTransition {station:24.0,span:4.0,x:[-4.0,4.0],
+            offsets:[[0.2,0.05,-0.1],[-0.2,-0.05,-0.1]]})],..Default::default()};
+    for backwards in [false,true] {
+        let settings=crate::traffic_editor::Settings::default();
+        let plan=crate::traffic_editor::build(&[(((0,0),source.id),source.clone(),backwards)],&settings).unwrap();
+        let piece=&plan.pieces[0].1;
+        let def=Spline::parse(&omsi_cfg::CfgFile::from_str(&piece.file,&plan.definitions[0].1));
+        assert_eq!(def.half_cant_width,source_def.half_cant_width);
+        let c=SplineCurve::from_map(piece,glam::DVec2::ZERO);
+        let reference=SplineCurve::from_map(&source,glam::DVec2::ZERO);
+        for (lane,(x,dir,_)) in lanes::spline_lanes(&def,piece,&c,(0,0)).iter().zip(crate::traffic_editor::lanes(&settings,backwards)) {
+            for (j,point) in lane.points.iter().enumerate() {
+                let fraction=j as f64/(lane.points.len()-1) as f64;
+                let station=source.length*if dir==1 {1.0-fraction}else{fraction};
+                let expected=omsi_geometry::spline_profile_point(&source_def,&reference,false,station,x,settings.height);
+                assert!(point.distance(expected)<1e-6,"runtime {point:?}, mesh {expected:?}");
+            }
+            for station in [0.0,12.0,24.0] {
+                let expected=omsi_geometry::spline_profile_point(&source_def,&reference,false,station,x,settings.height);
+                assert!(plan.markers.iter().any(|(p,_)|p.distance(expected)<1e-6));
+            }
+        }
+    }
+}
+
+#[test]
+fn generated_ai_canted_skewed_chain_links_both_directions() {
+    let a=omsi_map::MapSpline {id:1,length:20.0,cant_start:8.0,cant_end:8.0,skew_start:0.3,skew_end:0.3,..Default::default()};
+    let b=omsi_map::MapSpline {id:2,pos:[0.0,20.0,0.0],..a.clone()};
+    let plan=crate::traffic_editor::build(&[(((0,0),1),a,false),(((0,0),2),b,false)],&Default::default()).unwrap();
+    let mut network=omsi_sim::traffic::Network::default();
+    for ((tile,piece),(_,body)) in plan.pieces.iter().zip(&plan.definitions) {
+        let def=Spline::parse(&omsi_cfg::CfgFile::from_str(&piece.file,body));
+        network.lanes.extend(lanes::spline_lanes(&def,piece,&SplineCurve::from_map(piece,glam::DVec2::ZERO),*tile));
+    }
+    network.link(0.5);
+    assert!(network.lanes[0].next.contains(&2));assert!(network.lanes[3].next.contains(&1));
+}
+
+#[test]
+fn generated_ai_freeform_mouse_geometry_and_explicit_connection_survive_definition() {
+    use crate::traffic_editor::{Window,Target,build};
+    let source=omsi_map::MapSpline {id:1,length:20.0,..Default::default()};
+    let roads=vec![(((0,0),1),source.clone(),false)];
+    let mut w=Window::new(((0,0),1));w.enable_free();
+    w.preview=build(&roads,&w.settings).unwrap();
+    w.move_node(4,DVec3::new(6.0,10.0,0.1));
+    w.preview=build(&roads,&w.settings).unwrap();
+    let end=Target {point:DVec3::new(10.0,25.0,0.1),direction:DVec3::X,start:true,
+        key:omsi_sim::traffic::LaneKey {tile:(0,0),id:77,path:0},reversed:false};
+    assert!(w.snap_node(8,end));
+    w.settings.connections.push((0,false,[0,0,88,0,0]));
+    let plan=build(&roads,&w.settings).unwrap();
+    let piece=&plan.pieces[0].1;let def=Spline::parse(&omsi_cfg::CfgFile::from_str(&piece.file,&plan.definitions[0].1));
+    assert_eq!(def.editor_path_nodes.len(),10);assert_eq!(def.editor_path_connections.len(),2);
+    let generated=lanes::spline_lanes(&def,piece,&SplineCurve::from_map(piece,glam::DVec2::ZERO),(0,0));
+    assert!(generated[0].points.iter().any(|p|p.distance(DVec3::new(6.0,10.0,0.1))<1e-6));
+    assert!(generated[0].end().distance(end.point)<1e-6);
+    for p in &generated[1].points {assert!((p.x+1.5).abs()<1e-6);assert!((p.z-0.1).abs()<1e-6);}
+    let mut wanted=omsi_sim::traffic::LaneBuilder::arc(end.point,90.0,20.0,0.0,0.0,LaneKind::Street,3.0);wanted.key=Some(end.key);
+    let mut unwanted=wanted.clone();unwanted.key.as_mut().unwrap().id=78;
+    let mut net=omsi_sim::traffic::Network::default();net.lanes=vec![generated[0].clone(),wanted.clone(),unwanted.clone()];
+    net.link(1.5);assert_eq!(net.lanes[0].next,vec![1]);
+    let mut streamed=omsi_sim::traffic::Network::default();streamed.lanes=vec![generated[0].clone()];streamed.link(1.5);
+    streamed.extend(vec![wanted,unwanted],1.5);assert_eq!(streamed.lanes[0].next,vec![1]);
+    let mut incoming=omsi_sim::traffic::LaneBuilder::arc(generated[0].start()-DVec3::Y*10.0,0.0,10.0,0.0,0.0,LaneKind::Street,3.0);
+    incoming.key=Some(omsi_sim::traffic::LaneKey {tile:(0,0),id:88,path:0});
+    let mut wrong_incoming=incoming.clone();wrong_incoming.key.as_mut().unwrap().id=89;
+    let range=streamed.extend(vec![incoming,wrong_incoming],1.5);
+    assert!(streamed.lanes[range.start].next.contains(&0));assert!(!streamed.lanes[range.start+1].next.contains(&0));
+    // Moving one endpoint releases only that end's explicit target restriction.
+    w.preview=plan;w.move_node(8,DVec3::new(11.0,25.0,0.1));
+    assert_eq!(w.settings.connections.len(),1);assert!(!w.settings.connections[0].1);
+}
+
+#[test]
+fn generated_ai_parallel_lanes_have_independent_directions_and_shapes() {
+    let source=omsi_map::MapSpline {length:20.0,..Default::default()};
+    let settings=crate::traffic_editor::Settings {parallel:true,nodes:vec![(0,[0.0,0.0,0.0,0.0]),(0,[0.5,2.0,0.0,0.0]),(0,[1.0,0.0,0.0,0.0])],..Default::default()};
+    let plan=crate::traffic_editor::build(&[(((0,0),1),source.clone(),false)],&settings).unwrap();
+    let p=&plan.pieces[0].1;let def=Spline::parse(&omsi_cfg::CfgFile::from_str(&p.file,&plan.definitions[0].1));
+    assert_eq!(def.paths[0].direction,0);assert_eq!(def.paths[1].direction,0);
+    let ls=lanes::spline_lanes(&def,p,&SplineCurve::from_map(p,glam::DVec2::ZERO),(0,0));
+    assert!(!ls[0].reversed&&!ls[1].reversed);assert!(ls[0].points.iter().any(|p|p.x>3.0));
+    assert!(ls[1].points.iter().all(|p|(p.x+1.5).abs()<1e-6));
+}

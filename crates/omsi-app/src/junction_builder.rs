@@ -45,13 +45,13 @@ pub struct Input {pub field:Field,pub text:String,pub replace:bool}
 pub struct Window {
     pub texture_digits:[usize;3],pub texture_steps:[i32;3],pub texture_focus:Option<Field>,
     pub existing_preview:Vec<[DVec3;2]>,pub arm_links:[Option<i64>;4],pub source_label:String,pub road_preview:Vec<[DVec3;2]>,pub pending:Option<(((i32,i32),i64),usize)>,pub target:Option<i64>,pub placed_project:Option<Project>,pub project:Project,pub arm:usize,pub input:Option<Input>,pub message:String,pub rects:Vec<([f32;4],Command)>,
-    pub preview:Option<omsi_texture::Image>,pub preview_id:u64,pub show_paths:bool,pub view:u8,
+    pub arm_labels:Vec<(usize,Vec2)>,pub preview:Option<omsi_texture::Image>,pub preview_id:u64,pub show_paths:bool,pub view:u8,
     pub error:Option<String>,pub undo:Vec<Project>,pub redo:Vec<Project>,dirty:bool,
 }
 
 impl Window {
     pub fn new(left_hand:bool)->Self {let project=Project {left_hand,..Default::default()};Self {texture_digits:[4;3],texture_steps:[-4;3],texture_focus:None,existing_preview:Vec::new(),arm_links:[None;4],source_label:String::new(),road_preview:Vec::new(),pending:None,target:None,placed_project:None,project,arm:0,input:None,
-        message:"Choose arm, adjust dimensions, then Save & place. Blue = AI paths.".into(),rects:Vec::new(),preview:None,
+        message:"Choose arm, adjust dimensions, then Save & place. Blue = AI paths.".into(),rects:Vec::new(),arm_labels:Vec::new(),preview:None,
         preview_id:0,show_paths:true,view:0,error:None,undo:Vec::new(),redo:Vec::new(),dirty:true}}
     pub fn new_roundabout(left_hand:bool)->Self {
         let mut w=Self::new(left_hand);
@@ -150,7 +150,7 @@ impl Window {
                 }}
             },
             Command::Edit(f)=>{if self.commit() {self.edit(f);}},
-            Command::Arm(i) if i<4 && self.project.arms[i].enabled=>{if self.commit() {self.arm=i;}},
+            Command::Arm(i) if i<4 && self.project.arms[i].enabled=>{if self.commit() {self.arm=i;self.dirty=true;}},
             Command::Adjust(f,d)=>{if self.commit() {self.set(f,self.value(f)+d);}},
             Command::Shape(cross)=>{if !self.commit() || self.project.arms[3].enabled==cross {return;}self.remember();self.project.arms[3].enabled=cross;
                 if matches!(self.project.name.as_str(),"Custom T-junction"|"Custom four-way junction") {
@@ -174,13 +174,16 @@ impl Window {
         self.message="Road texture and crop applied. Check U from/to: exclude painted lines if needed. Applies to all arms.".into();
     }
     pub fn refresh(&mut self,root:&Path) {
-        if !self.dirty {return;}self.dirty=false;self.preview_id=self.preview_id.wrapping_add(1);self.preview=None;
+        if !self.dirty {return;}self.dirty=false;self.preview_id=self.preview_id.wrapping_add(1);self.preview=None;self.arm_labels.clear();
         match build(&self.project) {Ok(mut built)=>{
             if !self.existing_preview.is_empty(){let slot=built.mesh.materials.len()as u16;built.mesh.materials.push(Material{diffuse:[0.15,0.85,0.32,1.0],..Default::default()});
                 for pair in self.existing_preview.chunks_exact(2){quad(&mut built.mesh,pair[0][0]+DVec3::Z*0.03,pair[0][1]+DVec3::Z*0.03,pair[1][1]+DVec3::Z*0.03,pair[1][0]+DVec3::Z*0.03,slot,4.0);}}
             if !self.road_preview.is_empty(){let slot=built.mesh.materials.len()as u16;built.mesh.materials.push(Material{diffuse:[0.1,0.65,1.0,1.0],..Default::default()});
                 for pair in self.road_preview.chunks_exact(2){quad(&mut built.mesh,pair[0][0]+DVec3::Z*0.03,pair[0][1]+DVec3::Z*0.03,pair[1][1]+DVec3::Z*0.03,pair[1][0]+DVec3::Z*0.03,slot,4.0);}}
             if self.show_paths {path_overlay(&mut built.mesh,&built.paths);}
+            // Preview-only geometry; never included in exported road meshes.
+            let labels=arm_preview(&self.project,self.arm,&mut built.mesh);
+            self.arm_labels=crate::asset_catalog::junction_label_positions(&built.mesh,&labels,self.view);
             match crate::asset_catalog::junction_preview(root,&built.mesh,self.view,self.project.road_surface.as_ref()) {
                 Ok(img)=>{self.preview=Some(img);self.error=None;},Err(e)=>self.error=Some(e)}
         },Err(e)=>{self.error=Some(e.clone());self.message=e;}}
@@ -413,6 +416,30 @@ pub fn build(project:&Project)->Result<Built,String> {
     Ok(Built {mesh,paths,outline})
 }
 
+/// Arm identities follow project indices, independent of angle or draw order.
+fn arm_preview(project:&Project,selected:usize,mesh:&mut Mesh)->Vec<(usize,DVec3)> {
+    let core=project.arms.iter().filter(|a|a.enabled).map(|a|a.width/2.0+a.sidewalk).fold(0.0,f64::max)+project.corner+1.0;
+    let slot=mesh.materials.len() as u16;
+    mesh.materials.push(Material {diffuse:[1.0,0.65,0.08,1.0],..Default::default()});
+    let mut labels=Vec::new();
+    for (i,a) in project.arms.iter().enumerate().filter(|(_,a)|a.enabled) {
+        let start=project.roundabout.as_ref().map_or(core,|r|r.island_radius+r.road_width+2.0);
+        let at=|distance:f64,offset:f64|if project.roundabout.is_some() {
+            (direction(a.angle)*distance+right(direction(a.angle))*offset).extend(0.06)
+        }else{point(a,core,distance-core,offset,0.06)};
+        labels.push((i,at(a.length,0.0)));
+        if i==selected {
+            for side in [-1.0,1.0] {for j in 0..24 {
+                let d0=start+(a.length-start)*j as f64/24.0;
+                let d1=start+(a.length-start)*(j+1) as f64/24.0;
+                let edge=side*a.width*0.5;
+                quad(mesh,at(d0,edge-0.10),at(d1,edge-0.10),at(d1,edge+0.10),at(d0,edge+0.10),slot,1.0);
+            }}
+        }
+    }
+    labels
+}
+
 fn path_overlay(mesh:&mut Mesh,paths:&[(Vec<DVec3>,f64,i32)]) {
     let slot=mesh.materials.len() as u16;mesh.materials.push(Material {diffuse:[0.08,0.6,1.0,1.0],..Default::default()});
     for (points,_,_) in paths {for pair in points.windows(2) {let d=(pair[1]-pair[0]).truncate().normalize_or_zero();let r=right(d)*0.055;
@@ -484,6 +511,25 @@ pub fn export(project:&Project,root:&Path,content:&Path,original:&Path)->Result<
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn arm_labels_keep_identity_in_all_views_and_selection_preserves_pending() {
+        for round in [false,true] {for four in [false,true] {
+            let mut w=if round {Window::new_roundabout(false)}else{Window::new(false)};
+            w.project.arms[3].enabled=four;
+            if !round {w.project.arms[1].bend=15.0;}
+            for view in 0..4 {
+                let mut built=build(&w.project).unwrap();
+                let points=arm_preview(&w.project,1,&mut built.mesh);
+                assert_eq!(points.len(),if four {4}else{3});
+                for &(i,p) in &points {assert!(p.truncate().distance(port(&w.project,i).unwrap().0.truncate())<1e-8);}
+                let labels=crate::asset_catalog::junction_label_positions(&built.mesh,&points,view);
+                for (i,p) in labels {assert!(i<if four{4}else{3});assert!((0.0..=1.0).contains(&p.x)&&(0.0..=1.0).contains(&p.y));}
+            }
+            w.dirty=false;w.pending=Some((((0,0),99),0));
+            w.command(Command::Arm(1));assert_eq!(w.arm,1);assert!(w.dirty);assert!(w.pending.is_some());
+        }}
+    }
+
     #[test]fn rotating_preview_keeps_pending_connection(){
         let mut w=Window::new(false);let pending=Some((((0,0),123),0));
         w.connection_preview(vec![[DVec3::ZERO,DVec3::X]],vec![],[None;4]);w.pending=pending;

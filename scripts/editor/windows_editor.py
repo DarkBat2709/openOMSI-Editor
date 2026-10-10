@@ -8,8 +8,8 @@ import shutil
 import subprocess
 import sys
 
-BASE = 'f4da25869ffc56b308b0d8d0d9a4538ce356c256'
-VERSION = '0.7.4-pre'
+BASE = '0506141a494ee94a965a1e00843db80a6e265eae'
+VERSION = '0.7.21-pre'
 BUNDLE = Path(__file__).resolve().parent
 
 
@@ -70,7 +70,7 @@ try {
 } finally { Pop-Location }
 ''', encoding='utf-8')
     (editor / 'start-editor.cmd').write_text('@echo off\r\npowershell.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0start-editor.ps1" %*\r\n', encoding='ascii')
-    marker.write_text(f'openOMSI Spline-Editor {VERSION} / base 0.2.20\nContent: {game}\nStart: start-editor.cmd\n', encoding='utf-8')
+    marker.write_text(f'openOMSI Spline-Editor {VERSION} / base 0.2.27\nContent: {game}\nStart: start-editor.cmd\n', encoding='utf-8')
     print('Installed:', editor, '\nStart:', editor / 'start-editor.cmd')
 
 
@@ -81,19 +81,14 @@ def build(source, game=None, editor=None):
     for program in ('git', 'cargo', 'rustc'):
         if shutil.which(program) is None:
             raise ValueError(f'{program} is missing from PATH.')
-    if not source.exists():
-        run('git', 'clone', '--depth', '1', '--branch', 'v0.2.20',
-            'https://github.com/openOMSI-Project/openOMSI.git', source)
-    head = subprocess.check_output(['git', '-C', str(source), 'rev-parse', 'HEAD'], text=True).strip()
-    if head != BASE:
-        raise ValueError('Wrong base; use a new source directory for this preview.')
-    patch = BUNDLE / 'openomsi-0.2.20-spline-editor.patch'
-    if not git_ok(source, 'apply', '--reverse', '--check', patch):
-        if not git_ok(source, 'diff', '--quiet') or not git_ok(source, 'diff', '--cached', '--quiet'):
-            raise ValueError('Existing edits detected; use a fresh source directory. Old sources are kept.')
-        run('git', '-C', source, 'apply', '--check', patch)
-        run('git', '-C', source, 'apply', patch)
-    env = dict(os.environ, OPENOMSI_VERSION='0.2.20')
+    if not (source / 'Cargo.toml').is_file():
+        raise ValueError('Pass --source pointing to the complete 0.7.12 editor checkout.')
+    if not git_ok(source, 'merge-base', '--is-ancestor', BASE, 'HEAD'):
+        raise ValueError('Source does not contain the required openOMSI 0.2.27 base.')
+    ui = source / 'crates/omsi-app/src/ui.rs'
+    if not ui.is_file() or f'Object editor {VERSION}' not in ui.read_text(encoding='utf-8'):
+        raise ValueError('Source does not contain the expected editor version.')
+    env = dict(os.environ, OPENOMSI_VERSION='0.2.27-editor-' + VERSION)
     run('cargo', 'test', '--workspace', '--locked', '--features', 'omsi-app/standalone-editor', cwd=source, env=env)
     run('cargo', 'build', '--release', '--locked', '--target', 'x86_64-pc-windows-msvc',
         '-p', 'omsi-app', '--features', 'standalone-editor', cwd=source, env=env)
@@ -109,7 +104,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     sub = parser.add_subparsers(dest='command', required=True)
     b = sub.add_parser('build')
-    b.add_argument('--source', type=Path, default=BUNDLE / 'openomsi-source-0.2.20-editor-0.7.4-pre')
+    b.add_argument('--source', type=Path, default=BUNDLE.parents[1])
     b.add_argument('--game', type=Path)
     b.add_argument('--editor', type=Path)
     i = sub.add_parser('install')

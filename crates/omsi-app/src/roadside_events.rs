@@ -8,7 +8,7 @@ impl App {
         self.editor_terrain_finish();
         let (Some(ed), Some(world)) = (self.menus.editor.as_mut(), self.world.as_ref()) else { return; };
         ed.splines.finish_drag(); ed.end_object_drag(); ed.splines.cancel_connection(); ed.splines.cancel_generation();
-        ed.sidewalk_window=None;ed.catalog = None; ed.junction_window = None; ed.texture_target = None; ed.tile_window = None; ed.text_window = None;
+        ed.sidewalk_window=None;ed.traffic_window=None;ed.catalog = None; ed.junction_window = None; ed.texture_target = None; ed.tile_window = None; ed.text_window = None;
         ed.terrain.active = false; ed.placing_asset = None; ed.object_stamp = None; ed.spline_mode = true;
         world.collect_editor_splines();
         let mut window = Window::new(ed.splines.selected); window.select(world, ed.splines.selected);

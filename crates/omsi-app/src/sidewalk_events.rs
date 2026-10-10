@@ -16,7 +16,7 @@ impl App {
     }
     pub(crate) fn editor_sidewalk_command(&mut self,command:Command){
         let(Some(world),Some(ed))=(self.world.clone(),self.menus.editor.as_mut())else{return;};let Some(w)=ed.sidewalk_window.as_mut()else{return;};
-        if matches!(command,Command::Close){ed.sidewalk_window=None;self.input.keys.clear();return;}
+        if matches!(command,Command::Close){ed.sidewalk_window=None;ed.traffic_window=None;self.input.keys.clear();return;}
         if !w.commit(){return;}
         match command {
             Command::Catalog=>{ed.catalog=Some(crate::asset_catalog::Catalog::with_map(world.root.clone(),crate::asset_catalog::Kind::Spline,Some(world.map_dir.clone())));self.input.keys.clear();return;},
@@ -29,7 +29,7 @@ impl App {
             Command::Apply=>{
                 w.refresh(&world);if let Some(e)=&w.error{w.message=e.clone();return;}
                 let existing=w.existing;let detach=w.settings.detach;let pieces=w.preview.pieces.clone();
-                match ed.splines.apply_sidewalk(&world,pieces,existing,detach){Ok(count)=>{ed.sidewalk_window=None;self.input.keys.clear();self.editor_reload_splines();self.service_msg=Some((format!("Sidewalk applied: {count} sections · Ctrl+Z to undo · Ctrl+S to save"),10.0));},Err(e)=>{ed.sidewalk_window.as_mut().unwrap().message=e;}}return;
+                match ed.splines.apply_sidewalk(&world,pieces,existing,detach){Ok(count)=>{ed.sidewalk_window=None;ed.traffic_window=None;self.input.keys.clear();self.editor_reload_splines();self.service_msg=Some((format!("Sidewalk applied: {count} sections · Ctrl+Z to undo · Ctrl+S to save"),10.0));},Err(e)=>{ed.sidewalk_window.as_mut().unwrap().message=e;}}return;
             },
             Command::Undo=>{w.message=ed.splines.undo(&world);w.can_undo=ed.splines.can_undo();w.refresh(&world);self.editor_reload_splines();return;},
             Command::Save=>{self.editor_action(crate::editor::Action::Save);return;},Command::Preview=>{},Command::Close=>{}

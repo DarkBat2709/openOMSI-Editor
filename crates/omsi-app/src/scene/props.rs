@@ -337,7 +337,12 @@ impl World {
         let path = self.tile_source(key.0, key.1).ok_or("Road tile missing")?;
         let base = Tile::load(&path).map_err(|e| e.to_string())?;
         let active = crate::tiles::read_tile(&path, &self.chrono_dirs.read()).ok_or("Active tile missing")?;
-        let editable = base.splines.iter().filter(|s| active.splines.iter().any(|a| a == *s)).map(|s| s.id).collect();
+        // Preserve full equality (and duplicate IDs), but avoid scanning every
+        // active spline once for each base spline on dense map tiles.
+        let mut active_by_id: std::collections::HashMap<i64, Vec<_>> = std::collections::HashMap::new();
+        for spline in &active.splines { active_by_id.entry(spline.id).or_default().push(spline); }
+        let editable = base.splines.iter().filter(|s| active_by_id.get(&s.id)
+            .is_some_and(|candidates| candidates.iter().any(|a| *a == *s))).map(|s| s.id).collect();
         Ok((base, editable))
     }
 

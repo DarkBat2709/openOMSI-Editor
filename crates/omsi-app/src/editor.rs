@@ -67,6 +67,9 @@ pub struct Editor {
     junction_history:Vec<JunctionUndo>,
     tilt_baselines:HashMap<i64,[f64;2]>,
     follow_history:HashMap<i64,FollowUndo>,
+    pub show_traffic_paths: bool,
+    pub traffic_overlay:crate::traffic_editor::Overlay,
+    pub traffic_window: Option<crate::traffic_editor::Window>,
     pub sidewalk_window: Option<crate::sidewalk::Window>,
     pub roadside_window: Option<crate::roadside_objects::Window>,
     pub texture_target: Option<TextureTarget>,
@@ -155,7 +158,7 @@ pub(crate) fn toggle_session(active: &mut Option<Editor>, paused: &mut Option<Ed
     if let Some(mut editor) = active.take() {
         editor.catalog = None;
         editor.text_window = None;
-        editor.roadside_window = None;editor.sidewalk_window=None;
+        editor.roadside_window = None;editor.sidewalk_window=None;editor.traffic_window=None;
         editor.placing_asset = None;
         editor.object_stamp = None;
         editor.splines.cancel_generation();
@@ -192,6 +195,8 @@ pub enum Action {
     RoundaboutWindow,
     RoadsideWindow,
     SidewalkWindow,
+    TrafficPaths,
+    TrafficOverlay,
     Length(f64),
     Curvature(f64),
     Straight,

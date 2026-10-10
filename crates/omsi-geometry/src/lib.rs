@@ -7,6 +7,8 @@ use omsi_map::{tile_size, MapSpline, Terrain};
 use omsi_scenery::Spline;
 
 mod hole_rims;
+mod ground_sound;
+pub use ground_sound::{GroundSound, LineKind, SoundLine, SoundSpot};
 mod terrain_walls;
 pub use terrain_walls::terrain_hole_walls;
 
@@ -234,6 +236,12 @@ impl SplineCurve {
     /// Point at distance `s` and lateral offset `x` (right positive) and height `z`.
     pub fn offset_point(&self, s: f64, x: f64, z: f64) -> DVec3 {
         self.transition_point(s, x, self.raw_offset_point(s, x, z))
+    }
+
+    /// Surface position including skew, cant and endpoint profile corrections.
+    /// Set the source profile's half cant width with `with_sli` first.
+    pub fn profile_point(&self, station: f64, x: f64, z: f64) -> DVec3 {
+        skewed_point(self, station, x, z).0
     }
 
     fn raw_offset_point(&self, s: f64, x: f64, z: f64) -> DVec3 {
@@ -2027,13 +2035,41 @@ pub struct SurfFaces {
     pub uvs: Vec<Vec2>,
     pub ranges: Vec<(u32, u32, u32)>,
     pub maps: Vec<Option<std::sync::Arc<HeightMap>>>,
+    /// OMSI's `[surface]` id of each material slot's texture (asphalt past the end): what
+    /// the tyres roll on there (see [`DriveGrid::surface_at`]).
+    pub ids: Vec<u8>,
 }
 
 impl SurfFaces {
     /// Only where a texture has a map, and the mesh texture coordinates to lay it on.
     pub fn of(mesh: &MeshData, maps: &[Option<std::sync::Arc<HeightMap>>]) -> Option<SurfFaces> {
         (maps.iter().any(Option::is_some) && mesh.uvs.len() == mesh.positions.len())
-            .then(|| SurfFaces { uvs: mesh.uvs.clone(), ranges: mesh.ranges.clone(), maps: maps.to_vec() })
+            .then(|| SurfFaces { uvs: mesh.uvs.clone(), ranges: mesh.ranges.clone(), maps: maps.to_vec(), ids: Vec::new() })
+    }
+
+    /// [`SurfFaces::of`] with the `[surface]` ids of the slots' textures: kept where a
+    /// texture has a map or a surface other than asphalt.
+    pub fn tagged(mesh: &MeshData, maps: &[Option<std::sync::Arc<HeightMap>>], ids: &[u8]) -> Option<SurfFaces> {
+        if !ids.iter().any(|i| *i != 0) {
+            return Self::of(mesh, maps);
+        }
+        let uvs = if mesh.uvs.len() == mesh.positions.len() { mesh.uvs.clone() } else { Vec::new() };
+        let maps = if uvs.is_empty() { Vec::new() } else { maps.to_vec() };
+        Some(SurfFaces { uvs, ranges: mesh.ranges.clone(), maps, ids: ids.to_vec() })
+    }
+
+    /// The `[surface]` id of face `j`.
+    fn id(&self, j: usize) -> u8 {
+        if self.ids.is_empty() {
+            return 0;
+        }
+        let first = (j * 3) as u32;
+        self.ranges
+            .iter()
+            .find(|r| first >= r.0 && first < r.0 + r.1)
+            .and_then(|r| self.ids.get(r.2 as usize))
+            .copied()
+            .unwrap_or(0)
     }
 
     /// The map and corner texture coordinates of face `j` (indices `tri`).
@@ -2047,7 +2083,7 @@ impl SurfFaces {
 
     /// Bytes held on the heap (the maps are shared).
     pub fn heap_bytes(&self) -> usize {
-        self.uvs.capacity() * 8 + self.ranges.capacity() * 12 + self.maps.capacity() * 8
+        self.uvs.capacity() * 8 + self.ranges.capacity() * 12 + self.maps.capacity() * 8 + self.ids.capacity()
     }
 }
 
@@ -2067,6 +2103,8 @@ pub struct DriveGrid {
     /// The `.surf` map (index into `maps`) and the texture coordinates of the corners.
     bumps: Vec<(u32, [Vec2; 3])>,
     maps: Vec<std::sync::Arc<HeightMap>>,
+    /// Per triangle, the `[surface]` id of its texture (empty while every face is asphalt).
+    surface: Vec<u8>,
     cells: usize,
     cell: f32,
     /// Per cell, the range of `items` that lists its triangles (`cells² + 1` offsets).
@@ -2082,7 +2120,7 @@ impl DriveGrid {
 
     /// Bytes the grid holds on the heap.
     pub fn heap_bytes(&self) -> usize {
-        self.tris.capacity() * std::mem::size_of::<[Vec3; 3]>() + self.ridge.capacity() + self.bump_of.capacity() * 4 + self.bumps.capacity() * std::mem::size_of::<(u32, [Vec2; 3])>() + self.start.capacity() * 4 + self.items.capacity() * 4 + self.reach.capacity() * 16
+        self.tris.capacity() * std::mem::size_of::<[Vec3; 3]>() + self.ridge.capacity() + self.bump_of.capacity() * 4 + self.bumps.capacity() * std::mem::size_of::<(u32, [Vec2; 3])>() + self.start.capacity() * 4 + self.items.capacity() * 4 + self.reach.capacity() * 16 + self.surface.capacity()
     }
 
     /// Add a triangle; walls (faces steeper than about 70°) are left out, they are nothing
@@ -2106,9 +2144,9 @@ impl DriveGrid {
 
     /// Add a triangle drawn with a texture that has a `.surf` map, with the texture
     /// coordinates of its corners.
-    pub fn push_surf(&mut self, p: [Vec3; 3], uv: [Vec2; 3], map: &std::sync::Arc<HeightMap>) {
+    pub fn push_surf(&mut self, p: [Vec3; 3], uv: [Vec2; 3], map: &std::sync::Arc<HeightMap>) -> bool {
         if !self.push_kind(p, false) {
-            return;
+            return false;
         }
         let m = match self.maps.iter().position(|m| std::sync::Arc::ptr_eq(m, map)) {
             Some(m) => m,
@@ -2121,6 +2159,60 @@ impl DriveGrid {
             *b = self.bumps.len() as u32;
         }
         self.bumps.push((m as u32, uv));
+        true
+    }
+
+    /// Per `[surface]` id among the faces: how many, and the middle of one of them (for
+    /// `OMSI_DEBUG_SURFACES`: where to find a cobbled road).
+    pub fn surface_examples(&self) -> Vec<(u8, usize, Vec3)> {
+        let mut out: Vec<(u8, usize, Vec3)> = Vec::new();
+        for (i, t) in self.tris.iter().enumerate() {
+            let id = self.surface.get(i).copied().unwrap_or(0);
+            let mid = (t[0] + t[1] + t[2]) / 3.0;
+            match out.iter_mut().find(|e| e.0 == id) {
+                Some(e) => e.1 += 1,
+                None => out.push((id, 1, mid)),
+            }
+        }
+        out.sort_by_key(|e| e.0);
+        out
+    }
+
+    /// Give the face added last the `[surface]` id `id`.
+    pub fn tag_last(&mut self, id: u8) {
+        if id == 0 || self.tris.is_empty() {
+            return;
+        }
+        self.surface.resize(self.tris.len(), 0);
+        if let Some(s) = self.surface.last_mut() {
+            *s = id;
+        }
+    }
+
+    /// The highest face (not a wall top) at or below `top` over tile-local (x, y): its height
+    /// and `[surface]` id - what the tyre standing there rolls on.
+    pub fn surface_at(&self, x: f32, y: f32, top: f32) -> Option<(f32, u8)> {
+        if self.cells == 0 || x < 0.0 || y < 0.0 {
+            return None;
+        }
+        let (cx, cy) = ((x / self.cell) as usize, (y / self.cell) as usize);
+        if cx >= self.cells || cy >= self.cells {
+            return None;
+        }
+        let k = cy * self.cells + cx;
+        let mut best: Option<(f32, u8)> = None;
+        for &i in &self.items[self.start[k] as usize..self.start[k + 1] as usize] {
+            if self.ridge.get(i as usize).copied().unwrap_or(false) || !self.reaches(i, x, y) {
+                continue;
+            }
+            let [a, b, c] = self.tris[i as usize];
+            let Some((l1, l2, l3)) = plan_weights(a, b, c, x, y, SEAM_TOLERANCE) else { continue };
+            let z = l1 * a.z + l2 * b.z + l3 * c.z;
+            if z <= top && best.is_none_or(|(old, _)| z > old) {
+                best = Some((z, self.surface.get(i as usize).copied().unwrap_or(0)));
+            }
+        }
+        best
     }
 
     /// Bucket the triangles of a tile `tile` metres wide; those entirely outside are dropped.
@@ -2132,9 +2224,14 @@ impl DriveGrid {
         let mut keep = Vec::with_capacity(self.tris.len());
         let mut keep_ridge = Vec::with_capacity(self.tris.len());
         let mut keep_bump = Vec::with_capacity(self.tris.len());
+        let tagged = !self.surface.is_empty();
+        let mut keep_surface = Vec::with_capacity(if tagged { self.tris.len() } else { 0 });
         self.ridge.resize(self.tris.len(), false);
         self.bump_of.resize(self.tris.len(), NO_BUMP);
-        for ((t, r), b) in self.tris.iter().zip(self.ridge.iter()).zip(self.bump_of.iter()) {
+        if tagged {
+            self.surface.resize(self.tris.len(), 0);
+        }
+        for (k, ((t, r), b)) in self.tris.iter().zip(self.ridge.iter()).zip(self.bump_of.iter()).enumerate() {
             // (bucketed with the seam tolerance round it: a point that close is on it)
             let e = SEAM_TOLERANCE;
             let (lo_x, hi_x) = (t[0].x.min(t[1].x).min(t[2].x) - e, t[0].x.max(t[1].x).max(t[2].x) + e);
@@ -2147,11 +2244,15 @@ impl DriveGrid {
             keep.push(*t);
             keep_ridge.push(*r);
             keep_bump.push(*b);
+            if tagged {
+                keep_surface.push(self.surface[k]);
+            }
         }
         self.reach = keep.iter().map(|t| plan_reach(t[0], t[1], t[2], SEAM_TOLERANCE)).collect();
         self.tris = keep;
         self.ridge = keep_ridge;
         self.bump_of = keep_bump;
+        self.surface = keep_surface;
         let mut count = vec![0u32; n * n + 1];
         for &(x0, x1, y0, y1) in &ranges {
             for y in y0..=y1 {
@@ -2338,6 +2439,8 @@ pub struct TileSurface {
     /// a texel of the raster is most of a metre wide and holds one height, which put a wheel
     /// next to a kerb on top of the pavement or into the road's camber.
     pub drive: DriveGrid,
+    /// What the tile's ground and trees sound like (see [`GroundSound`]).
+    pub sound: GroundSound,
 }
 
 /// Edge of a [`TileSurface`] block (texels).
@@ -2373,7 +2476,7 @@ impl TileSurface {
 
     pub fn new(size: usize) -> TileSurface {
         let blocks = size.div_ceil(BLOCK);
-        TileSurface { size, blocks: (0..blocks * blocks).map(|_| None).collect(), holes: (0..blocks * blocks).map(|_| None).collect(), hole_cover: (0..blocks * blocks).map(|_| None).collect(), outlines: Vec::new(), drive: DriveGrid::default() }
+        TileSurface { size, blocks: (0..blocks * blocks).map(|_| None).collect(), holes: (0..blocks * blocks).map(|_| None).collect(), hole_cover: (0..blocks * blocks).map(|_| None).collect(), outlines: Vec::new(), drive: DriveGrid::default(), sound: GroundSound::default() }
     }
 
     /// Block and index within it of texel `k`.
@@ -2505,9 +2608,12 @@ impl TileSurface {
                 let v = mesh.positions[tri[k] as usize];
                 p[k] = (if ident { v } else { transform.transform_point3(v) }) + off;
             }
-            match surf.and_then(|s| s.face(j, tri)) {
+            let pushed = match surf.and_then(|s| s.face(j, tri)) {
                 Some((m, uv)) => self.drive.push_surf(p, uv, m),
-                None => self.drive.push(p),
+                None => self.drive.push_kind(p, false),
+            };
+            if pushed {
+                self.drive.tag_last(surf.map(|s| s.id(j)).unwrap_or(0));
             }
         }
     }
@@ -2525,11 +2631,12 @@ impl TileSurface {
         let ridge_from = mesh.ranges.iter().find(|r| r.2 == 1).map(|r| r.0 as usize).unwrap_or(usize::MAX);
         for (j, tri) in mesh.indices.chunks_exact(3).enumerate() {
             let p = [0, 1, 2].map(|k| mesh.positions[tri[k] as usize] + off);
-            match surf.and_then(|s| s.face(j, tri)) {
+            let pushed = match surf.and_then(|s| s.face(j, tri)) {
                 Some((m, uv)) => self.drive.push_surf(p, uv, m),
-                None => {
-                    self.drive.push_kind(p, j * 3 >= ridge_from);
-                }
+                None => self.drive.push_kind(p, j * 3 >= ridge_from),
+            };
+            if pushed {
+                self.drive.tag_last(surf.map(|s| s.id(j)).unwrap_or(0));
             }
         }
     }
@@ -3063,4 +3170,27 @@ mod profile_transition_tests {
         }
         assert!(mesh.positions.iter().any(|v| v.y > 30.0 && v.y < 40.0 && v.x.abs() > 3.0 && v.x.abs() < 4.0));
     }
+}
+
+/// Smooth local displacement of an individual editor AI path. Other paths are untouched.
+pub fn editor_path_point(curve:&SplineCurve,nodes:&[(usize,[f64;4])],path:usize,station:f64,x:f64,z:f64)->DVec3 {
+    let t=(station/curve.length.max(1e-6)).clamp(0.0,1.0);
+    let mut left=None;let mut right=None;
+    for (_,node) in nodes.iter().filter(|(index,_)|*index==path) {
+        if node[0]<=t && left.is_none_or(|n:[f64;4]|n[0]<node[0]) {left=Some(*node);}
+        if node[0]>=t && right.is_none_or(|n:[f64;4]|n[0]>node[0]) {right=Some(*node);}
+    }
+    let delta=match (left,right) {
+        (Some(a),Some(b))=>{let h=b[0]-a[0];let u=if h>1e-9 {(t-a[0])/h}else{0.0};
+            let av=DVec3::new(a[1],a[2],a[3]);let bv=DVec3::new(b[1],b[2],b[3]);
+            let prev=nodes.iter().filter(|(i,n)|*i==path&&n[0]<a[0]).max_by(|a,b|a.1[0].total_cmp(&b.1[0])).map(|(_,n)|*n).unwrap_or(a);
+            let next=nodes.iter().filter(|(i,n)|*i==path&&n[0]>b[0]).min_by(|a,b|a.1[0].total_cmp(&b.1[0])).map(|(_,n)|*n).unwrap_or(b);
+            let m0=(bv-DVec3::new(prev[1],prev[2],prev[3]))/((b[0]-prev[0]).max(1e-9));
+            let m1=(DVec3::new(next[1],next[2],next[3])-av)/((next[0]-a[0]).max(1e-9));
+            av*(2.0*u*u*u-3.0*u*u+1.0)+m0*h*(u*u*u-2.0*u*u+u)+bv*(-2.0*u*u*u+3.0*u*u)+m1*h*(u*u*u-u*u)},
+        (Some(a),None)|(None,Some(a))=>DVec3::new(a[1],a[2],a[3]),
+        _=>DVec3::ZERO,
+    };
+    let forward=SplineCurve::dir(curve.heading_at(station)).extend(0.0);
+    curve.profile_point(station,x,z)+DVec3::new(forward.y,-forward.x,0.0)*delta.x+forward*delta.y+DVec3::Z*delta.z
 }

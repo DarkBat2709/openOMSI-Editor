@@ -29,10 +29,14 @@ pub(super) struct FrameTime {
 impl App {
     /// One frame of the window, step by step.
     pub(super) fn frame(&mut self, event_loop: &ActiveEventLoop) {
+        let _diagnostic = crate::editor_diagnostics::Span::new("frame", "");
+        self.editor_traffic_drag();
         // the session's housekeeping, the graphics device, the frame's time (none: the
         // session ends)
         let Some(time) = self.frame_timing(event_loop) else { return };
         let dt = time.dt;
+        // what the pause menu's clicks of the last frame asked for
+        self.apply_shell_actions(event_loop);
         // a vehicle chosen in the menu, read on a worker meanwhile, put down once it is ready
         self.poll_vehicle_placement();
         // the start menu, and the map's first area still loading
@@ -40,7 +44,10 @@ impl App {
             return;
         }
         let __t = Instant::now();
-        self.drive_streaming();
+        {
+            let _diagnostic = crate::editor_diagnostics::Span::new("tile_streaming", "");
+            self.drive_streaming();
+        }
         *self.perf.profile.entry("streaming").or_default() += __t.elapsed().as_secs_f64();
         self.frame_traffic(dt);
         // The player's vehicle moves before the passengers are placed: they sit in
@@ -60,8 +67,14 @@ impl App {
         let daylight = self.frame_weather(dt);
         self.frame_lights(dt, daylight);
         self.frame_scripted(dt, daylight);
+        if let (Some(w), Some(p)) = (self.world.as_deref(), self.player.as_mut()) {
+            crate::wheel_surface::tell_scripts(w, &mut p.vehicle);
+        }
+        // the photo mode's camera and panel
+        self.frame_photo(time.raw_dt);
         let vr_nav_display = self.frame_ui(dt);
         let lighting = self.frame_lighting(dt, daylight);
+        self.trace_look("frame", self.input.cursor.0, self.input.cursor.1);
         self.frame_render(event_loop, &time, &lighting, vr_nav_display);
     }
 }

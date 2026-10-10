@@ -85,6 +85,9 @@ pub struct Spline {
     pub height_profiles: Vec<HeightProfile>,
     pub profiles: Vec<SplineProfile>,
     pub paths: Vec<PathDef>,
+    /// Per-path freeform displacement: normalized station, right, forward, up.
+    pub editor_path_nodes: Vec<(usize,[f64;4])>,
+    pub editor_path_connections:Vec<(usize,bool,[i64;5])>,
     pub rail_enh: Vec<RailEnh>,
     pub third_rail: Vec<ThirdRail>,
     pub half_cant_width: Option<f32>,
@@ -142,6 +145,21 @@ impl Spline {
                     let v = r.f32s::<4>();
                     if let Some(p) = s.profiles.last_mut() {
                         p.points.push(SplineProfilePoint { x: v[0], z: v[1], u: v[2], v_scale: v[3] });
+                    }
+                }
+                "editor_path_connection" => {
+                    let index=r.usize();let outgoing=r.i32()!=0;
+                    let values=[r.i64(),r.i64(),r.i64(),r.i64(),r.i64()];
+                    if s.editor_path_connections.len()<4 && values[0]>=i32::MIN as i64 && values[0]<=i32::MAX as i64
+                        && values[1]>=i32::MIN as i64 && values[1]<=i32::MAX as i64 && (0..=65535).contains(&values[3]) && (0..=1).contains(&values[4]) {
+                        s.editor_path_connections.push((index,outgoing,values));
+                    }
+                }
+                "editor_path_node" => {
+                    let index=r.usize();let node=r.f64s::<4>();
+                    if s.editor_path_nodes.len()<128 && node.iter().all(|v|v.is_finite())
+                        && (0.0..=1.0).contains(&node[0]) && node[1..].iter().all(|v|v.abs()<=50.0) {
+                        s.editor_path_nodes.push((index,node));
                     }
                 }
                 "path" => {

@@ -142,14 +142,14 @@ _version: 2
 "Brush size":
   de: "Pinselgröße"
 
-"Terrain editor 0.7.10-pre":
-  de: "Gelände-Editor 0.7.10-pre"
+"Terrain editor 0.7.21-pre":
+  de: "Gelände-Editor 0.7.21-pre"
 
-"Spline editor 0.7.10-pre":
-  de: "Spline-Editor 0.7.10-pre"
+"Spline editor 0.7.21-pre":
+  de: "Spline-Editor 0.7.21-pre"
 
-"Object editor 0.7.10-pre":
-  de: "Objekt-Editor 0.7.10-pre"
+"Object editor 0.7.21-pre":
+  de: "Objekt-Editor 0.7.21-pre"
 
 "Spline connections · entire map":
   de: "Spline-Verbindungen · ganze Karte"
@@ -589,8 +589,8 @@ _version: 2
 "Enter selects · Esc closes":
   de: "Enter auswählen · Esc schließen"
 
-"Junction builder 0.7.10-pre":
-  de: "Kreuzungsbaukasten 0.7.10-pre"
+"Junction builder":
+  de: "Kreuzungs-Baukasten"
 
 "T-junction":
   de: "T-Kreuzung"
@@ -2412,8 +2412,8 @@ _version: 2
 "Build roundabout":
   de: "Kreisverkehr"
 
-"Roundabout builder 0.7.10-pre":
-  de: "Kreisverkehrbaukasten 0.7.10-pre"
+"Roundabout builder":
+  de: "Kreisverkehr-Baukasten"
 
 "3 entrances":
   de: "3 Zufahrten"
@@ -2522,3 +2522,6 @@ _version: 2
 
 "A connected road cannot be edited (missing, Chrono scenario or old tile format)":
   de: "Eine angeschlossene Straße kann nicht bearbeitet werden (fehlend, Chrono-Szenario oder altes Tile-Format)"
+
+"Close the map editor before opening photo mode":
+  de: "Schließe den Karteneditor, bevor du den Fotomodus öffnest"

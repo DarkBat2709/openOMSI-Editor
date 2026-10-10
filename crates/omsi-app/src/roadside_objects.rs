@@ -110,13 +110,20 @@ fn same_file(a: &str, b: &str) -> bool { a.replace('\\', "/").eq_ignore_ascii_ca
 
 /// Recipes are loaded once. Never hold this lock while reserving IDs or loading assets.
 pub fn initialize(world: &World) -> Result<(), String> {
+    let _diagnostic=crate::editor_diagnostics::Span::new("object_rows_initialize", "");
     if world.roadside_edits.lock().initialized { return Ok(()); }
     if world.global.world_coordinates { return Err("Object rows require a standard OMSI map".into()); }
     let mut sources = HashMap::new(); let mut groups = Vec::new();
     for (_, x, y, path) in world.map_tiles() {
         if !omsi_cfg::vfs::is_file(&path) { continue; }
-        let (tile, editable) = world.editor_row_source((x, y))?;
-        if tile.version != 0 && tile.version < 14 { continue; }
+        // Share immutable base data already read by the path display. Never hold
+        // the edits lock during disk IO or map parsing.
+        let cached = world.roadside_edits.lock().sources.get(&(x,y)).cloned();
+        let source = if let Some(source)=cached { source } else {
+            let (tile,editable)=world.editor_row_source((x,y))?;
+            Source {tile:Arc::new(tile),editable:Arc::new(editable)}
+        };
+        if source.tile.version != 0 && source.tile.version < 14 { continue; }
         let bytes = omsi_cfg::vfs::read(&path).map_err(|e| e.to_string())?;
         let text = crate::editor::decode(&bytes).0;
         for group in read_groups(&text)? {
@@ -125,7 +132,7 @@ pub fn initialize(world: &World) -> Result<(), String> {
             if groups.iter().any(|g: &Group| g.id == group.id) { return Err("Duplicate object row ID".into()); }
             groups.push(group);
         }
-        sources.insert((x, y), Source { tile: Arc::new(tile), editable: Arc::new(editable) });
+        sources.insert((x, y), source);
     }
     let mut owned = HashSet::new();
     for group in &groups {
@@ -142,14 +149,16 @@ pub fn initialize(world: &World) -> Result<(), String> {
         }
     }
     let mut edits = world.roadside_edits.lock();
-    if !edits.initialized { edits.sources = sources; edits.groups = groups; edits.initialized = true; }
+    if !edits.initialized { edits.sources.extend(sources); edits.groups = groups; edits.initialized = true; }
     Ok(())
 }
 fn current_tiles(world: &World) -> HashMap<TileKey, Source> {
-    let missing: Vec<_> = world.map_tiles().into_iter().filter(|(_, x, y, _)| !world.roadside_edits.lock().sources.contains_key(&(*x, *y))).collect();
+        let _diagnostic = crate::editor_diagnostics::Span::new("current_tiles", "");
+    let known:HashSet<_>=world.roadside_edits.lock().sources.keys().copied().collect();
+    let missing: Vec<_> = world.map_tiles().into_iter().filter(|(_, x, y, _)| !known.contains(&(*x, *y))).collect();
     for (_, x, y, _) in missing {
         if let Ok((tile, editable)) = world.editor_row_source((x, y)) {
-            world.roadside_edits.lock().sources.insert((x, y), Source { tile: Arc::new(tile), editable: Arc::new(editable) });
+            world.roadside_edits.lock().sources.entry((x,y)).or_insert_with(|| Source {tile:Arc::new(tile),editable:Arc::new(editable)});
         }
     }
     let mut sources = world.roadside_edits.lock().sources.clone();
@@ -465,6 +474,7 @@ pub fn apply(world: &World, start: Key, settings: Settings, file: String) -> Res
 }
 /// Rebuild the native records after road edits; never reset unrelated scenery objects.
 pub fn refresh(world: &World) -> Result<(), String> {
+    let _diagnostic=crate::editor_diagnostics::Span::new("object_rows_refresh", "");
     if !world.roadside_edits.lock().initialized { return Ok(()); }
     let mut groups = world.roadside_edits.lock().groups.clone();
     let mut plans = Vec::new();
@@ -788,6 +798,75 @@ mod tests {
         assert_eq!(tile.spline_attachments[1].spline_index, 0);
     }
     #[test]
+    fn generated_ai_overlay_survives_drained_queue_and_tracks_unsaved_undo_reload() {
+        let stamp=std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos();
+        let dir=std::env::temp_dir().join(format!("omsi-ai-overlay-{stamp}"));
+        let map=dir.join("maps/Test");std::fs::create_dir_all(&map).unwrap();
+        std::fs::create_dir_all(dir.join("Splines")).unwrap();
+        std::fs::write(dir.join("Splines/synthetic-row.sli"),"[profile]\n0\n[profilepnt]\n-4\n0.1\n0\n1\n[profilepnt]\n4\n0.1\n1\n1\n").unwrap();
+        std::fs::write(map.join("global.cfg"),"[map]\n0\n0\ntile_0_0.map\n").unwrap();
+        let road=segment(((0,0),1),20.0,40.0);
+        let base=format!("[version]\n14\n{}",spline_record(&road.spline));
+        std::fs::write(map.join("tile_0_0.map"),&base).unwrap();
+        let world=Arc::new(World::open(&dir,&map.join("global.cfg"),20000101).unwrap());
+        let plan=crate::traffic_editor::build(&[(road.key,road.spline.clone(),false)],&Default::default()).unwrap();
+        for (name,body) in &plan.definitions {let path=dir.join(name);std::fs::create_dir_all(path.parent().unwrap()).unwrap();std::fs::write(path,body).unwrap();}
+        let mut editor=crate::spline_editor::SplineEditor::default();
+        editor.apply_sidewalk(&world,plan.pieces.clone(),None,false).unwrap();
+        let generated=editor.selected.unwrap();
+        world.lanes.lock().clear(); // runtime consumes this queue even with no AI vehicles
+        let mut overlay=crate::traffic_editor::Overlay::default();
+        overlay.wait_for_test(&world,DVec3::ZERO);assert_eq!(overlay.lanes.len(),2);
+        let cached=world.roadside_edits.lock().sources.get(&(0,0)).unwrap().tile.clone();
+        initialize(&world).unwrap();
+        assert!(Arc::ptr_eq(&cached,&world.roadside_edits.lock().sources.get(&(0,0)).unwrap().tile));
+
+        assert_eq!(traffic_route(&world,generated,true).unwrap()[0].0,road.key);
+        let mut window=crate::traffic_editor::Window::new(generated);window.refresh(&world);
+        assert!(window.error.is_none());assert!(window.preview.pieces.is_empty());
+        let edits=world.spline_edits.lock().for_tile((0,0));
+        let saved=crate::spline_editor::rewrite(&base,&edits,&[generated.1]).unwrap().0;
+        editor.undo(&world);overlay.invalidate();overlay.wait_for_test(&world,DVec3::ZERO);
+        assert!(overlay.lanes.is_empty());
+        // Saving and reopening still displays paths after the runtime queue is drained.
+        std::fs::write(map.join("tile_0_0.map"),saved).unwrap();omsi_cfg::content_changed();
+        let reopened=Arc::new(World::open(&dir,&map.join("global.cfg"),20000101).unwrap());
+        reopened.lanes.lock().clear();let mut overlay=crate::traffic_editor::Overlay::default();
+        overlay.wait_for_test(&reopened,DVec3::ZERO);assert_eq!(overlay.lanes.len(),2);
+        let mut edit_window=crate::traffic_editor::Window::new(road.key);
+        edit_window.load_existing(&reopened);assert!(edit_window.replace);assert!(!edit_window.settings.connected);
+        assert!(edit_window.settings.two_way);
+        edit_window.settings.two_way=false;edit_window.settings.offset=3.5;
+        edit_window.settings.reverse=true;edit_window.settings.forward_bus=true;
+        edit_window.settings.nodes=vec![(0,[0.0,0.0,0.0,0.0]),(0,[0.5,1.0,0.0,0.0]),(0,[1.0,0.0,0.0,0.0])];
+        edit_window.refresh(&reopened);assert!(edit_window.error.is_none(),"{:?}",edit_window.error);
+        assert_eq!(edit_window.preview.replacements.len(),1);
+        for (name,body) in &edit_window.preview.definitions {std::fs::write(dir.join(name),body).unwrap();}
+        let changes=edit_window.preview.replacements.clone();let mut replacement_editor=crate::spline_editor::SplineEditor::default();
+        // A failed batch must leave every record unchanged and create no undo entry.
+        let duplicate=vec![changes[0].clone(),changes[0].clone()];
+        assert!(replacement_editor.replace_traffic(&reopened,duplicate).is_err());
+        assert_eq!(traffic_overlay_lanes(&reopened,DVec3::ZERO).len(),2);
+        replacement_editor.replace_traffic(&reopened,changes.clone()).unwrap();
+        let new_lanes=traffic_overlay_lanes(&reopened,DVec3::ZERO);assert_eq!(new_lanes.len(),1);
+        assert_eq!(new_lanes[0].key.unwrap().id,generated.1);assert!(new_lanes[0].reversed);
+        assert!(new_lanes[0].editor_bus_only);assert!((new_lanes[0].offset-3.5).abs()<1e-6);
+        assert!(replacement_editor.replace_traffic(&reopened,changes).is_err()); // stale preview
+        let edits=reopened.spline_edits.lock().for_tile((0,0));
+        let changed_text=crate::spline_editor::rewrite(&std::fs::read_to_string(map.join("tile_0_0.map")).unwrap(),&edits,&[]).unwrap().0;
+        let parsed=parsed(&changed_text);assert_eq!(parsed.splines.len(),2);
+        let updated=parsed.splines.iter().find(|s|s.id==generated.1).unwrap();
+        let ty=reopened.spline_type(&updated.file).unwrap();assert_eq!(ty.def.paths.len(),1);assert_eq!(ty.def.editor_path_nodes.len(),3);
+        assert_eq!(parsed.splines.iter().find(|s|s.id==road.key.1).unwrap().file,road.spline.file);
+        replacement_editor.undo(&reopened);assert_eq!(traffic_overlay_lanes(&reopened,DVec3::ZERO).len(),2);
+        let mut gone=reopened.editor_row_source((0,0)).unwrap().0.splines.into_iter().find(|s|s.id==generated.1).unwrap();
+        gone.deleted=true;reopened.spline_edits.lock().changed.insert(generated,gone.clone());
+        overlay.invalidate();overlay.wait_for_test(&reopened,DVec3::ZERO);assert!(overlay.lanes.is_empty());
+        gone.deleted=false;reopened.spline_edits.lock().changed.insert(generated,gone);
+        overlay.invalidate();overlay.wait_for_test(&reopened,DVec3::ZERO);assert_eq!(overlay.lanes.len(),2);
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+    #[test]
     fn row_update_save_restart_delete_and_undo_keep_ids_and_original_map() {
         let stamp = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos();
         let dir = std::env::temp_dir().join(format!("omsi-object-row-{stamp}"));
@@ -833,4 +912,95 @@ mod tests {
 pub fn sidewalk_route(world:&World,start:Key,connected:bool)->Result<Vec<(Key,MapSpline,bool)>,String> {
     let tiles=current_tiles(world);let roads=road_segments(world,&tiles);
     Ok(route(start,connected,&roads)?.into_iter().map(|s|(s.key,s.spline,s.backwards)).collect())
+}
+
+/// Geometry-only route for adding traffic to terrain splines. Existing road tools keep
+/// their driving-path filter; the AI tool also accepts visible terrain profiles.
+pub fn traffic_route(world: &World, start: Key, connected: bool) -> Result<Vec<(Key,MapSpline,bool)>,String> {
+        let _diagnostic = crate::editor_diagnostics::Span::new("traffic_route", "");
+    let tiles=current_tiles(world); let mut roads=HashMap::new();
+    for (tile, source) in tiles {
+        for spline in source.tile.splines.iter().filter(|s| !s.deleted && source.editable.contains(&s.id)) {
+            if let Some(ty)=world.spline_type(&spline.file) {
+                if let Ok(b)=crate::sidewalk::bounds(&ty.def,spline.mirror) {
+                    roads.insert((tile,spline.id),Segment {key:(tile,spline.id),spline:spline.clone(),backwards:false,edges:(b[0].0,b[1].0)});
+                }
+            }
+        }
+    }
+    let start=if roads.contains_key(&start) {start} else {
+        let file=world.spline_edits.lock().current(start).map(|s|s.file);
+        file.as_deref().and_then(crate::traffic_editor::source_of_generated_path)
+            .filter(|key|roads.contains_key(key))
+            .ok_or("Bitte einen bearbeitbaren Straßen- oder Terrain-Spline auswählen")?
+    };
+    Ok(route(start,connected,&roads)?.into_iter().map(|s|(s.key,s.spline,s.backwards)).collect())
+}
+
+pub fn generated_traffic_sources(world:&World,keys:&[Key])->HashSet<Key> {
+        let _diagnostic = crate::editor_diagnostics::Span::new("generated_traffic_sources", "");
+    let tiles=current_tiles(world);
+    let files:Vec<_>=tiles.values().flat_map(|source|source.tile.splines.iter())
+        .filter(|s|!s.deleted).map(|s|s.file.replace('\\',"/")).collect();
+    keys.iter().copied().filter(|k|{
+        let prefix=format!("Splines/openOMSI_Editor/AI/ai_{}_{}_{}_",k.0.0,k.0.1,k.1);
+        files.iter().any(|file|file.starts_with(&prefix))
+    }).collect()
+}
+
+#[cfg(test)]
+mod traffic_uploaded_regression {
+    use super::*;
+    #[test]
+    #[ignore = "requires OMSI_TEST_TRAFFIC_TILE and OMSI_TEST_TRAFFIC_SPLINE attachments"]
+    fn uploaded_terrain_chain_preserves_profile_corrections() {
+        let tile=omsi_map::Tile::load(std::path::Path::new(&std::env::var("OMSI_TEST_TRAFFIC_TILE").expect("tile path"))).unwrap();
+        let def=omsi_scenery::Spline::load(std::path::Path::new(&std::env::var("OMSI_TEST_TRAFFIC_SPLINE").expect("spline path"))).unwrap();
+        assert!(def.paths.is_empty());
+        let roads:HashMap<_,_>=tile.splines.iter().filter(|s|!s.deleted&&s.file.ends_with("8mTerrain_Spline.sli")).map(|s|{
+            let key=((-18,10),s.id);(key,Segment{key,spline:s.clone(),backwards:false,edges:(-4.0,4.0)})
+        }).collect();
+        assert!(roads[&((-18,10),9859278)].spline.profile_transitions.iter().any(Option::is_some));
+        for connected in [false,true] {
+            let route=route(((-18,10),9859278),connected,&roads).unwrap();
+            let source:Vec<_>=route.iter().map(|r|(r.key,r.spline.clone(),r.backwards)).collect();
+            let settings=crate::traffic_editor::Settings::default();
+            let plan=crate::traffic_editor::build(&source,&settings).unwrap();
+            if connected{assert!(plan.pieces.len()>1);}
+            for ((key,original,back),(_,created)) in source.iter().zip(&plan.pieces) {
+                assert_eq!(created.profile_transitions,original.profile_transitions);
+                let reference=curve(*key,original).with_sli(&def);let actual=curve(*key,created);
+                for (x,_,_) in crate::traffic_editor::lanes(&settings,*back) {for fraction in [0.0,0.1,0.5,0.9,1.0] {
+                    assert!(reference.offset_point(original.length*fraction,x,settings.height).distance(actual.offset_point(created.length*fraction,x,settings.height))<1e-7);
+                }}
+            }
+            eprintln!("Uploaded tile: connected={connected}, {} pieces, {} corrected pieces",plan.pieces.len(),plan.pieces.iter().filter(|(_,s)|s.profile_transitions.iter().any(Option::is_some)).count());
+        }
+    }
+}
+
+/// Saved and unsaved spline paths, independent of the simulation's drained lane queue.
+pub fn traffic_overlay_lanes(world:&World,center:DVec3)->Vec<omsi_sim::traffic::Lane> {
+        let _diagnostic = crate::editor_diagnostics::Span::new("traffic_overlay_lanes", "");
+    let mut lanes=Vec::new();
+    for (tile,source) in current_tiles(world) {
+        for spline in source.tile.splines.iter().filter(|s|!s.deleted) {
+            let c=curve((tile,spline.id),spline);
+            if c.start.truncate().distance(center.truncate())>800.0+spline.length.abs() {continue;}
+            if let Some(ty)=world.spline_type(&spline.file) {
+                lanes.extend(world.editor_path_lanes(&ty.def,spline,&c,tile));
+            }
+        }
+    }
+    lanes
+}
+
+pub fn generated_traffic(world:&World,keys:&[Key])->HashMap<Key,Vec<(Key,MapSpline)>> {
+        let _diagnostic = crate::editor_diagnostics::Span::new("generated_traffic", "");
+    let wanted:HashSet<_>=keys.iter().copied().collect();let mut result:HashMap<Key,Vec<(Key,MapSpline)>>=HashMap::new();
+    for (tile,source) in current_tiles(world) {for s in source.tile.splines.iter().filter(|s|!s.deleted) {
+        if let Some(key)=crate::traffic_editor::source_of_generated_path(&s.file).filter(|k|wanted.contains(k)) {
+            result.entry(key).or_default().push(((tile,s.id),s.clone()));
+        }
+    }}result
 }

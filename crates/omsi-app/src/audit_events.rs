@@ -23,7 +23,7 @@ impl Audit {
 }
 pub fn contains(r:[f32;4],p:(f32,f32))->bool{p.0>=r[0]&&p.0<=r[2]&&p.1>=r[1]&&p.1<=r[3]}
 pub fn panel_active(ed:&crate::editor::Editor)->bool{
-    ed.catalog.is_none()&&ed.junction_window.is_none()&&ed.sidewalk_window.is_none()&&ed.roadside_window.is_none()&&ed.tile_window.is_none()&&ed.text_window.is_none()
+    ed.catalog.is_none()&&ed.junction_window.is_none()&&ed.sidewalk_window.is_none() && ed.traffic_window.is_none()&&ed.roadside_window.is_none()&&ed.tile_window.is_none()&&ed.text_window.is_none()
 }
 #[derive(Clone)]
 struct AddedObject {id:i64,path:PathBuf,at:DVec3,heading:f64,tilt:[f64;2],deleted:bool}

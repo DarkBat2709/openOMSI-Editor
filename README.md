@@ -1,7 +1,9 @@
-# openOMSI Editor — 0.7.10-pre (development)
+# openOMSI Editor — 0.7.21-pre (development)
 
 A free, experimental map editor fork by DarkBat2709,
-based on openOMSI 0.2.20.
+based on openOMSI 0.2.27.
+
+See [0.7.21 installation and correction notes](docs/UPDATE_0.7.21.md) for version-free junction and roundabout window titles; normal startup leaves diagnostics disabled. See the 0.7.17 notes for freeform AI paths. The [0.7.12 notes](docs/UPDATE_0.7.12.md) describe the tools.
 
 ## Editor features
 
@@ -11,6 +13,8 @@ based on openOMSI 0.2.20.
 - New map form with name, optional author and description; one flat tile and a generated ground texture
 - Object and spline editing
 - Asset catalogue with spline texture information
+- AI driving paths along terrain/road splines, with all-vehicle or strict bus-only access per direction
+- Clickable A–D arm labels and selected-arm outline in junction and roundabout previews
 - Junction builder
 - Connected approach roads follow builder movement, rotation and tilt ([connection guide](docs/JUNCTION_CONNECTIONS.md))
 - Pitch/bank controls for builder junctions and roundabouts ([keys and limits](docs/OBJECT_ANGLES.md))
@@ -26,23 +30,22 @@ based on openOMSI 0.2.20.
 
 ## Current status
 
-Version 0.7.6-pre is available as a Linux x64 preview.
-Automated validation and release builds have passed on Linux and Windows.
-Map creation, editing, saving/reopening, existing-map editor start,
-per-map camera bookmarks and above-ground camera start have been manually
-tested by the maintainer on Linux. Interactive Windows testing is still pending.
-See [Editor start / Editor-Start](docs/EDITOR_START.md).
+Editor **0.7.21-pre** is an integration candidate based on **openOMSI 0.2.27**.
+The upstream release is merged, including its photo mode, plugins, rendering,
+traffic and ambience changes. The editor retains its tools and map saving.
+Photo mode requires closing the map editor first; editing is not discarded.
 
-The 0.7.10-pre development source adds a [roundabout builder](docs/ROUNDABOUT_BUILDER.md)
-and includes the German/English editor language switching from 0.7.7-pre.
-See [Editor language switching](docs/EDITOR_LANGUAGE.md) for coverage and manual checks.
-The published 0.7.6-pre package does not include this change.
+Linux compilation and targeted regressions, including the reported terrain-chain
+case, were checked for 0.7.17; 0.7.18 added diagnostic instrumentation. The 0.7.21 changes have not been compiled in this workspace; the installer runs compilation and regression gates on the target machine.
+The installer builds a local release; interactive map validation and Windows execution
+remain outstanding. See [the update notes](docs/UPDATE_0.7.21.md) and
+[the migration notes](docs/UPDATE_0.2.27.md).
+The existing [0.7.10 preview release](https://github.com/DarkBat2709/openOMSI-Editor/releases/tag/v.0.7.10)
+remains available and is based on openOMSI 0.2.20.
 
-This is a preview, not version 1.0. Back up your maps before editing.
-[Download the Linux x64 editor preview 0.7.6-pre](https://github.com/DarkBat2709/openOMSI-Editor/releases/tag/v0.7.6-pre)
-
-Requires an existing openOMSI 0.2.20 installation with original OMSI 2 content.
-German and English PDF guides are included. No Windows download is available yet.
+Use a separate editor installation and original OMSI 2 content. Test with a map
+copy before using the new candidate for regular editing. The PDF guides describe
+0.7.10; the migration notes document this update.
 
 This fork builds on the work of the openOMSI contributors.
 It is not an official openOMSI release. Original OMSI 2 content is required
@@ -60,20 +63,20 @@ and is not included.
 </p>
 
 <p align="center">
-  <a href="https://github.com/openOMSI-Project/openOMSI/releases/latest"><img alt="Version" src="https://img.shields.io/github/v/release/openOMSI-Project/openOMSI?label=version&color=f47f30&style=for-the-badge"></a>
-  <a href="https://openomsi-project.github.io/openOMSI/"><img alt="Playing now" src="https://img.shields.io/endpoint?url=https%3A%2F%2Fopenomsi.savvabestbrother.workers.dev%2Fbadge&label=playing%20now&style=for-the-badge&logo=steam&logoColor=white"></a>
-  <a href="https://github.com/openOMSI-Project/openOMSI/actions/workflows/release.yml"><img alt="Build" src="https://img.shields.io/github/actions/workflow/status/openOMSI-Project/openOMSI/release.yml?branch=main&style=for-the-badge&label=build"></a>
-  <a href="https://openomsi-project.github.io/openOMSI/"><img alt="Docs" src="https://img.shields.io/badge/docs-website-2d3138?style=for-the-badge"></a>
+  <a href="https://github.com/openOMSI-org/openOMSI/releases/latest"><img alt="Version" src="https://img.shields.io/github/v/release/openOMSI-org/openOMSI?label=version&color=f47f30&style=for-the-badge"></a>
+  <a href="https://openomsi.org/"><img alt="Playing now" src="https://img.shields.io/endpoint?url=https%3A%2F%2Fopenomsi.savvabestbrother.workers.dev%2Fbadge&label=playing%20now&style=for-the-badge&logo=steam&logoColor=white"></a>
+  <a href="https://github.com/openOMSI-org/openOMSI/actions/workflows/release.yml"><img alt="Build" src="https://img.shields.io/github/actions/workflow/status/openOMSI-org/openOMSI/release.yml?branch=main&style=for-the-badge&label=build"></a>
+  <a href="https://openomsi.org/"><img alt="Docs" src="https://img.shields.io/badge/docs-website-2d3138?style=for-the-badge"></a>
   <a href="https://discord.gg/VG2EKVafYG"><img alt="Discord" src="https://img.shields.io/badge/discord-join%20us-5865F2?style=for-the-badge&logo=discord&logoColor=white"></a>
   <a href="https://buymeacoffee.com/usonskyyy"><img alt="Buy me a coffee" src="https://img.shields.io/badge/buy%20me%20a%20coffee-support-ffdd00?style=for-the-badge&logo=buymeacoffee&logoColor=black"></a>
   <a href="https://ko-fi.com/usonance"><img alt="Ko-fi" src="https://img.shields.io/badge/ko--fi-support-29abe0?style=for-the-badge&logo=kofi&logoColor=white"></a>
-  <a href="LICENSE"><img alt="License" src="https://img.shields.io/github/license/openOMSI-Project/openOMSI?style=for-the-badge"></a>
+  <a href="LICENSE"><img alt="License" src="https://img.shields.io/github/license/openOMSI-org/openOMSI?style=for-the-badge"></a>
 </p>
 
 > [!WARNING]
 > **Early release. Expect bugs.** openOMSI is in an early stage of development: things may be
 > missing, broken or change between versions. Please report problems in
-> [Issues](https://github.com/openOMSI-Project/openOMSI/issues) or on our
+> [Issues](https://github.com/openOMSI-org/openOMSI/issues) or on our
 > [Discord server](https://discord.gg/VG2EKVafYG).
 
 **openOMSI** is a from-scratch recreation of the bus simulator **OMSI 2**, written in Rust:
@@ -88,7 +91,7 @@ and fully compatible with the existing maps, buses, scenery and mods.
 ## Download
 
 Every commit to `main` is built by GitHub Actions and published on the
-[**Releases**](https://github.com/openOMSI-Project/openOMSI/releases) page:
+[**Releases**](https://github.com/openOMSI-org/openOMSI/releases) page:
 
 | Platform | File |
 | --- | --- |
@@ -114,7 +117,7 @@ the maps Grundorf and Berlin-Spandau and the stock buses (MAN SD200/SD202, NL). 
 brings no game content of its own; it plays the original's maps, buses and mods.
 
 1. **Download** the file for your system from
-   [Releases](https://github.com/openOMSI-Project/openOMSI/releases) (table above) and unpack it
+   [Releases](https://github.com/openOMSI-org/openOMSI/releases) (table above) and unpack it
    into a folder of its own that you can write to - your Documents, a games folder, or the
    OMSI 2 folder itself. Not `Program Files`: the launcher could not update itself there.
 2. **Start it.**
@@ -175,7 +178,7 @@ to.
 
 ## Documentation
 
-The full documentation is on the website: **https://openomsi-project.github.io/openOMSI/**. The same
+The full documentation is on the website: **https://openomsi.org/**. The same
 pages live in [`docs/`](docs):
 
 | Document | What is in it |
@@ -189,7 +192,8 @@ pages live in [`docs/`](docs):
 | [Content formats](docs/FORMATS.md) | every OMSI 2 file format |
 | [Architecture](docs/ARCHITECTURE.md) | crates, threading, renderer, roadmap |
 | [Routes](docs/ROUTES.md) | how the original runs timetables, chrono, HOF, IBIS |
-| [Plugins](docs/PLUGINS.md) | Lua plugins (API and examples), OMSI plugin DLLs and the 32-bit plugin host |
+| [Plugins](docs/PLUGINS.md) | Lua and WebAssembly plugins (the API of every group, examples), compiled `.oop` plugins, OMSI plugin DLLs and the 32-bit plugin host |
+| [Development Tools](https://github.com/openOMSI-org/openOMSI-Development-Tools) | the plugin workbench: projects, the API documentation, the `.oop` compiler and signing keys (Windows, Linux, macOS) |
 | [Dedicated server](docs/SERVER.md) | hosting a session without a window |
 | [Versioning & releases](docs/VERSIONING.md) | the `MAJOR.MINOR.COMMIT` scheme and the CI |
 | [Changelog](CHANGELOG.md) | what changed in each version |
@@ -197,7 +201,7 @@ pages live in [`docs/`](docs):
 ## Building from source
 
 ```sh
-git clone https://github.com/openOMSI-Project/openOMSI.git && cd openOMSI
+git clone https://github.com/openOMSI-org/openOMSI.git && cd openOMSI
 scripts/build-macos.sh        # macOS   → dist/macos/openOMSI.app
 scripts\build-windows.cmd     # Windows → dist\windows\openomsi.exe
 scripts/build-linux.sh        # Linux   → dist/linux/openomsi

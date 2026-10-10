@@ -1,0 +1,13 @@
+.github/workflows/editor-preview.yml
+INSTALLIEREN.sh
+README.md
+crates/omsi-app/locales/editor.yml
+crates/omsi-app/src/roadside_objects.rs
+crates/omsi-app/src/scene/tests.rs
+crates/omsi-app/src/spline_editor.rs
+crates/omsi-app/src/traffic_editor.rs
+crates/omsi-app/src/ui.rs
+docs/PRUEFUNG_0.7.13.txt
+docs/UPDATE_0.7.13.md
+scripts/editor/install_0_7_13.py
+scripts/editor/windows_editor.py

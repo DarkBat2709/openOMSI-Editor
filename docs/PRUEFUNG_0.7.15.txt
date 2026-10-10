@@ -1,0 +1,27 @@
+Prüfung 0.7.15-pre – 10.10.2026
+
+Befund aus neuem Log: 40 KI-Abschnitte erfolgreich angelegt; anschließend
+mehrfach vollständige Belegung der ausgewählten Kette erkannt. Screenshot zeigt
+bereits einen generierten unsichtbaren KI-Spline als Auswahl.
+
+Ursache im Code bestätigt: Die Darstellung las world.lanes, obwohl diese
+Warteschlange mit std::mem::take von Simulation bzw. Navigator übernommen wird.
+Die neue Darstellung bezieht Splinepfade aus Kartendaten plus Editoränderungen.
+
+Kompilierung mit Rust 1.99.0, standalone-editor, Cargo.lock unverändert erfolgreich.
+Neun gezielte Tests bestanden:
+- Sechs generated_ai-Tests einschließlich neuem Integrationstest mit echter
+  temporärer Map/SLI: unspeichert anlegen, Verkehrsqueue leeren, zwei Fahrspuren
+  trotzdem anzeigen, KI-Auswahl zur Referenzstraße auflösen, vollständige
+  Pfadbelegung ohne Fehlermeldung erkennen, Rückgängig, speichern/wiederöffnen,
+  Löschen und Wiederherstellen der Markierungsdaten.
+- Drei traffic_editor-Tests für Geometrie, Richtungen, Lücken und Ergänzen
+  ausschließlich fehlender Abschnitte.
+- Bestehende Geometrie-/Regeltests umfassen Überhöhung, Schrägstellung,
+  Profilkorrekturen, beide Fahrtrichtungen und Map-Speichern/Laden.
+Sprachprüfung mit 841 Schlüsseln erfolgreich.
+ZIP-Integrität und Installer-Paketprüfsummen geprüft.
+
+Keine interaktive Grafikprüfung mit der vollständigen Benutzerkarte, kein
+Windows-Lauf und kein Release-Build hier. Der Linux-Installer baut und prüft die
+Releaseinstallation auf dem Zielrechner. Keine GitHub-Veröffentlichung.
