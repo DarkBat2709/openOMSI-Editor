@@ -798,6 +798,52 @@ mod tests {
         assert_eq!(tile.spline_attachments[1].spline_index, 0);
     }
     #[test]
+    fn generated_ai_additional_connector_roundtrips_and_undo_preserves_roads() {
+        use crate::traffic_editor::Target;
+        use omsi_sim::traffic::{LaneKey,Network};
+        let stamp=std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos();
+        let dir=std::env::temp_dir().join(format!("omsi-ai-connector-{stamp}"));
+        let map=dir.join("maps/Test");std::fs::create_dir_all(&map).unwrap();
+        std::fs::create_dir_all(dir.join("Splines")).unwrap();
+        std::fs::write(dir.join("Splines/connector-test.sli"),"[path]\n0\n0\n0\n3\n0\n").unwrap();
+        std::fs::write(map.join("global.cfg"),"[map]\n0\n0\ntile_0_0.map\n").unwrap();
+        let roads=vec![
+            MapSpline {id:1,file:"Splines/connector-test.sli".into(),pos:[10.0,10.0,0.0],length:20.0,heading:90.0,..Default::default()},
+            MapSpline {id:2,file:"Splines/connector-test.sli".into(),pos:[30.0,10.0,0.0],length:40.0,heading:90.0,..Default::default()},
+            MapSpline {id:3,file:"Splines/connector-test.sli".into(),pos:[50.0,30.0,0.0],length:40.0,heading:0.0,..Default::default()},
+        ];
+        let base=format!("[version]\n14\n{}",roads.iter().map(spline_record).collect::<String>());
+        std::fs::write(map.join("tile_0_0.map"),&base).unwrap();
+        let world=World::open(&dir,&map.join("global.cfg"),20000101).unwrap();
+        let mut connector=crate::traffic_connector::Connector::default();
+        connector.choose(Target {point:DVec3::new(30.0,10.0,0.0),direction:DVec3::X,start:false,
+            key:LaneKey {tile:(0,0),id:1,path:0},reversed:false}).unwrap();
+        connector.choose(Target {point:DVec3::new(50.0,30.0,0.0),direction:DVec3::Y,start:true,
+            key:LaneKey {tile:(0,0),id:3,path:0},reversed:false}).unwrap();
+        let plan=connector.build().unwrap();
+        for (name,body) in &plan.definitions {let path=dir.join(name);std::fs::create_dir_all(path.parent().unwrap()).unwrap();std::fs::write(path,body).unwrap();}
+        let mut editor=crate::spline_editor::SplineEditor::default();
+        editor.apply_sidewalk(&world,plan.pieces.clone(),None,false).unwrap();
+        let key=editor.selected.unwrap();
+        assert!(has_additional_traffic_file(&world,&plan.pieces[0].1.file));
+        let edits=world.spline_edits.lock().for_tile((0,0));
+        let saved=crate::spline_editor::rewrite(&base,&edits,&[key.1]).unwrap().0;
+        editor.undo(&world);
+        assert!(!has_additional_traffic_file(&world,&plan.pieces[0].1.file));
+        assert_eq!(traffic_overlay_lanes(&world,DVec3::ZERO).len(),3);
+        std::fs::write(map.join("tile_0_0.map"),&saved).unwrap();omsi_cfg::content_changed();
+        let reopened=World::open(&dir,&map.join("global.cfg"),20000101).unwrap();
+        let tile=omsi_map::Tile::load(&map.join("tile_0_0.map")).unwrap();
+        for original in &parsed(&base).splines {assert_eq!(tile.splines.iter().find(|s|s.id==original.id).unwrap(),original);}
+        let mut net=Network {lanes:traffic_overlay_lanes(&reopened,DVec3::ZERO),..Default::default()};net.link(1.5);
+        assert_eq!(net.lanes.len(),4);
+        let index=|id|net.lanes.iter().position(|l|l.key.is_some_and(|k|k.id==id)).unwrap();
+        let from=index(1);let straight=index(2);let to=index(3);let added=index(key.1);
+        assert!(net.lanes[from].next.contains(&straight));assert!(net.lanes[from].next.contains(&added));
+        assert_eq!(net.lanes[added].next,vec![to]);assert_eq!(net.lanes[added].turn,1);
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+    #[test]
     fn generated_ai_overlay_survives_drained_queue_and_tracks_unsaved_undo_reload() {
         let stamp=std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos();
         let dir=std::env::temp_dir().join(format!("omsi-ai-overlay-{stamp}"));
@@ -1003,4 +1049,8 @@ pub fn generated_traffic(world:&World,keys:&[Key])->HashMap<Key,Vec<(Key,MapSpli
             result.entry(key).or_default().push(((tile,s.id),s.clone()));
         }
     }}result
+}
+
+pub fn has_additional_traffic_file(world:&World,file:&str)->bool {
+    current_tiles(world).into_iter().any(|(_,source)|source.tile.splines.iter().any(|s|!s.deleted&&s.file==file))
 }

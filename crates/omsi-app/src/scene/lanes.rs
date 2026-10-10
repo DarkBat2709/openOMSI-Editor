@@ -98,6 +98,7 @@ pub(super) fn spline_lanes(
             l.no_cars = no_cars;
             l.rule_bus = rule_bus;
             l.editor_bus_only = rule_of("editor_bus_only").is_some();
+            l.editor_additional_connection = rule_of("editor_additional_connection").is_some();
             for (_,outgoing,v) in def.editor_path_connections.iter().filter(|(i,_,_)|*i==pi) {
                 let target=(LaneKey {tile:(v[0] as i32,v[1] as i32),id:v[2],path:v[3] as u16},v[4]!=0);
                 if *outgoing {l.editor_next=Some(target);}else{l.editor_previous=Some(target);}
@@ -110,6 +111,10 @@ pub(super) fn spline_lanes(
                 path: pi as u16,
             });
             l.reversed = reversed;
+            if l.editor_additional_connection {
+                let turn=(l.end_heading()-l.start_heading()+180.0).rem_euclid(360.0)-180.0;
+                l.turn=if turn < -15.0 {1}else if turn > 15.0 {2}else{0};
+            }
             l.offset = side as f32 * p.start[0];
             l.name = def
                 .path

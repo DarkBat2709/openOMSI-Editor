@@ -24,7 +24,25 @@ impl App {
             ed.show_traffic_paths=!ed.show_traffic_paths;ed.traffic_overlay.invalidate();return;
         }
         let Some(w)=ed.traffic_window.as_mut()else{return;};
+        if matches!(command,Command::Connector) {
+            if w.connector.is_some(){let start=w.start;*w=Window::new(start);w.load_existing(&world);}
+            else {w.connector=Some(Default::default());w.replace=false;w.free=false;w.drag=None;w.selected_node=None;}
+            w.refresh(&world);return;
+        }
+        if let Some(connector)=w.connector.as_mut() {
+            match command {
+                Command::ConnectorSource=>{connector.picking=Some(true);w.drag=None;},
+                Command::ConnectorDestination=>{connector.picking=Some(false);w.drag=None;},
+                Command::ConnectorReset=>{*connector=Default::default();w.drag=None;},
+                Command::ForwardBus=>connector.bus_only=!connector.bus_only,
+                Command::Width(d)=>connector.width=(connector.width+d).clamp(1.5,5.0),
+                Command::Apply|Command::Refresh=>{},
+                _=>return,
+            }
+            if !matches!(command,Command::Apply){w.refresh(&world);return;}
+        }
         match command {
+            Command::Connector|Command::ConnectorSource|Command::ConnectorDestination|Command::ConnectorReset=>{},
             Command::Free=>w.enable_free(),
             Command::Lane=>{w.active_lane=if w.settings.two_way{1-w.active_lane}else{0};w.ensure_nodes();},
             Command::ResetNode=>{if let Some(i)=w.selected_node {
@@ -43,6 +61,26 @@ impl App {
             Command::Height(d)=>w.settings.height=(w.settings.height+d).clamp(-5.0,5.0),
             Command::Apply=>{
                 w.refresh(&world);if w.error.is_some(){return;}
+                if let Some(c)=&w.connector {
+                    if c.picking.is_some()||c.source.is_none()||c.destination.is_none(){return;}
+                    for chosen in [c.source.unwrap(),c.destination.unwrap()] {
+                        if !w.targets.iter().any(|t|t.key==chosen.key&&t.reversed==chosen.reversed&&t.start==chosen.start
+                            &&t.point.distance(chosen.point)<0.1&&t.direction.dot(chosen.direction)>0.99) {
+                            w.error=Some("Anschluss hat sich geändert oder ist nicht geladen. Start und Ziel erneut wählen.".into());return;
+                        }
+                    }
+                    if w.preview.pieces.is_empty(){return;}
+                    if crate::roadside_objects::has_additional_traffic_file(&world,&w.preview.pieces[0].1.file) {
+                        w.error=Some("Diese zusätzliche Verbindung existiert bereits".into());return;
+                    }
+                    // Validate the actual bent path, not only its straight reference chord.
+                    for (p,_) in &w.preview.markers {
+                        let size=omsi_map::tile_size();
+                        if world.tile_source((p.x/size).floor() as i32,(p.y/size).floor() as i32).is_none() {
+                            w.error=Some("Verbindungsbogen verlässt die vorhandene Karte".into());return;
+                        }
+                    }
+                }
                 let Some(content)=crate::startup::content_dir() else {w.error=Some("Kein beschreibbarer Inhaltsordner".into());return;};
                 if let Err(e)=crate::traffic_editor::write_definitions(&w.preview,&content,&self.args.root){w.error=Some(e);return;}
                 let pieces=w.preview.pieces.clone();
@@ -76,6 +114,9 @@ impl App {
         if !pressed{
             // Flush the latest queued position before snapping, even between redraws.
             self.editor_traffic_drag();
+            if let Some(w)=self.menus.editor.as_mut().and_then(|e|e.traffic_window.as_mut()).filter(|w|w.connector.is_some()) {
+                w.drag=None;return true;
+            }
             let world=self.world.clone();
             if let Some(w)=self.menus.editor.as_mut().and_then(|e|e.traffic_window.as_mut()) {
                 if let Some((index,_,_))=w.drag.take() {if let (Some(start),Some(world))=(w.node_is_start(index),world) {
@@ -94,10 +135,25 @@ impl App {
         if self.ui.as_mut().is_some_and(|u|u.editor_hud_press(self.input.cursor)){return true;}
         if let Some(c)=command{self.editor_traffic_command(c);return true;}
         let w=self.menus.editor.as_ref().unwrap().traffic_window.as_ref().unwrap();
-        if w.rect.is_some_and(|r|self.input.cursor.0>=r[0]&&self.input.cursor.0<=r[2]&&self.input.cursor.1>=r[1]&&self.input.cursor.1<=r[3])||!w.free{return true;}
+        if w.rect.is_some_and(|r|self.input.cursor.0>=r[0]&&self.input.cursor.0<=r[2]&&self.input.cursor.1>=r[1]&&self.input.cursor.1<=r[3])||(!w.free&&w.connector.is_none()){return true;}
         let (Some(cam),Some(surface))=(self.camera.as_ref(),self.gfx.surface.as_ref())else{return true;};
         let (origin,dir)=self.world_cursor_ray(cam,(surface.config.width,surface.config.height));let ray=dir.as_dvec3();
         let w=self.menus.editor.as_mut().unwrap().traffic_window.as_mut().unwrap();
+        if let Some(c)=w.connector.as_mut() {
+            if c.picking.is_some() {
+                match c.pick(&w.targets,origin,ray) {
+                    Ok(Some(t))=>{if let Err(error)=c.choose(t){w.error=Some(error);}else if let Some(world)=self.world.as_ref(){w.refresh(world);}},
+                    Ok(None)=>w.error=Some("Auf einen markierten Anschluss klicken; Pfeile zeigen die Fahrtrichtung".into()),
+                    Err(error)=>w.error=Some(error),
+                }
+            } else if let Some((i,p))=w.preview.handles.iter().filter_map(|(i,p)|{
+                let delta=*p+glam::DVec3::Z*0.4-origin;let t=delta.dot(ray);
+                (t>0.0&&(delta-ray*t).length()<(t*0.006).clamp(0.35,1.5)).then_some((*i,*p))
+            }).next() {
+                if ray.z.abs()>1e-5 {let t=(p.z-origin.z)/ray.z;if t>0.0{w.selected_node=Some(i);w.drag=Some((i,p.z,p-(origin+ray*t)));}}
+            }
+            return true;
+        }
         let hit=w.preview.handles.iter().filter(|(i,_)|w.settings.nodes[*i].0==w.active_lane).filter_map(|(i,p)|{
             let delta=*p+glam::DVec3::Z*0.4-origin;let t=delta.dot(ray);let distance=(delta-ray*t).length();
             (t>0.0&&distance<(t*0.006).clamp(0.35,1.5)).then_some((*i,*p,distance))
@@ -129,7 +185,9 @@ impl App {
         if ray.z.abs()<1e-5{return;}
         let w=self.menus.editor.as_mut().unwrap().traffic_window.as_mut().unwrap();let Some((index,z,offset))=w.drag else{return;};
         let t=(z-origin.z)/ray.z;if t<=0.0||t>2000.0{return;}
-        w.move_node(index,origin+ray*t+offset);w.refresh(&world);
+        if let Some(c)=w.connector.as_mut(){c.move_handle(index,origin+ray*t+offset);}
+        else {w.move_node(index,origin+ray*t+offset);}
+        w.refresh(&world);
     }
 
 }

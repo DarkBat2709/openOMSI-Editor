@@ -117,6 +117,20 @@ impl App {
                         if let Some(window)=ed.traffic_window.as_mut(){window.targets=targets;}
                     }
                     if let Some(panel)=self.menus.editor.as_ref().filter(|e|self.menus.game_menu.is_none()&&e.show_traffic_paths).and_then(|e|e.traffic_window.as_ref()){
+                        if let Some(c)=panel.connector.as_ref() {
+                            for target in panel.targets.iter().filter(|t|c.accepts(t)&&t.point.distance(cam.position)<300.0) {
+                                scene.coronas.push(omsi_render::Corona {position:target.point+glam::DVec3::Z*0.4,size:0.7,
+                                    color:if c.picking==Some(true){[1.0,0.8,0.0]}else{[0.9,0.1,1.0]},brightness:1.0,..Default::default()});
+                            }
+                            for (index,p) in &panel.preview.handles {
+                                scene.coronas.push(omsi_render::Corona {position:*p+glam::DVec3::Z*0.4,size:0.85,
+                                    color:if panel.selected_node==Some(*index){[1.0,0.8,0.0]}else{[0.1,1.0,0.2]},brightness:1.0,..Default::default()});
+                            }
+                            for target in [c.source,c.destination].into_iter().flatten() {
+                                scene.coronas.push(omsi_render::Corona {position:target.point+glam::DVec3::Z*0.4,size:0.85,
+                                    color:if target.start{[0.9,0.1,1.0]}else{[1.0,0.8,0.0]},brightness:1.0,..Default::default()});
+                            }
+                        }
                         if panel.free {if let Some(index)=panel.selected_node {if let Some(start)=panel.node_is_start(index) {
                             if let Some((_,point))=panel.preview.handles.iter().find(|(i,_)|*i==index) {
                                 for target in panel.targets.iter().filter(|t|t.start!=start&&t.point.distance(*point)<50.0) {

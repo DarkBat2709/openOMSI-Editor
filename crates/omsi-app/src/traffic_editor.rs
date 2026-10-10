@@ -237,12 +237,12 @@ pub fn write_definitions(plan:&Plan,root:&Path,original:&Path)->Result<(),String
     omsi_cfg::content_changed();Ok(())
 }
 #[derive(Clone,Copy)]
-pub enum Command { Close, Overlay, Free, Lane, ResetNode, NodeHeight(f64), Replace, Connected, TwoWay, Reverse, ForwardBus, BackwardBus, Width(f64),Offset(f64),Height(f64),Apply,Refresh }
+pub enum Command { Connector, ConnectorSource, ConnectorDestination, ConnectorReset, Close, Overlay, Free, Lane, ResetNode, NodeHeight(f64), Replace, Connected, TwoWay, Reverse, ForwardBus, BackwardBus, Width(f64),Offset(f64),Height(f64),Apply,Refresh }
 #[derive(Clone,Copy)]
 pub struct Target {pub point:DVec3,pub direction:DVec3,pub start:bool,pub key:omsi_sim::traffic::LaneKey,pub reversed:bool}
-pub struct Window {pub drag_pending:bool,pub drag_events:usize,pub drag_queued_at:Option<std::time::Instant>,pub targets:Vec<Target>,pub free:bool,pub active_lane:usize,pub selected_node:Option<usize>,pub drag:Option<(usize,f64,DVec3)>,pub replace:bool,pub start:Key,pub settings:Settings,pub preview:Plan,pub error:Option<String>,pub rects:Vec<([f32;4],Command)>,pub rect:Option<[f32;4]>}
+pub struct Window {pub connector:Option<crate::traffic_connector::Connector>,pub drag_pending:bool,pub drag_events:usize,pub drag_queued_at:Option<std::time::Instant>,pub targets:Vec<Target>,pub free:bool,pub active_lane:usize,pub selected_node:Option<usize>,pub drag:Option<(usize,f64,DVec3)>,pub replace:bool,pub start:Key,pub settings:Settings,pub preview:Plan,pub error:Option<String>,pub rects:Vec<([f32;4],Command)>,pub rect:Option<[f32;4]>}
 impl Window {
-    pub fn new(start:Key)->Self {Self {drag_pending:false,drag_events:0,drag_queued_at:None,targets:Vec::new(),free:false,active_lane:0,selected_node:None,drag:None,replace:false,start,settings:Settings::default(),preview:Plan::default(),error:None,rects:Vec::new(),rect:None}}
+    pub fn new(start:Key)->Self {Self {connector:None,drag_pending:false,drag_events:0,drag_queued_at:None,targets:Vec::new(),free:false,active_lane:0,selected_node:None,drag:None,replace:false,start,settings:Settings::default(),preview:Plan::default(),error:None,rects:Vec::new(),rect:None}}
     pub fn load_existing(&mut self,world:&World) {
         let Ok(roads)=crate::roadside_objects::traffic_route(world,self.start,false) else{return;};
         let key=roads[0].0;let found=crate::roadside_objects::generated_traffic(world,&[key]);
@@ -313,6 +313,11 @@ impl Window {
     }
     pub fn hit(&self,p:(f32,f32))->Option<Command>{self.rects.iter().rev().find(|(r,_)|p.0>=r[0]&&p.0<=r[2]&&p.1>=r[1]&&p.1<=r[3]).map(|(_,c)|*c)}
     pub fn refresh(&mut self,world:&World){
+        if let Some(connector)=&self.connector {
+            self.preview=Plan::default();
+            self.error=match connector.build(){Ok(plan)=>{self.preview=plan;None},Err(e)=>Some(e)};
+            return;
+        }
         let _diagnostic = crate::editor_diagnostics::Span::new("ai_preview", format!("tile={:?} spline={} nodes={} targets={} connected={} replace={}", self.start.0,self.start.1,self.settings.nodes.len(),self.targets.len(),self.settings.connected,self.replace));
         let previous_error=self.error.clone();let previous_message=self.preview.message.clone();
         self.preview=Plan::default();

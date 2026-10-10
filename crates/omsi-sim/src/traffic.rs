@@ -84,6 +84,7 @@ pub struct Lane {
     pub rule_bus: bool,
     /// Editor-specific strict access rule; unlike OMSI bus lanes it excludes taxis.
     pub editor_bus_only: bool,
+    pub editor_additional_connection:bool,
     pub editor_next:Option<(LaneKey,bool)>,
     pub editor_previous:Option<(LaneKey,bool)>,
     pub rule_trucks: bool,
@@ -128,8 +129,12 @@ pub fn pool_density(rules: &[(u16, f32)], defaults: &[i32], pool: usize) -> f32 
 
 impl Lane {
     pub fn accepts_editor_connection(&self,to:&Lane)->bool {
-        self.editor_next.is_none_or(|(k,r)|to.key==Some(k)&&to.reversed==r)
-            && to.editor_previous.is_none_or(|(k,r)|self.key==Some(k)&&self.reversed==r)
+        let bound_previous=to.editor_previous.is_some_and(|(k,r)|self.key==Some(k)&&self.reversed==r);
+        let bound_next=self.editor_next.is_some_and(|(k,r)|to.key==Some(k)&&to.reversed==r);
+        (self.editor_next.is_none_or(|(k,r)|to.key==Some(k)&&to.reversed==r)
+            || (to.editor_additional_connection&&bound_previous))
+            && (to.editor_previous.is_none_or(|(k,r)|self.key==Some(k)&&self.reversed==r)
+                || (self.editor_additional_connection&&bound_next))
     }
 
     /// May an AI vehicle of `[ai_veh_type]` `veh_type` drive here (Omsi.exe 0x71d714, by
@@ -320,7 +325,7 @@ impl LaneBuilder {
     pub fn curve(points: Vec<DVec3>, headings: Vec<f32>, curvature: Vec<f32>, kind: LaneKind, width: f32) -> Lane {
         let dist = cumulative(&points);
         let speed_limit_kmh = if kind == LaneKind::Air { AIR_NO_LIMIT_KMH } else { 50.0 };
-        Lane { key: None, reversed: false, kind, width, points, headings, curvature, dist, speed_limit_kmh, next: Vec::new(), traffic_light: None, turn: 0, source: 0, offset: 0.0, name: String::new(), invisible: false, density: 1.0, group_density: Vec::new(), no_cars: false, rule_bus: false, editor_bus_only: false, editor_next:None, editor_previous:None, rule_trucks: false, left: None, right: None, priority: DEFAULT_PRIORITY, blocks: Vec::new() }
+        Lane { key: None, reversed: false, kind, width, points, headings, curvature, dist, speed_limit_kmh, next: Vec::new(), traffic_light: None, turn: 0, source: 0, offset: 0.0, name: String::new(), invisible: false, density: 1.0, group_density: Vec::new(), no_cars: false, rule_bus: false, editor_bus_only: false, editor_additional_connection:false, editor_next:None, editor_previous:None, rule_trucks: false, left: None, right: None, priority: DEFAULT_PRIORITY, blocks: Vec::new() }
     }
 
     /// Lane from bare points: headings from the neighbouring points on both sides (the
@@ -1470,6 +1475,31 @@ impl Network {
 #[cfg(test)]
 mod extend_tests {
     use super::*;
+
+    #[test]
+    fn additional_connector_keeps_fixed_straight_exit_and_rejects_wrong_lanes() {
+        let mut from=straight(0.0,0.0,10.0,1,(0,0));
+        let mut straight_on=straight(0.0,10.0,30.0,2,(0,0));
+        let mut to=straight(20.0,30.0,50.0,3,(0,0));
+        from.editor_next=Some((straight_on.key.unwrap(),false));
+        straight_on.editor_previous=Some((from.key.unwrap(),false));
+        to.editor_previous=Some((LaneKey {tile:(0,0),id:99,path:0},false));
+        let mut bend=LaneBuilder::polyline(vec![DVec3::new(0.0,10.0,0.0),DVec3::new(0.0,12.0,0.0),
+            DVec3::new(20.0,28.0,0.0),DVec3::new(20.0,30.0,0.0)],LaneKind::Street,3.0);
+        bend.key=Some(LaneKey {tile:(0,0),id:4,path:0});bend.editor_additional_connection=true;
+        bend.editor_previous=Some((from.key.unwrap(),false));bend.editor_next=Some((to.key.unwrap(),false));
+        let mut wrong=from.clone();wrong.key=Some(LaneKey {tile:(0,0),id:5,path:0});
+        assert!(!wrong.accepts_editor_connection(&bend));
+        assert!(!bend.accepts_editor_connection(&straight_on));
+        let all=vec![from,straight_on,to,bend];
+        let mut net=Network {lanes:all.clone(),..Default::default()};net.link(1.5);
+        assert!(net.lanes[0].next.contains(&1));assert!(net.lanes[0].next.contains(&3));
+        assert_eq!(net.lanes[3].next,vec![2]);
+        let mut incremental=Network {lanes:all[..3].to_vec(),..Default::default()};incremental.link(1.5);
+        incremental.extend(all[3..].to_vec(),1.5);
+        assert!(incremental.lanes[0].next.contains(&1));assert!(incremental.lanes[0].next.contains(&3));
+        assert_eq!(incremental.lanes[3].next,vec![2]);
+    }
 
     fn straight(x: f64, y0: f64, y1: f64, id: i64, tile: (i32, i32)) -> Lane {
         let mut l = LaneBuilder::polyline(vec![DVec3::new(x, y0, 0.0), DVec3::new(x, y1, 0.0)], LaneKind::Street, 3.0);

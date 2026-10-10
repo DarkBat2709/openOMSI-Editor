@@ -55,6 +55,7 @@ mod roadside_objects;
 mod roadside_events;
 mod editor_diagnostics;
 mod traffic_editor;
+mod traffic_connector;
 mod traffic_editor_events;
 mod sidewalk;
 mod sidewalk_events;

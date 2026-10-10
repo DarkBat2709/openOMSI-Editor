@@ -824,7 +824,7 @@ impl Ui {
         let flat = self.text.flat;
         self.text.flat = true;
         self.editor_surface(r, scene, layout.panel, 5.0 * s, PANEL);
-        let title = if terrain { "Terrain editor 0.7.21-pre" } else if spline { "Spline editor 0.7.21-pre" } else { "Object editor 0.7.21-pre" };
+        let title = if terrain { "Terrain editor 0.7.22-pre" } else if spline { "Spline editor 0.7.22-pre" } else { "Object editor 0.7.22-pre" };
         self.put(r, scene, title, ((13.0 * s) as u32).max(1) | BOLD,
             MUTED, layout.panel[0] + 10.0 * s, layout.panel[1] + 12.0 * s);
         self.editor_surface(r, scene, layout.selection, 3.0 * s, PANEL_ALT);
@@ -1280,16 +1280,48 @@ impl Ui {
         use crate::traffic_editor::Command;
         let Some(w)=window else{return;};w.rects.clear();
         let top=self.editor_hud_rect.map_or(viewport[1],|r|r[3])+10.0;
-        let s=scale.max(0.5).min((viewport[2]/440.0).max(0.1)).min(((viewport[1]+viewport[3]-top-12.0)/748.0).max(0.1));
+        let s=scale.max(0.5).min((viewport[2]/440.0).max(0.1)).min(((viewport[1]+viewport[3]-top-12.0)/786.0).max(0.1));
         let x=viewport[0]+12.0*s;let y=top;
         let rect=|a:f32,b:f32,ww:f32,h:f32|[x+a*s,y+b*s,x+(a+ww)*s,y+(b+h)*s];
-        w.rect=Some(rect(0.0,0.0,410.0,748.0));self.editor_dock_rect=w.rect;
+        w.rect=Some(rect(0.0,0.0,410.0,786.0));self.editor_dock_rect=w.rect;
         self.editor_dock_header=None;self.editor_help_rect=None;self.editor_tools_rect=None;
         self.editor_connection_rect=None;self.spline_tool_rects.clear();self.terrain_tool_rects.clear();
         self.catalog_open_rect=None;self.tile_open_rect=None;self.terrain_open_rect=None;
         self.junction_open_rect=None;self.roundabout_open_rect=None;
         let flat=self.text.flat;self.text.flat=true;
         self.editor_surface(r,scene,w.rect.unwrap(),5.0*s,PANEL);
+        if let Some(c)=w.connector.as_ref() {
+            self.put(r,scene,"Zusätzliche KI-Verbindung",((15.0*s)as u32).max(1)|BOLD,WHITE,x+12.0*s,y+18.0*s);
+            let source=c.source.map(|t|format!("Start: Fahrweg {} / Spur {}",t.key.id,t.key.path+1)).unwrap_or("Start wählen: gelbes Fahrwegende".into());
+            let target=c.destination.map(|t|format!("Ziel: Fahrweg {} / Spur {}",t.key.id,t.key.path+1)).unwrap_or("Ziel wählen: lila Fahrweganfang".into());
+            let buttons=vec![
+                (rect(10.0,40.0,390.0,34.0),source,Command::ConnectorSource,true),
+                (rect(10.0,84.0,390.0,34.0),target,Command::ConnectorDestination,c.source.is_some()),
+                (rect(10.0,132.0,390.0,30.0),format!("Fahrzeuge: {}",if c.bus_only{"Nur Busse"}else{"Alle Fahrzeuge"}),Command::ForwardBus,true),
+                (rect(310.0,172.0,40.0,28.0),"−".into(),Command::Width(-0.25),true),
+                (rect(360.0,172.0,40.0,28.0),"+".into(),Command::Width(0.25),true),
+                (rect(10.0,420.0,390.0,32.0),"Start und Ziel neu wählen".into(),Command::ConnectorReset,true),
+                (rect(10.0,466.0,390.0,34.0),"Verbindung hinzufügen (Enter)".into(),Command::Apply,c.picking.is_none()&&w.error.is_none()&&!w.preview.pieces.is_empty()),
+                (rect(10.0,512.0,390.0,30.0),"Zurück zu Fahrwegen entlang der Straße".into(),Command::Connector,true),
+                (rect(10.0,556.0,390.0,30.0),"Schließen (Esc)".into(),Command::Close,true),
+            ];
+            self.catalog_text(r,scene,&format!("Spurbreite: {:.2} m",c.width),(x+12.0*s,y+184.0*s),290.0*s,12.0*s,SOFT);
+            for (i,text) in ["Geradeauspfade bleiben erhalten.","Gelb: Start · Lila: Ziel · Grün: Bogen ziehen", "An Fahrwegenden verbinden, nicht mitten im Pfad.", "Nur Vorschau bis Verbindung hinzufügen."].iter().enumerate(){
+                self.catalog_text(r,scene,text,(x+12.0*s,y+(224.0+i as f32*22.0)*s),386.0*s,12.0*s,SOFT);
+            }
+            let status=c.status();let message=w.error.as_deref().unwrap_or(&status);
+            for (i,line) in wrap(&self.text,message,12.0*s,382.0*s).iter().take(5).enumerate(){
+                self.catalog_text(r,scene,line,(x+12.0*s,y+(326.0+i as f32*17.0)*s),382.0*s,12.0*s,WHITE);
+            }
+            self.catalog_text(r,scene,"Strg+Z rückgängig · Strg+S speichern",(x+12.0*s,y+630.0*s),386.0*s,12.0*s,SOFT);
+            self.catalog_text(r,scene,"Danach Karte neu laden, damit die KI den Weg nutzt.",(x+12.0*s,y+652.0*s),386.0*s,11.0*s,SOFT);
+            for(area,title,command,enabled) in buttons {
+                self.editor_surface(r,scene,area,3.0*s,if !enabled{PANEL_ALT}else if editor_contains(area,cursor){LIT}else{CHIP});
+                self.catalog_text(r,scene,&title,(area[0]+6.0*s,area[1]+8.0*s),area[2]-area[0]-12.0*s,12.0*s,WHITE);
+                if enabled{w.rects.push((area,command));}
+            }
+            self.text.flat=flat;return;
+        }
         self.put(r,scene,"KI-Fahrwege entlang der Straße",((15.0*s)as u32).max(1)|BOLD,WHITE,x+12.0*s,y+18.0*s);
         let settings=&w.settings;
         let mut buttons=vec![
@@ -1323,10 +1355,11 @@ impl Ui {
             (rect(10.0,564.0,390.0,30.0),if w.replace {"Modus: vorhandene KI-Pfade ersetzen"}else{"Modus: fehlende KI-Pfade ergänzen"}.into(),Command::Replace,true),
             (rect(10.0,604.0,390.0,30.0),if show_paths {"KI-Pfade: sichtbar – ausblenden"}else{"KI-Pfade: ausgeblendet – anzeigen"}.into(),Command::Overlay,true),
             (rect(10.0,644.0,390.0,32.0),if w.replace {"KI-Pfade ersetzen (Enter)"}else{"KI-Pfade anlegen (Enter)"}.into(),Command::Apply,w.error.is_none()&&!w.preview.pieces.is_empty()),
+            (rect(10.0,724.0,390.0,30.0),"Zusätzliche KI-Verbindung erstellen".into(),Command::Connector,true),
             (rect(10.0,686.0,190.0,30.0),"Vorschau aktualisieren".into(),Command::Refresh,true),
             (rect(210.0,686.0,190.0,30.0),"Schließen (Esc)".into(),Command::Close,true),
         ]);
-        self.catalog_text(r,scene,"Danach: Strg+Z rückgängig · Strg+S speichern",(x+12.0*s,y+727.0*s),386.0*s,11.0*s,MUTED);
+        self.catalog_text(r,scene,"Danach: Strg+Z rückgängig · Strg+S speichern",(x+12.0*s,y+765.0*s),386.0*s,11.0*s,MUTED);
         for(area,title,command,enabled) in buttons {
             self.editor_surface(r,scene,area,3.0*s,if !enabled{PANEL_ALT}else if editor_contains(area,cursor){LIT}else{CHIP});
             self.catalog_text(r,scene,&title,(area[0]+6.0*s,area[1]+8.0*s),area[2]-area[0]-12.0*s,12.0*s,WHITE);
