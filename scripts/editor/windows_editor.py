@@ -9,7 +9,7 @@ import subprocess
 import sys
 
 BASE = '0506141a494ee94a965a1e00843db80a6e265eae'
-VERSION = '0.7.22-pre'
+VERSION = '0.7.23-pre'
 BUNDLE = Path(__file__).resolve().parent
 
 

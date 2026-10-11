@@ -69,6 +69,7 @@ pub struct Editor {
     follow_history:HashMap<i64,FollowUndo>,
     pub show_traffic_paths: bool,
     pub traffic_overlay:crate::traffic_editor::Overlay,
+    pub path_edits:crate::editor_path_edit::Edits,
     pub traffic_window: Option<crate::traffic_editor::Window>,
     pub sidewalk_window: Option<crate::sidewalk::Window>,
     pub roadside_window: Option<crate::roadside_objects::Window>,
@@ -196,6 +197,7 @@ pub enum Action {
     RoadsideWindow,
     SidewalkWindow,
     TrafficPaths,
+    TrafficManage,
     TrafficOverlay,
     Length(f64),
     Curvature(f64),
@@ -929,6 +931,7 @@ impl Editor {
         for (tile, _) in spline_edits.changed.keys().chain(spline_edits.added.keys()) {
             by_tile.entry(*tile).or_default();
         }
+        for id in self.path_edits.changes.keys() {by_tile.entry(id.key.tile).or_default();}
         let map_dir = Path::new(map_rel).parent().unwrap_or(Path::new(""));
         let mut roundabout_rules:HashMap<(i32,i32),Vec<(i64,Option<String>)>>=HashMap::new();
         for a in self.added.iter().filter(|a|a.standalone) {
@@ -966,7 +969,8 @@ impl Editor {
             let additions: Vec<i64> = spline_edits.added.keys().filter(|(tile, _)| *tile == (tx, ty)).map(|(_, id)| *id).collect();
             let (new_text, s) = crate::spline_editor::rewrite(&new_text, &spline_edits.for_tile((tx, ty)), &additions)?;
             let (new_text, rows) = crate::roadside_objects::rewrite(&new_text, (tx, ty), &roadside_edits)?;
-            let n = n + c + p + s + l + rows;
+            let (new_text, paths)=crate::editor_path_edit::rewrite(&new_text,(tx,ty),&self.path_edits)?;
+            let n = n + c + p + s + l + rows + paths;
             if n == 0 {
                 return Err(format!("the objects edited were not found in {}", src.display()));
             }
@@ -1318,6 +1322,7 @@ pub fn action_for(code: winit::keyboard::KeyCode, shift: bool, ctrl: bool, yaw: 
     let fwd = DVec3::new(s, c, 0.0) * step;
     let right = DVec3::new(c, -s, 0.0) * step;
     Some(match code {
+        K::F9 if !ctrl => Action::TrafficManage,
         K::Enter | K::NumpadEnter => Action::Pick,
         K::KeyC if !ctrl => Action::Copy,
         K::KeyC if ctrl => Action::ClipboardCopy,
@@ -1369,7 +1374,7 @@ pub fn action_for(code: winit::keyboard::KeyCode, shift: bool, ctrl: bool, yaw: 
 /// letters that no longer belong to an editor operation.
 pub(crate) fn one_shot_key(code: winit::keyboard::KeyCode, shift: bool, ctrl: bool) -> bool {
     action_for(code, shift, ctrl, 0.0).is_some_and(|action| matches!(action,
-        Action::FitTerrain | Action::SmoothRoad(_) | Action::Catalog | Action::PlaceObject
+        Action::TrafficManage | Action::FitTerrain | Action::SmoothRoad(_) | Action::Catalog | Action::PlaceObject
         | Action::Generate | Action::Connect | Action::ReplaceConnection | Action::Copy
         | Action::ClipboardCopy | Action::Paste | Action::RepeatObject | Action::PlacementRepeat | Action::CancelPlacement
         | Action::Branch(_) | Action::Split | Action::Save | Action::SplineMode

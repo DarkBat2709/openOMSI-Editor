@@ -105,6 +105,7 @@ pub(super) fn spline_lanes(
             }
             l.rule_trucks = rule_trucks;
             l.source = 1;
+            l.editor_path_surface=Some(omsi_sim::traffic::EditorPathSurface::Spline(*curve));
             l.key = Some(LaneKey {
                 tile,
                 id: s.id,
@@ -121,7 +122,7 @@ pub(super) fn spline_lanes(
                 .file_name()
                 .map(|n| n.to_string_lossy().to_string())
                 .unwrap_or_default();
-            out.push(l);
+            if crate::editor_path_edit::from_rules(&mut l,&s.rules) {out.push(l);}
         };
         // (a mirrored spline's forward path runs backwards and the other way round)
         match (p.direction, s.mirror) {
@@ -256,7 +257,7 @@ pub(super) fn object_lanes(
                     .filter(|t| *t >= 0)
                     .map(|t| (c, t as usize))
             });
-            out.push(l);
+            if crate::editor_path_edit::from_rules(&mut l,rules) {out.push(l);}
         };
         match p.direction {
             1 => push(true),

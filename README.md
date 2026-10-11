@@ -1,9 +1,11 @@
-# openOMSI Editor — 0.7.22-pre (development)
+# openOMSI Editor — 0.7.23-pre (development)
 
 A free, experimental map editor fork by DarkBat2709,
 based on openOMSI 0.2.27.
 
 See [0.7.22 installation and correction notes](docs/UPDATE_0.7.22.md) for additional AI turn connections between existing lane endpoints; normal startup leaves diagnostics disabled. See the 0.7.17 notes for freeform AI paths. The [0.7.12 notes](docs/UPDATE_0.7.12.md) describe the tools.
+
+See [0.7.23 AI path selection, deletion and curve editing](docs/UPDATE_0.7.23.md). This candidate keeps the 0.7.22 PDF guides; the new workflow is documented in the bilingual update notes.
 
 ## Editor features
 
@@ -13,6 +15,7 @@ See [0.7.22 installation and correction notes](docs/UPDATE_0.7.22.md) for additi
 - New map form with name, optional author and description; one flat tile and a generated ground texture
 - Object and spline editing
 - Asset catalogue with spline texture information
+- Select and delete individual original or generated AI paths, including paths in junction objects; undo/redo and per-instance curve controls
 - Additional AI turn connections: select lane endpoints, shape the bend and keep the straight-ahead path
 - AI driving paths along terrain/road splines, with all-vehicle or strict bus-only access per direction
 - Clickable A–D arm labels and selected-arm outline in junction and roundabout previews
@@ -31,15 +34,14 @@ See [0.7.22 installation and correction notes](docs/UPDATE_0.7.22.md) for additi
 
 ## Current status
 
-Editor **0.7.22-pre** is an integration candidate based on **openOMSI 0.2.27**.
+Editor **0.7.23-pre** is an integration candidate based on **openOMSI 0.2.27**.
 The upstream release is merged, including its photo mode, plugins, rendering,
 traffic and ambience changes. The editor retains its tools and map saving.
 Photo mode requires closing the map editor first; editing is not discarded.
 
 Linux compilation and targeted regressions, including the reported terrain-chain
 case, were checked for 0.7.17; 0.7.18 added diagnostic instrumentation. The local 0.7.22 installation log records successful targeted regression tests and a release build. GitHub validates Linux and Windows separately.
-The installer builds a local release; interactive map validation and Windows execution
-remain outstanding. See [the update notes](docs/UPDATE_0.7.22.md) and
+For 0.7.23, the local editor library passed 825 tests (14 ignored), including five new path-edit checks; traffic tests passed 114 checks. The default upstream configuration and DE/EN translation checks also passed. Interactive map validation and actual Windows execution remain outstanding. See [the current validation record](docs/PRUEFUNG_0.7.23.txt), [the update notes](docs/UPDATE_0.7.23.md) and
 [the migration notes](docs/UPDATE_0.2.27.md).
 The existing [0.7.10 preview release](https://github.com/DarkBat2709/openOMSI-Editor/releases/tag/v.0.7.10)
 remains available and is based on openOMSI 0.2.20.

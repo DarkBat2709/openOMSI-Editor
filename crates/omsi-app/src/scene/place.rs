@@ -783,7 +783,7 @@ fn placed_object_lanes(
     let tilt = xf * yaw.inverse();
     if !tilt.abs_diff_eq(Mat4::IDENTITY, 1e-5) {
         for l in own.iter_mut() {
-            for q in l.points.iter_mut() {
+            for q in l.points.iter_mut().chain(l.editor_path_base.iter_mut()) {
                 *q = pos + tilt.transform_point3((*q - pos).as_vec3()).as_dvec3();
             }
             l.refresh();
@@ -794,7 +794,7 @@ fn placed_object_lanes(
     if let Some(field) = ot.deform.as_ref() {
         let inv = xf.inverse();
         for l in own.iter_mut() {
-            for q in l.points.iter_mut() {
+            for q in l.points.iter_mut().chain(l.editor_path_base.iter_mut()) {
                 let local = inv.transform_point3((*q - pos).as_vec3());
                 if let Some(d) = field_height(field, local.x, local.y) {
                     q.z += d as f64;
@@ -802,6 +802,9 @@ fn placed_object_lanes(
             }
         }
     }
+    let field=ot.deform.as_ref().map(|f|Arc::new(f.clone()));
+    for l in &mut own {l.editor_path_surface=Some(omsi_sim::traffic::EditorPathSurface::Object {pos,transform:xf,field:field.clone()});}
+    for l in &mut own {if !l.editor_path_base.is_empty() {crate::editor_path_edit::apply_shape(l,l.editor_path_shape);}}
     own
 }
 
@@ -937,7 +940,7 @@ fn note_place_stats(stats: &Mutex<LoadStats>, st: &StagedTile, res: &Resolved, p
 
 
 /// The height of a `[crossing_heightdeformation]` field at (x, y) of its object's frame.
-pub(super) fn field_height(m: &MeshData, x: f32, y: f32) -> Option<f32> {
+pub(crate) fn field_height(m: &MeshData, x: f32, y: f32) -> Option<f32> {
     let mut best: Option<f32> = None;
     for t in m.indices.chunks_exact(3) {
         let (a, b, c) = (

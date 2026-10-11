@@ -1186,6 +1186,9 @@ fn edge_points(tile: (i32, i32), s: &MapSpline, def: &omsi_scenery::Spline, end:
 fn edge_markers(world: &World, tile: (i32, i32), s: &MapSpline, steps: usize) -> Vec<DVec3> {
     let Some(ty) = world.spline_type(&s.file) else { return Vec::new() };
     let c = curve(tile, s);
+    if s.rules.iter().any(|r|r.kind=="editor_additional_connection"&&!r.kill&&r.value!=0.0) {
+        return ai_path_selection_markers(&ty.def,&c,steps);
+    }
     let edges = physical_edges(&ty.def, s.mirror);
     (0..=steps).flat_map(|i| edges.map(|(x, z)| omsi_geometry::spline_profile_point(
         &ty.def, &c, false, s.length * i as f64 / steps as f64, x, z))).collect()
@@ -2370,3 +2373,23 @@ mod junction_connection_tests {
 #[cfg(test)]
 #[path="junction_connections_tests.rs"]
 mod junction_pose_connection_tests;
+
+// Additional AI splines have no physical road edges. Their selection must show the
+// saved curve nodes, rather than the straight reference chord used to store them.
+fn ai_path_selection_markers(def:&omsi_scenery::Spline,c:&SplineCurve,steps:usize)->Vec<DVec3> {
+    let c=c.with_sli(def);let steps=steps.max(1);
+    (0..=steps).flat_map(|i|def.paths.iter().enumerate().map(move |(pi,p)|
+        omsi_geometry::editor_path_point(&c,&def.editor_path_nodes,pi,c.length*i as f64/steps as f64,p.start[0] as f64,p.start[2] as f64))).collect()
+}
+#[cfg(test)]
+mod ai_selection_marker_tests {
+    use super::*;
+    #[test]
+    fn selected_ai_curve_uses_saved_bend_and_height_instead_of_reference_chord() {
+        let s=crate::traffic_editor::Settings {two_way:false,height:0.0,nodes:vec![(0,[0.0;4]),(0,[0.5,5.0,0.0,2.0]),(0,[1.0,0.0,0.0,0.0])],..Default::default()};
+        let def=omsi_scenery::Spline::parse(&omsi_cfg::CfgFile::from_str("curve.sli",&crate::traffic_editor::definition(&s,false)));
+        let c=curve((0,0),&MapSpline {length:20.0,..Default::default()});let points=ai_path_selection_markers(&def,&c,2);
+        assert_eq!(points.len(),3);assert!(points[1].distance(DVec3::new(5.0,10.0,2.0))<1e-6);
+        assert!(points[1].distance(c.point_at(10.0))>5.0);assert!(points[0].distance(c.point_at(0.0))<1e-6);assert!(points[2].distance(c.point_at(20.0))<1e-6);
+    }
+}

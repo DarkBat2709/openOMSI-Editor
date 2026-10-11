@@ -152,21 +152,21 @@ fn driving_tangent(c:&SplineCurve,nodes:&[(usize,[f64;4])],pi:usize,a:f64,x:f64,
     d.truncate().normalize_or_zero().extend(0.0)*if dir==1 {-1.0}else{1.0}
 }
 pub fn build(roads:&[(Key,MapSpline,bool)],s:&Settings) -> Result<Plan,String> {
-    if roads.is_empty() || roads.len()>500 {return Err("Bitte einen Spline oder eine Kette bis 500 Abschnitte wählen".into());}
+    if roads.is_empty() || roads.len()>500 {return Err("Select a spline or a chain of up to 500 sections".into());}
     if ![s.width,s.offset,s.height].iter().all(|v|v.is_finite()) || !(1.5..=5.0).contains(&s.width)
-        || s.offset.abs()>20.0 || s.height.abs()>5.0 {return Err("Ungültige Spurbreite, Verschiebung oder Höhe".into());}
+        || s.offset.abs()>20.0 || s.height.abs()>5.0 {return Err("Invalid lane width, offset or height".into());}
     if s.nodes.len()>128 || s.nodes.iter().any(|(i,n)|*i>=if s.two_way{2}else{1} || !n.iter().all(|v|v.is_finite()) || !(0.0..=1.0).contains(&n[0]) || n[1..].iter().any(|v|v.abs()>50.0)) {
-        return Err("Ungültige Freiformpunkte (maximal 50 m Verschiebung)".into());
+        return Err("Invalid freeform points (maximum offset: 50 m)".into());
     }
-    if !s.nodes.is_empty()&&(roads.len()!=1||roads[0].2){return Err("Freiformpunkte bitte am einzelnen Abschnitt bearbeiten".into());}
+    if !s.nodes.is_empty()&&(roads.len()!=1||roads[0].2){return Err("Edit freeform points on a single section".into());}
     let mut plan=Plan::default();
     let mut last:Option<DVec3>=None;
     for (key,original,backwards) in roads {
         if original.deleted || ![original.length,original.heading,original.radius,original.grad_start,original.grad_end,original.cant_start,original.cant_end,original.skew_start,original.skew_end,original.delta_h.unwrap_or(0.0)].iter().chain(original.pos.iter()).all(|n|n.is_finite()) || original.length<0.5 || original.length>10000.0 {
-            return Err("Ungültige Länge des Referenzsplines".into());
+            return Err("Invalid reference spline length".into());
         }
         if original.profile_transitions.iter().flatten().any(|t|!t.valid()) {
-            return Err(format!("Spline {}: ungültige Profilkorrektur",key.1));
+            return Err(format!("Spline {}: invalid profile correction",key.1));
         }
         // The new surface-path rule makes preview and saved AI lanes use mesh geometry,
         // including the source definition's cant width and longitudinal skew.
@@ -182,10 +182,10 @@ pub fn build(roads:&[(Key,MapSpline,bool)],s:&Settings) -> Result<Plan,String> {
         piece.file=name.clone();plan.definitions.push((name,body));
         let c=SplineCurve {half_cant_width:half_width,..SplineCurve::from_map(&piece,DVec2::new(key.0.0 as f64,key.0.1 as f64)*omsi_map::tile_size())};
         let start=c.point_at(if *backwards {piece.length}else{0.0});
-        if last.is_some_and(|p|p.distance(start)>0.25) {return Err("Lücke in der Splinekette: zuerst die Referenzsplines verbinden".into());}
+        if last.is_some_and(|p|p.distance(start)>0.25) {return Err("Gap in the spline chain: connect the reference splines first".into());}
         last=Some(c.point_at(if *backwards {0.0}else{piece.length}));
         for (pi,(x,dir,bus)) in lanes(s,*backwards).into_iter().enumerate() {
-            if piece.radius.abs()>1e-6 && (1.0-x/piece.radius)<0.1 {return Err("Kurve für diesen Spurversatz zu eng".into());}
+            if piece.radius.abs()>1e-6 && (1.0-x/piece.radius)<0.1 {return Err("Curve is too tight for this lane offset".into());}
             let n=(piece.length/if s.nodes.is_empty(){2.0}else{0.5}).ceil().clamp(1.0,20000.0) as usize;
             let point=|a:f64|omsi_geometry::editor_path_point(&c,&s.nodes,pi,a,x,s.height);
             for (index,(_,node)) in s.nodes.iter().enumerate().filter(|(_,n)|n.0==pi) {plan.handles.push((index,point(node[0]*piece.length)));}
@@ -201,10 +201,10 @@ pub fn build(roads:&[(Key,MapSpline,bool)],s:&Settings) -> Result<Plan,String> {
                 plan.endpoints.push((point(a),driving_tangent(&c,&s.nodes,pi,a,x,s.height,dir),at_start));
             }
         }
-        if plan.markers.len()>100000 {return Err("Vorschau zu groß: kürzere Kette wählen".into());}
+        if plan.markers.len()>100000 {return Err("Preview is too large: select a shorter chain".into());}
         plan.pieces.push((key.0,piece));
     }
-    if plan.markers.len()>100000 {return Err("Vorschau zu groß: kürzere Kette wählen".into());}
+    if plan.markers.len()>100000 {return Err("Preview is too large: select a shorter chain".into());}
     Ok(plan)
 }
 /// Build only missing contiguous runs; existing paths retain their geometry and rules.
@@ -214,9 +214,9 @@ fn build_missing(roads:&[(Key,MapSpline,bool)],s:&Settings,occupied:&hashbrown::
         let mut p=build(run,s)?;
         result.pieces.append(&mut p.pieces);result.definitions.append(&mut p.definitions);
         result.handles.append(&mut p.handles);result.markers.append(&mut p.markers);result.endpoints.append(&mut p.endpoints);
-        if result.markers.len()>100000 {return Err("Vorschau zu groß: kürzere Kette wählen".into());}
+        if result.markers.len()>100000 {return Err("Preview is too large: select a shorter chain".into());}
     }
-    if result.pieces.is_empty() {return Err("Alle ausgewählten Abschnitte haben bereits KI-Pfade. Vorhandene Pfade bleiben unverändert.".into());}
+    if result.pieces.is_empty() {return Err("All selected sections already have AI paths. Existing paths are unchanged.".into());}
     Ok(result)
 }
 pub fn write_definitions(plan:&Plan,root:&Path,original:&Path)->Result<(),String> {
@@ -225,7 +225,7 @@ pub fn write_definitions(plan:&Plan,root:&Path,original:&Path)->Result<(),String
     for (name,body) in &plan.definitions {
         let path=root.join(name);crate::editor::protect_output(&path,original)?;
         if path.exists() && std::fs::read(&path).map_err(|e|e.to_string())?!=body.as_bytes() {
-            return Err(format!("Abweichende KI-Profildatei vorhanden: {}",path.display()));
+            return Err(format!("Different AI profile file already exists: {}",path.display()));
         }
     }
     for (name,body) in &plan.definitions {
@@ -237,12 +237,12 @@ pub fn write_definitions(plan:&Plan,root:&Path,original:&Path)->Result<(),String
     omsi_cfg::content_changed();Ok(())
 }
 #[derive(Clone,Copy)]
-pub enum Command { Connector, ConnectorSource, ConnectorDestination, ConnectorReset, Close, Overlay, Free, Lane, ResetNode, NodeHeight(f64), Replace, Connected, TwoWay, Reverse, ForwardBus, BackwardBus, Width(f64),Offset(f64),Height(f64),Apply,Refresh }
+pub enum Command { Manage, PathDelete, PathEdit, PathReset, PathNext, PathUndo, PathRedo, PathSave, Generate, Connector, ConnectorSource, ConnectorDestination, ConnectorReset, Close, Overlay, Free, Lane, ResetNode, NodeHeight(f64), Replace, Connected, TwoWay, Reverse, ForwardBus, BackwardBus, Width(f64),Offset(f64),Height(f64),Apply,Refresh }
 #[derive(Clone,Copy)]
 pub struct Target {pub point:DVec3,pub direction:DVec3,pub start:bool,pub key:omsi_sim::traffic::LaneKey,pub reversed:bool}
-pub struct Window {pub connector:Option<crate::traffic_connector::Connector>,pub drag_pending:bool,pub drag_events:usize,pub drag_queued_at:Option<std::time::Instant>,pub targets:Vec<Target>,pub free:bool,pub active_lane:usize,pub selected_node:Option<usize>,pub drag:Option<(usize,f64,DVec3)>,pub replace:bool,pub start:Key,pub settings:Settings,pub preview:Plan,pub error:Option<String>,pub rects:Vec<([f32;4],Command)>,pub rect:Option<[f32;4]>}
+pub struct Window {pub manager:Option<crate::editor_path_edit::Manager>,pub connector:Option<crate::traffic_connector::Connector>,pub connector_drag:Option<crate::editor_path_edit::PathDrag>,pub drag_pending:bool,pub drag_events:usize,pub drag_queued_at:Option<std::time::Instant>,pub targets:Vec<Target>,pub free:bool,pub active_lane:usize,pub selected_node:Option<usize>,pub drag:Option<(usize,f64,DVec3)>,pub replace:bool,pub start:Key,pub settings:Settings,pub preview:Plan,pub error:Option<String>,pub rects:Vec<([f32;4],Command)>,pub rect:Option<[f32;4]>}
 impl Window {
-    pub fn new(start:Key)->Self {Self {connector:None,drag_pending:false,drag_events:0,drag_queued_at:None,targets:Vec::new(),free:false,active_lane:0,selected_node:None,drag:None,replace:false,start,settings:Settings::default(),preview:Plan::default(),error:None,rects:Vec::new(),rect:None}}
+    pub fn new(start:Key)->Self {Self {manager:None,connector:None,connector_drag:None,drag_pending:false,drag_events:0,drag_queued_at:None,targets:Vec::new(),free:false,active_lane:0,selected_node:None,drag:None,replace:false,start,settings:Settings::default(),preview:Plan::default(),error:None,rects:Vec::new(),rect:None}}
     pub fn load_existing(&mut self,world:&World) {
         let Ok(roads)=crate::roadside_objects::traffic_route(world,self.start,false) else{return;};
         let key=roads[0].0;let found=crate::roadside_objects::generated_traffic(world,&[key]);
@@ -315,19 +315,19 @@ impl Window {
     pub fn refresh(&mut self,world:&World){
         if let Some(connector)=&self.connector {
             self.preview=Plan::default();
-            self.error=match connector.build(){Ok(plan)=>{self.preview=plan;None},Err(e)=>Some(e)};
+            self.error=match connector.build_on_road(&|p|world.editor_road_height(p)){Ok(plan)=>{self.preview=plan;None},Err(e)=>{if let Some(controls)=connector.controls(){self.preview.handles=controls.into_iter().enumerate().map(|(i,mut p)|{if let Some(z)=world.editor_road_height(p){p.z=z;}(i,p)}).collect();}Some(e)}};
             return;
         }
         let _diagnostic = crate::editor_diagnostics::Span::new("ai_preview", format!("tile={:?} spline={} nodes={} targets={} connected={} replace={}", self.start.0,self.start.1,self.settings.nodes.len(),self.targets.len(),self.settings.connected,self.replace));
         let previous_error=self.error.clone();let previous_message=self.preview.message.clone();
         self.preview=Plan::default();
         self.error=(||{
-            if self.settings.connected&&!self.settings.nodes.is_empty(){return Err("Freiformpunkte sind lokal: Bereich auf ausgewählten Spline stellen".into());}
+            if self.settings.connected&&!self.settings.nodes.is_empty(){return Err("Freeform points are local: set scope to the selected spline".into());}
             let roads=crate::roadside_objects::traffic_route(world,self.start,self.settings.connected)?;
             let keys:Vec<_>=roads.iter().map(|r|r.0).collect();
             let mut occupied=crate::roadside_objects::generated_traffic_sources(world,&keys);
             for (key,s,_) in &roads {
-                let ty=world.spline_type(&s.file).ok_or("Splineprofil fehlt")?;
+                let ty=world.spline_type(&s.file).ok_or("Spline profile is missing")?;
                 if ty.def.paths.iter().any(|p|p.kind==0) {occupied.insert(*key);}
             }
             let skipped=occupied.len();
@@ -335,15 +335,15 @@ impl Window {
                 let existing=crate::roadside_objects::generated_traffic(world,&keys);
                 for (key,source,backwards) in &roads {
                     let Some(items)=existing.get(key) else{continue;};
-                    if items.len()!=1 {return Err(format!("Spline {} hat mehrere erzeugte KI-Splines. Zuordnung zuerst prüfen.",key.1));}
+                    if items.len()!=1 {return Err(format!("Spline {} has several generated AI splines. Check their assignment first.",key.1));}
                     if world.spline_type(&source.file).is_some_and(|ty|ty.def.paths.iter().any(|p|p.kind==0)) {
-                        return Err("Referenz besitzt eigene Fahrzeugpfade; Ersetzen hier gesperrt".into());
+                        return Err("Reference has its own vehicle paths; replacement is disabled here".into());
                     }
                     let (old_key,old)=&items[0];
-                    if old_key.0!=key.0{return Err("KI-Pfad liegt auf einer anderen Kachel als seine Referenz; Zuordnung prüfen".into());}
+                    if old_key.0!=key.0{return Err("AI path is on a different tile from its reference; check the assignment".into());}
                     let mut local=self.settings.clone();
                     if self.settings.connected {
-                        if let Some(ty)=world.spline_type(&old.file) {if !ty.def.editor_path_nodes.is_empty(){return Err("Kette enthält Freiformpfade. Diese bitte einzeln bearbeiten.".into());}}
+                        if let Some(ty)=world.spline_type(&old.file) {if !ty.def.editor_path_nodes.is_empty(){return Err("Chain contains freeform paths. Edit them individually.".into());}}
                     }
                     if !self.settings.connected {local.nodes=self.settings.nodes.clone();}
                     let mut part=build(&[(*key,source.clone(),*backwards)],&local)?;
@@ -356,8 +356,8 @@ impl Window {
                     self.preview.pieces.append(&mut part.pieces);self.preview.definitions.append(&mut part.definitions);
                     self.preview.handles.append(&mut part.handles);self.preview.markers.append(&mut part.markers);self.preview.endpoints.append(&mut part.endpoints);
                 }
-                if self.preview.pieces.is_empty(){return Err("Keine mit diesem Werkzeug erzeugten KI-Pfade im gewählten Bereich. Zum Anlegen auf Ergänzen umschalten.".into());}
-                if self.preview.markers.len()>100000{return Err("Vorschau zu groß: kürzere Kette wählen".into());}
+                if self.preview.pieces.is_empty(){return Err("No paths generated by this tool in the selected area. Switch to add mode to create paths.".into());}
+                if self.preview.markers.len()>100000{return Err("Preview is too large: select a shorter chain".into());}
             } else {self.preview=if skipped==roads.len() {Plan::default()} else {build_missing(&roads,&self.settings,&occupied)?};}
             // Conservative endpoint diagnostic. Interior junctions need explicit connectors.
             let lanes=world.lanes.lock();let mut open=0;
@@ -370,8 +370,8 @@ impl Window {
                 });
                 if !internal&&!external{open+=1;}
             }
-            self.preview.message=format!("{} neue Abschnitte · {} bereits mit Pfaden (unverändert) · {} offene Pfadenden. Anschlüsse prüfen; nach Speichern Karte neu laden.",self.preview.pieces.len(),skipped,open);
-            if self.replace {self.preview.message=format!("{} KI-Abschnitte ersetzen · {} feste Anschlüsse · {} offene Pfadenden. Enter übernimmt; danach Strg+Z rückgängig.",self.preview.replacements.len(),self.settings.connections.len(),open);}
+            self.preview.message=format!("{} new sections · {} already have paths (unchanged) · {} open endpoints. Check connections; save and reload the map.",self.preview.pieces.len(),skipped,open);
+            if self.replace {self.preview.message=format!("Replace {} AI sections · {} fixed connections · {} open endpoints. Enter applies; then Ctrl+Z to undo.",self.preview.replacements.len(),self.settings.connections.len(),open);}
             Ok::<(),String>(())
         })().err();
         if let Some(error)=&self.error {if previous_error.as_ref()!=Some(error) {

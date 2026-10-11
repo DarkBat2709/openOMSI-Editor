@@ -96,15 +96,18 @@ impl App {
                         ed.traffic_overlay.refresh(w,cam.position);
                         let network=self.session.traffic.as_ref().map(|t|&t.net).or_else(||self.menus.navigator.as_ref().and_then(|n|n.map_net()));
                         let objects=network.into_iter().flat_map(|n|n.lanes.iter()).filter(|l|l.source!=1);
-                        let mut targets=Vec::new();
+                        let mut targets=Vec::new();let mut manager_lanes=Vec::new();
                         for lane in ed.traffic_overlay.lanes.iter().chain(objects).filter(|l|l.kind==omsi_sim::traffic::LaneKind::Street
                             && !ed.traffic_window.as_ref().is_some_and(|w|w.replace&&w.error.is_none()&&l.key.is_some_and(|k|w.preview.replacements.iter().any(|(key,_,_)|*key==(k.tile,k.id))))) {
+                            let Some(lane)=ed.path_edits.preview(lane)else{continue;};
+                            if ed.traffic_window.as_ref().is_some_and(|w|w.manager.is_some())&&lane.points.iter().any(|p|p.distance(cam.position)<700.0){manager_lanes.push(lane.as_ref().clone());}
                             if let Some(key)=lane.key {for start in [true,false] {
                                 let point=if start{lane.start()}else{lane.end()};
                                 let heading=if start{lane.start_heading()}else{lane.end_heading()};
                                 if point.distance(cam.position)<700.0 {targets.push(crate::traffic_editor::Target {point,direction:omsi_geometry::SplineCurve::dir(heading as f64).extend(0.0),start,key,reversed:lane.reversed});}
                             }}
-                            let color=if lane.editor_bus_only {[1.0,0.6,0.0]}else{[0.0,0.7,1.0]};
+                            let selected=ed.traffic_window.as_ref().and_then(|w|w.manager.as_ref()).and_then(|m|m.selected.as_ref()).is_some_and(|s|crate::editor_path_edit::Id::of(s)==crate::editor_path_edit::Id::of(&lane));
+                            let color=if selected {[1.0,0.2,0.9]}else if lane.editor_bus_only {[1.0,0.6,0.0]}else{[0.0,0.7,1.0]};
                             for p in &lane.points {if p.distance(cam.position)<700.0 {scene.coronas.push(omsi_render::Corona {position:*p+glam::DVec3::Z*0.25,size:0.18,color,brightness:2.0,..Default::default()});}}
                             for station in (0..(lane.length()/15.0).ceil().min(100.0) as usize).map(|i|i as f32*15.0+2.0) {
                                 let (p,h)=lane.at(station.min(lane.length()));if p.distance(cam.position)>700.0 {continue;}
@@ -114,7 +117,14 @@ impl App {
                                 }}
                             }
                         }
-                        if let Some(window)=ed.traffic_window.as_mut(){window.targets=targets;}
+                        if let Some(window)=ed.traffic_window.as_mut(){window.targets=targets;
+                            if let Some(m)=window.manager.as_mut(){m.visible=manager_lanes;m.can_undo=ed.path_edits.can_undo();m.can_redo=ed.path_edits.can_redo();
+                                m.deleted=m.selected.as_ref().is_some_and(|l|ed.path_edits.current(l).deleted);
+                                if m.editing {if let Some(l)=m.selected.as_ref().and_then(|l|ed.path_edits.preview(l)) {for (i,p) in crate::editor_path_edit::Manager::handles(&l) {
+                                    scene.coronas.push(omsi_render::Corona {position:p+glam::DVec3::Z*0.4,size:0.8,color:if i==2{[0.9,0.1,1.0]}else if i==3{[1.0,0.8,0.0]}else{[0.2,1.0,0.2]},brightness:2.0,..Default::default()});
+                                }}}
+                            }
+                        }
                     }
                     if let Some(panel)=self.menus.editor.as_ref().filter(|e|self.menus.game_menu.is_none()&&e.show_traffic_paths).and_then(|e|e.traffic_window.as_ref()){
                         if let Some(c)=panel.connector.as_ref() {

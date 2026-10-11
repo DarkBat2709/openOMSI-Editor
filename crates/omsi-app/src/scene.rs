@@ -60,8 +60,7 @@ pub(crate) use vehicle_damage::*;
 use lanes::*;
 use lightmaps::*;
 pub(crate) use stage::*;
-#[cfg(test)]
-use place::field_height;
+pub(crate) use place::field_height;
 
 #[cfg(test)]
 mod surf_map_tests;

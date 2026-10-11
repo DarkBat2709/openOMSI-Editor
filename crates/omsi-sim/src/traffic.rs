@@ -9,6 +9,12 @@
 use glam::{DVec2, DVec3};
 use hashbrown::HashMap;
 
+/// Owning road geometry: path edits follow it instead of terrain below bridges.
+#[derive(Debug, Clone)]
+pub enum EditorPathSurface {
+    Spline(omsi_geometry::SplineCurve),
+    Object { pos: DVec3, transform: glam::Mat4, field: Option<std::sync::Arc<omsi_geometry::MeshData>> },
+}
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum LaneKind {
     Street,
@@ -84,6 +90,14 @@ pub struct Lane {
     pub rule_bus: bool,
     /// Editor-specific strict access rule; unlike OMSI bus lanes it excludes taxis.
     pub editor_bus_only: bool,
+    pub editor_path_surface: Option<EditorPathSurface>,
+    pub editor_path_roads: Option<std::sync::Arc<Vec<omsi_geometry::SplineCurve>>>,
+    pub editor_path_base: Vec<DVec3>,
+    pub editor_path_headings: Vec<f32>,
+    pub editor_path_curvature: Vec<f32>,
+    pub editor_path_shape: [[f64;3];2],
+    pub editor_path_ends: [[f64;3];2],
+    pub editor_path_floor: Option<[f64;65]>,
     pub editor_additional_connection:bool,
     pub editor_next:Option<(LaneKey,bool)>,
     pub editor_previous:Option<(LaneKey,bool)>,
@@ -325,7 +339,7 @@ impl LaneBuilder {
     pub fn curve(points: Vec<DVec3>, headings: Vec<f32>, curvature: Vec<f32>, kind: LaneKind, width: f32) -> Lane {
         let dist = cumulative(&points);
         let speed_limit_kmh = if kind == LaneKind::Air { AIR_NO_LIMIT_KMH } else { 50.0 };
-        Lane { key: None, reversed: false, kind, width, points, headings, curvature, dist, speed_limit_kmh, next: Vec::new(), traffic_light: None, turn: 0, source: 0, offset: 0.0, name: String::new(), invisible: false, density: 1.0, group_density: Vec::new(), no_cars: false, rule_bus: false, editor_bus_only: false, editor_additional_connection:false, editor_next:None, editor_previous:None, rule_trucks: false, left: None, right: None, priority: DEFAULT_PRIORITY, blocks: Vec::new() }
+        Lane { key: None, reversed: false, kind, width, points, headings, curvature, dist, speed_limit_kmh, next: Vec::new(), traffic_light: None, turn: 0, source: 0, offset: 0.0, name: String::new(), invisible: false, density: 1.0, group_density: Vec::new(), no_cars: false, rule_bus: false, editor_bus_only: false, editor_path_roads:None, editor_path_surface:None, editor_path_base:Vec::new(), editor_path_headings:Vec::new(),editor_path_curvature:Vec::new(), editor_path_shape:[[0.0;3];2],editor_path_ends:[[0.0;3];2],editor_path_floor:None, editor_additional_connection:false, editor_next:None, editor_previous:None, rule_trucks: false, left: None, right: None, priority: DEFAULT_PRIORITY, blocks: Vec::new() }
     }
 
     /// Lane from bare points: headings from the neighbouring points on both sides (the

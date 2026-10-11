@@ -824,7 +824,7 @@ impl Ui {
         let flat = self.text.flat;
         self.text.flat = true;
         self.editor_surface(r, scene, layout.panel, 5.0 * s, PANEL);
-        let title = if terrain { "Terrain editor 0.7.22-pre" } else if spline { "Spline editor 0.7.22-pre" } else { "Object editor 0.7.22-pre" };
+        let title = if terrain { "Terrain editor 0.7.23-pre" } else if spline { "Spline editor 0.7.23-pre" } else { "Object editor 0.7.23-pre" };
         self.put(r, scene, title, ((13.0 * s) as u32).max(1) | BOLD,
             MUTED, layout.panel[0] + 10.0 * s, layout.panel[1] + 12.0 * s);
         self.editor_surface(r, scene, layout.selection, 3.0 * s, PANEL_ALT);
@@ -924,7 +924,7 @@ impl Ui {
             self.editor_hint_mode = Some((spline, expanded));
         }
         let shortcuts = editor_shortcuts(spline, expanded);
-        let footer = if connection.is_some() { 198.0 } else if tools.is_some() { 256.0 } else if objects.is_some() {192.0} else { 0.0 };
+        let footer = if connection.is_some() { 198.0 } else if tools.is_some() { 288.0 } else if objects.is_some() {224.0} else { 0.0 };
         let hud_bottom = self.editor_hud_rect.map_or(viewport[1], |rect| rect[3]);
         let layout = editor_dock_layout(viewport, s, hud_bottom, shortcuts.len(), footer, self.editor_dock_position);
         self.editor_help_scroll_max = layout.max_scroll;
@@ -1150,7 +1150,7 @@ impl Ui {
     fn draw_object_tools(&mut self,r:&Renderer,scene:&mut Scene,state:Option<(bool,bool,bool,bool,bool)>,s:f32,origin:[f32;2],cursor:(f32,f32)) {
         use crate::editor::Action;
         let Some((copy,paste,last,repeat,placing))=state else {return;};let [x,y]=origin;
-        self.editor_surface(r,scene,[x,y,x+284.0*s,y+192.0*s],3.0*s,PANEL);
+        self.editor_surface(r,scene,[x,y,x+284.0*s,y+224.0*s],3.0*s,PANEL);
         self.catalog_text(r,scene,"Copy / place objects",(x+8.0*s,y+5.0*s),268.0*s,13.0*s,MUTED);
         for (a,b,w,title,action,enabled) in [
             (6.0,26.0,132.0,"Copy (Ctrl+C)",Action::ClipboardCopy,copy),
@@ -1159,6 +1159,7 @@ impl Ui {
             (6.0,90.0,272.0,if repeat {"Repeat placement: ON"} else {"Repeat placement: OFF"},Action::PlacementRepeat,true),
             (6.0,122.0,272.0,"Finish placement (Esc)",Action::CancelPlacement,placing),
             (6.0,154.0,272.0,"Edit text …",Action::ObjectText,copy),
+            (6.0,186.0,272.0,"Select / edit AI paths",Action::TrafficManage,true),
         ] {
             let rect=[x+a*s,y+b*s,x+(a+w)*s,y+(b+26.0)*s];
             self.editor_surface(r,scene,rect,3.0*s,if !enabled {PANEL_ALT} else if editor_contains(rect,cursor) {LIT} else {CHIP});
@@ -1173,7 +1174,7 @@ impl Ui {
         use crate::editor::Action;
         let Some(enabled) = enabled else { return; };
         let [x, y] = origin;
-        let panel = [x, y, x + 284.0 * s, y + 256.0 * s];
+        let panel = [x, y, x + 284.0 * s, y + 288.0 * s];
         self.editor_tools_rect = Some(panel);
         self.editor_surface(r, scene, panel, 3.0 * s, PANEL);
         self.catalog_text(r, scene, if enabled { "Road shoulders / terrain" } else { "Select a road first" },
@@ -1184,9 +1185,11 @@ impl Ui {
             (Action::FitTerrain, "Fit to ground (F6)"),
             (Action::RoadsideWindow, "Objects along the road"),
             (Action::SidewalkWindow, "Sidewalk along the road"),
-            (Action::TrafficPaths, "KI-Fahrwege entlang der Straße"),
-            (Action::TrafficOverlay, "KI-Pfade anzeigen / ausblenden"),
+            (Action::TrafficManage, "Select / edit AI paths"),
+            (Action::TrafficPaths, "AI paths along the road"),
+            (Action::TrafficOverlay, "Show / hide AI paths"),
         ].into_iter().enumerate() {
+            let enabled=enabled||matches!(action,Action::TrafficManage|Action::TrafficOverlay);
             let top = y + (27.0 + row as f32 * 32.0) * s;
             let rect = [x + 6.0 * s, top, x + 278.0 * s, top + 27.0 * s];
             let color = if !enabled { PANEL_ALT }
@@ -1280,41 +1283,44 @@ impl Ui {
         use crate::traffic_editor::Command;
         let Some(w)=window else{return;};w.rects.clear();
         let top=self.editor_hud_rect.map_or(viewport[1],|r|r[3])+10.0;
-        let s=scale.max(0.5).min((viewport[2]/440.0).max(0.1)).min(((viewport[1]+viewport[3]-top-12.0)/786.0).max(0.1));
+        let height=if w.manager.is_some(){480.0}else{786.0};
+        let s=scale.max(0.5).min((viewport[2]/440.0).max(0.1)).min(((viewport[1]+viewport[3]-top-12.0)/height).max(0.1));
         let x=viewport[0]+12.0*s;let y=top;
         let rect=|a:f32,b:f32,ww:f32,h:f32|[x+a*s,y+b*s,x+(a+ww)*s,y+(b+h)*s];
-        w.rect=Some(rect(0.0,0.0,410.0,786.0));self.editor_dock_rect=w.rect;
+        w.rect=Some(rect(0.0,0.0,410.0,height));self.editor_dock_rect=w.rect;
         self.editor_dock_header=None;self.editor_help_rect=None;self.editor_tools_rect=None;
         self.editor_connection_rect=None;self.spline_tool_rects.clear();self.terrain_tool_rects.clear();
         self.catalog_open_rect=None;self.tile_open_rect=None;self.terrain_open_rect=None;
         self.junction_open_rect=None;self.roundabout_open_rect=None;
         let flat=self.text.flat;self.text.flat=true;
         self.editor_surface(r,scene,w.rect.unwrap(),5.0*s,PANEL);
+        if w.manager.is_some(){self.draw_path_manager(r,scene,w,s,x,y,cursor);self.text.flat=flat;return;}
         if let Some(c)=w.connector.as_ref() {
-            self.put(r,scene,"Zusätzliche KI-Verbindung",((15.0*s)as u32).max(1)|BOLD,WHITE,x+12.0*s,y+18.0*s);
-            let source=c.source.map(|t|format!("Start: Fahrweg {} / Spur {}",t.key.id,t.key.path+1)).unwrap_or("Start wählen: gelbes Fahrwegende".into());
-            let target=c.destination.map(|t|format!("Ziel: Fahrweg {} / Spur {}",t.key.id,t.key.path+1)).unwrap_or("Ziel wählen: lila Fahrweganfang".into());
+            self.put(r,scene,"Additional AI connection",((15.0*s)as u32).max(1)|BOLD,WHITE,x+12.0*s,y+18.0*s);
+            let source=c.source.map(|t|format!("Start: path {} / lane {}",t.key.id,t.key.path+1)).unwrap_or("Select start: yellow path end".into());
+            let target=c.destination.map(|t|format!("Destination: path {} / lane {}",t.key.id,t.key.path+1)).unwrap_or("Select destination: purple path start".into());
             let buttons=vec![
                 (rect(10.0,40.0,390.0,34.0),source,Command::ConnectorSource,true),
                 (rect(10.0,84.0,390.0,34.0),target,Command::ConnectorDestination,c.source.is_some()),
-                (rect(10.0,132.0,390.0,30.0),format!("Fahrzeuge: {}",if c.bus_only{"Nur Busse"}else{"Alle Fahrzeuge"}),Command::ForwardBus,true),
+                (rect(10.0,132.0,390.0,30.0),format!("Vehicles: {}",if c.bus_only{"Buses only"}else{"All vehicles"}),Command::ForwardBus,true),
                 (rect(310.0,172.0,40.0,28.0),"−".into(),Command::Width(-0.25),true),
                 (rect(360.0,172.0,40.0,28.0),"+".into(),Command::Width(0.25),true),
-                (rect(10.0,420.0,390.0,32.0),"Start und Ziel neu wählen".into(),Command::ConnectorReset,true),
-                (rect(10.0,466.0,390.0,34.0),"Verbindung hinzufügen (Enter)".into(),Command::Apply,c.picking.is_none()&&w.error.is_none()&&!w.preview.pieces.is_empty()),
-                (rect(10.0,512.0,390.0,30.0),"Zurück zu Fahrwegen entlang der Straße".into(),Command::Connector,true),
-                (rect(10.0,556.0,390.0,30.0),"Schließen (Esc)".into(),Command::Close,true),
+                (rect(10.0,420.0,390.0,32.0),"Select start and destination again".into(),Command::ConnectorReset,true),
+                (rect(10.0,466.0,390.0,34.0),"Add connection (Enter)".into(),Command::Apply,c.picking.is_none()&&w.error.is_none()&&!w.preview.pieces.is_empty()),
+                (rect(10.0,512.0,390.0,30.0),"Back to AI paths along the road".into(),Command::Connector,true),
+                (rect(10.0,556.0,390.0,30.0),if c.source.is_some()&&c.destination.is_some(){"Add connection + save (Ctrl+S)"}else{"Save map (Ctrl+S)"}.into(),Command::PathSave,true),
+                (rect(10.0,594.0,390.0,30.0),"Close (Esc)".into(),Command::Close,true),
             ];
-            self.catalog_text(r,scene,&format!("Spurbreite: {:.2} m",c.width),(x+12.0*s,y+184.0*s),290.0*s,12.0*s,SOFT);
-            for (i,text) in ["Geradeauspfade bleiben erhalten.","Gelb: Start · Lila: Ziel · Grün: Bogen ziehen", "An Fahrwegenden verbinden, nicht mitten im Pfad.", "Nur Vorschau bis Verbindung hinzufügen."].iter().enumerate(){
+            self.catalog_text(r,scene,&format!("Lane width: {:.2} m",c.width),(x+12.0*s,y+184.0*s),290.0*s,12.0*s,SOFT);
+            for (i,text) in ["Straight-ahead paths are retained.","Yellow: start · Purple: destination · Green: drag curve", "Connect path endpoints, not the middle of a path.", "Preview only until you add the connection."].iter().enumerate(){
                 self.catalog_text(r,scene,text,(x+12.0*s,y+(224.0+i as f32*22.0)*s),386.0*s,12.0*s,SOFT);
             }
             let status=c.status();let message=w.error.as_deref().unwrap_or(&status);
             for (i,line) in wrap(&self.text,message,12.0*s,382.0*s).iter().take(5).enumerate(){
                 self.catalog_text(r,scene,line,(x+12.0*s,y+(326.0+i as f32*17.0)*s),382.0*s,12.0*s,WHITE);
             }
-            self.catalog_text(r,scene,"Strg+Z rückgängig · Strg+S speichern",(x+12.0*s,y+630.0*s),386.0*s,12.0*s,SOFT);
-            self.catalog_text(r,scene,"Danach Karte neu laden, damit die KI den Weg nutzt.",(x+12.0*s,y+652.0*s),386.0*s,11.0*s,SOFT);
+            self.catalog_text(r,scene,"Ctrl+S: add the completed connection and save",(x+12.0*s,y+642.0*s),386.0*s,12.0*s,SOFT);
+            self.catalog_text(r,scene,"Then reload the map so AI traffic uses the path.",(x+12.0*s,y+664.0*s),386.0*s,11.0*s,SOFT);
             for(area,title,command,enabled) in buttons {
                 self.editor_surface(r,scene,area,3.0*s,if !enabled{PANEL_ALT}else if editor_contains(area,cursor){LIT}else{CHIP});
                 self.catalog_text(r,scene,&title,(area[0]+6.0*s,area[1]+8.0*s),area[2]-area[0]-12.0*s,12.0*s,WHITE);
@@ -1322,44 +1328,46 @@ impl Ui {
             }
             self.text.flat=flat;return;
         }
-        self.put(r,scene,"KI-Fahrwege entlang der Straße",((15.0*s)as u32).max(1)|BOLD,WHITE,x+12.0*s,y+18.0*s);
+        self.put(r,scene,"AI paths along the road",((15.0*s)as u32).max(1)|BOLD,WHITE,x+12.0*s,y+18.0*s);
         let settings=&w.settings;
         let mut buttons=vec![
-            (rect(10.0,40.0,390.0,30.0),if settings.connected{"Bereich: verbundene Splinekette"}else{"Bereich: ausgewählter Spline"}.to_string(),Command::Connected,true),
-            (rect(10.0,78.0,390.0,30.0),if settings.two_way{if settings.parallel{"Zwei Spuren in gleicher Richtung"}else{"Zwei Spuren mit Gegenverkehr"}}else{"Eine Spur / Einbahnstraße"}.to_string(),Command::TwoWay,true),
-            (rect(10.0,116.0,390.0,30.0),if settings.reverse{"Richtung: umgekehrt"}else{"Richtung: entlang der Referenz"}.to_string(),Command::Reverse,true),
-            (rect(10.0,154.0,390.0,30.0),format!("Spur 1: {}",if settings.forward_bus{"Nur Busse"}else{"Alle Fahrzeuge"}),Command::ForwardBus,true),
-            (rect(10.0,192.0,390.0,30.0),format!("Fahrspur 2: {}",if settings.backward_bus{"Nur Busse"}else{"Alle Fahrzeuge"}),Command::BackwardBus,settings.two_way),
+            (rect(10.0,40.0,390.0,30.0),if settings.connected{"Scope: connected spline chain"}else{"Scope: selected spline"}.to_string(),Command::Connected,true),
+            (rect(10.0,78.0,390.0,30.0),if settings.two_way{if settings.parallel{"Two lanes in the same direction"}else{"Two opposing lanes"}}else{"One lane / one-way road"}.to_string(),Command::TwoWay,true),
+            (rect(10.0,116.0,390.0,30.0),if settings.reverse{"Direction: reversed"}else{"Direction: along the reference"}.to_string(),Command::Reverse,true),
+            (rect(10.0,154.0,390.0,30.0),format!("Lane 1: {}",if settings.forward_bus{"Buses only"}else{"All vehicles"}),Command::ForwardBus,true),
+            (rect(10.0,192.0,390.0,30.0),format!("Lane 2: {}",if settings.backward_bus{"Buses only"}else{"All vehicles"}),Command::BackwardBus,settings.two_way),
         ];
         for (i,(label,value,minus,plus)) in [
-            ("Spurbreite",settings.width,Command::Width(-0.25),Command::Width(0.25)),
-            ("Seitlicher Versatz",settings.offset,Command::Offset(-0.25),Command::Offset(0.25)),
-            ("Höhe über Spline",settings.height,Command::Height(-0.05),Command::Height(0.05)),
+            ("Lane width",settings.width,Command::Width(-0.25),Command::Width(0.25)),
+            ("Lateral offset",settings.offset,Command::Offset(-0.25),Command::Offset(0.25)),
+            ("Height above spline",settings.height,Command::Height(-0.05),Command::Height(0.05)),
         ].into_iter().enumerate(){let row=234.0+i as f32*36.0;
+            let label=omsi_ui::tr(label);
             self.catalog_text(r,scene,&format!("{label}: {value:.2} m"),(x+12.0*s,y+(row+8.0)*s),290.0*s,12.0*s,SOFT);
             buttons.push((rect(310.0,row,40.0,28.0),"−".into(),minus,true));
             buttons.push((rect(360.0,row,40.0,28.0),"+".into(),plus,true));
         }
-        self.catalog_text(r,scene,"Blau: alle Fahrzeuge · Orange: nur Busse",(x+12.0*s,y+354.0*s),386.0*s,12.0*s,SOFT);
-        self.catalog_text(r,scene,if w.free {"Grün: ziehen · Lila: Anschluss · Loslassen: einrasten"}else{"Pfeile zeigen die Fahrtrichtung. Busfahrpläne separat."},(x+12.0*s,y+374.0*s),386.0*s,11.0*s,MUTED);
+        self.catalog_text(r,scene,"Blue: all vehicles · Orange: buses only",(x+12.0*s,y+354.0*s),386.0*s,12.0*s,SOFT);
+        self.catalog_text(r,scene,if w.free {"Green: drag · Purple: connection · Release: snap"}else{"Arrows show travel direction. Bus schedules are separate."},(x+12.0*s,y+374.0*s),386.0*s,11.0*s,MUTED);
         let message=w.error.as_deref().unwrap_or(&w.preview.message);
         for (i,line) in wrap(&self.text,message,12.0*s,382.0*s).iter().take(3).enumerate(){
             self.catalog_text(r,scene,line,(x+12.0*s,y+(398.0+i as f32*17.0)*s),382.0*s,12.0*s,SOFT);
         }
         buttons.extend([
-            (rect(10.0,456.0,390.0,30.0),if w.free {"Freiform aktiv: Punkte mit linker Maus ziehen"}else{"Freiformpunkte bearbeiten"}.into(),Command::Free,true),
-            (rect(10.0,490.0,190.0,30.0),format!("Fahrspur {} wählen",if w.active_lane==0{2}else{1}),Command::Lane,w.free&&settings.two_way),
-            (rect(210.0,490.0,190.0,30.0),"Punkt zurücksetzen".into(),Command::ResetNode,w.free&&w.selected_node.is_some()),
-            (rect(10.0,524.0,190.0,30.0),"Punkt tiefer (0,1 m)".into(),Command::NodeHeight(-0.1),w.free&&w.selected_node.is_some()),
-            (rect(210.0,524.0,190.0,30.0),"Punkt höher (0,1 m)".into(),Command::NodeHeight(0.1),w.free&&w.selected_node.is_some()),
-            (rect(10.0,564.0,390.0,30.0),if w.replace {"Modus: vorhandene KI-Pfade ersetzen"}else{"Modus: fehlende KI-Pfade ergänzen"}.into(),Command::Replace,true),
-            (rect(10.0,604.0,390.0,30.0),if show_paths {"KI-Pfade: sichtbar – ausblenden"}else{"KI-Pfade: ausgeblendet – anzeigen"}.into(),Command::Overlay,true),
-            (rect(10.0,644.0,390.0,32.0),if w.replace {"KI-Pfade ersetzen (Enter)"}else{"KI-Pfade anlegen (Enter)"}.into(),Command::Apply,w.error.is_none()&&!w.preview.pieces.is_empty()),
-            (rect(10.0,724.0,390.0,30.0),"Zusätzliche KI-Verbindung erstellen".into(),Command::Connector,true),
-            (rect(10.0,686.0,190.0,30.0),"Vorschau aktualisieren".into(),Command::Refresh,true),
-            (rect(210.0,686.0,190.0,30.0),"Schließen (Esc)".into(),Command::Close,true),
+            (rect(10.0,456.0,390.0,30.0),if w.free {"Freeform active: left-drag points"}else{"Edit freeform points"}.into(),Command::Free,true),
+            (rect(10.0,490.0,190.0,30.0),format!("Select lane {}",if w.active_lane==0{2}else{1}),Command::Lane,w.free&&settings.two_way),
+            (rect(210.0,490.0,190.0,30.0),"Reset point".into(),Command::ResetNode,w.free&&w.selected_node.is_some()),
+            (rect(10.0,524.0,190.0,30.0),"Lower point (0.1 m)".into(),Command::NodeHeight(-0.1),w.free&&w.selected_node.is_some()),
+            (rect(210.0,524.0,190.0,30.0),"Raise point (0.1 m)".into(),Command::NodeHeight(0.1),w.free&&w.selected_node.is_some()),
+            (rect(10.0,564.0,390.0,30.0),if w.replace {"Mode: replace existing AI paths"}else{"Mode: add missing AI paths"}.into(),Command::Replace,true),
+            (rect(10.0,604.0,390.0,30.0),if show_paths {"AI paths: visible - hide"}else{"AI paths: hidden - show"}.into(),Command::Overlay,true),
+            (rect(10.0,644.0,390.0,32.0),if w.replace {"Replace AI paths (Enter)"}else{"Create AI paths (Enter)"}.into(),Command::Apply,w.error.is_none()&&!w.preview.pieces.is_empty()),
+            (rect(10.0,724.0,190.0,30.0),"Create additional AI connection".into(),Command::Connector,true),
+            (rect(210.0,724.0,190.0,30.0),"Select / edit AI paths".into(),Command::Manage,true),
+            (rect(10.0,686.0,190.0,30.0),"Refresh preview".into(),Command::Refresh,true),
+            (rect(210.0,686.0,190.0,30.0),"Close (Esc)".into(),Command::Close,true),
         ]);
-        self.catalog_text(r,scene,"Danach: Strg+Z rückgängig · Strg+S speichern",(x+12.0*s,y+765.0*s),386.0*s,11.0*s,MUTED);
+        self.catalog_text(r,scene,"Then: Ctrl+Z undo · Ctrl+S save",(x+12.0*s,y+765.0*s),386.0*s,11.0*s,MUTED);
         for(area,title,command,enabled) in buttons {
             self.editor_surface(r,scene,area,3.0*s,if !enabled{PANEL_ALT}else if editor_contains(area,cursor){LIT}else{CHIP});
             self.catalog_text(r,scene,&title,(area[0]+6.0*s,area[1]+8.0*s),area[2]-area[0]-12.0*s,12.0*s,WHITE);
@@ -3806,7 +3814,7 @@ mod tests {
                 for spline in [false, true] {
                     for expanded in [false, true] {
                         let count = editor_shortcuts(spline, expanded).len();
-                        for footer in [0.0, 128.0, 160.0, 164.0, 192.0, 198.0, 256.0] {
+                        for footer in [0.0, 128.0, 160.0, 164.0, 192.0, 198.0, 224.0, 256.0, 288.0] {
                             for position in [None, Some([1.0, 1.0]), Some([-5.0, 8.0])] {
                                 let dock = editor_dock_layout(viewport, s, hud.panel[3], count, footer, position);
                                 assert!(dock.panel[0] >= viewport[0]);
@@ -4114,5 +4122,37 @@ mod tests {
     fn chat_filter_stars_out_swearing() {
         assert_ne!(filter_chat("you are a fucking idiot"), "you are a fucking idiot");
         assert_eq!(filter_chat("next stop Rathaus Spandau"), "next stop Rathaus Spandau");
+    }
+}
+
+impl Ui {
+    fn draw_path_manager(&mut self,r:&Renderer,scene:&mut Scene,w:&mut crate::traffic_editor::Window,s:f32,x:f32,y:f32,cursor:(f32,f32)) {
+        use crate::traffic_editor::Command;
+        let m=w.manager.as_ref().unwrap();
+        let rect=|a:f32,b:f32,ww:f32,h:f32|[x+a*s,y+b*s,x+(a+ww)*s,y+(b+h)*s];
+        self.put(r,scene,"Select / edit AI paths",((15.0*s)as u32).max(1)|BOLD,WHITE,x+12.0*s,y+18.0*s);
+        let selected=m.selected.as_ref().is_some();
+        let title=if let Some(l)=m.selected.as_ref(){let k=l.key.unwrap();
+            format!("{} {} / {} · {}",omsi_ui::tr(if l.source==1 {"Road"}else{"Object"}),k.id,k.path+1,omsi_ui::tr(if l.reversed{"Backward"}else{"Forward"}))
+        }else{omsi_ui::tr("Click a blue AI path to select it").into_owned()};
+        self.catalog_text(r,scene,&title,(x+12.0*s,y+42.0*s),386.0*s,12.0*s,WHITE);
+        self.catalog_text(r,scene,"Green: bend. Purple: move start. Yellow: move end.",(x+12.0*s,y+78.0*s),386.0*s,12.0*s,MUTED);
+        for (area,title,cmd,enabled) in [
+            (rect(10.0,120.0,390.0,30.0),"Next overlapping path (Tab)",Command::PathNext,m.candidates.len()>1),
+            (rect(10.0,158.0,190.0,32.0),if m.deleted{"Restore AI path"}else{"Delete AI path (Del)"},Command::PathDelete,selected),
+            (rect(210.0,158.0,190.0,32.0),if m.editing{"Finish curve editing"}else{"Edit curve"},Command::PathEdit,selected&&!m.deleted&&m.selected.as_ref().is_some_and(|l|l.points.len()>=2)),
+            (rect(10.0,198.0,390.0,30.0),"Restore original curve",Command::PathReset,selected&&!m.deleted),
+            (rect(10.0,236.0,190.0,30.0),"Undo (Ctrl+Z)",Command::PathUndo,m.can_undo),
+            (rect(210.0,236.0,190.0,30.0),"Redo (Ctrl+Y)",Command::PathRedo,m.can_redo),
+            (rect(10.0,274.0,390.0,32.0),"Save map (Ctrl+S)",Command::PathSave,true),
+            (rect(10.0,314.0,390.0,30.0),"AI paths along the selected road",Command::Generate,m.selected.as_ref().is_some_and(|l|l.source==1)),
+            (rect(10.0,352.0,390.0,30.0),"Close (Esc)",Command::Close,true),
+        ] {
+            self.editor_surface(r,scene,area,3.0*s,if !enabled{PANEL_ALT}else if editor_contains(area,cursor){LIT}else{CHIP});
+            self.catalog_text(r,scene,title,(area[0]+6.0*s,area[1]+8.0*s),area[2]-area[0]-12.0*s,12.0*s,WHITE);
+            if enabled{w.rects.push((area,cmd));}
+        }
+        self.catalog_text(r,scene,"Save, then reload the map to update AI traffic.",(x+12.0*s,y+402.0*s),386.0*s,12.0*s,MUTED);
+        if let Some(error)=w.error.as_ref(){self.catalog_text(r,scene,error,(x+12.0*s,y+440.0*s),386.0*s,12.0*s,[255,102,76,0]);}
     }
 }

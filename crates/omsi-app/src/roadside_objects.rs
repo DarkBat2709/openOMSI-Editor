@@ -1028,16 +1028,18 @@ mod traffic_uploaded_regression {
 /// Saved and unsaved spline paths, independent of the simulation's drained lane queue.
 pub fn traffic_overlay_lanes(world:&World,center:DVec3)->Vec<omsi_sim::traffic::Lane> {
         let _diagnostic = crate::editor_diagnostics::Span::new("traffic_overlay_lanes", "");
-    let mut lanes=Vec::new();
+    let mut lanes=Vec::new();let mut roads=Vec::new();
     for (tile,source) in current_tiles(world) {
         for spline in source.tile.splines.iter().filter(|s|!s.deleted) {
             let c=curve((tile,spline.id),spline);
             if c.start.truncate().distance(center.truncate())>800.0+spline.length.abs() {continue;}
             if let Some(ty)=world.spline_type(&spline.file) {
+                if !ty.def.only_editor {roads.push(c.with_sli(&ty.def));}
                 lanes.extend(world.editor_path_lanes(&ty.def,spline,&c,tile));
             }
         }
     }
+    crate::editor_path_edit::attach_roads(&mut lanes,&roads,true);
     lanes
 }
 

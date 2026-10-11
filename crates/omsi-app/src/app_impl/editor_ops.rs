@@ -108,6 +108,7 @@ impl App {
     /// Mouse buttons and keys run the same editor action and validation.
     pub(crate) fn editor_action(&mut self, action: crate::editor::Action) -> bool {
         if self.menus.editor.is_none() { return false; }
+        if matches!(action,crate::editor::Action::TrafficManage){self.editor_open_path_manager();return true;}
         if matches!(action,crate::editor::Action::AuditSplines){self.editor_open_audit();return true;}
         if matches!(action,crate::editor::Action::ReloadMap){self.editor_reload_map();return true;}
         let Some(cam) = self.camera.as_ref() else { return false; };
@@ -159,6 +160,7 @@ impl App {
             crate::editor::Action::TerrainMode=>{self.editor_open_terrain();return true;}
             crate::editor::Action::TrafficOverlay=>{if let Some(ed)=self.menus.editor.as_mut(){ed.show_traffic_paths=!ed.show_traffic_paths;ed.traffic_overlay.invalidate();
                 self.service_msg=Some((if ed.show_traffic_paths {"KI-Pfade sichtbar (blau/orange)"} else {"KI-Pfade ausgeblendet"}.into(),5.0));}return true;}
+            crate::editor::Action::TrafficManage=>{self.editor_open_path_manager();return true;}
             crate::editor::Action::TrafficPaths=>{self.editor_open_traffic_paths();return true;}
             crate::editor::Action::SidewalkWindow=>{self.editor_open_sidewalk();return true;}
             crate::editor::Action::RoadsideWindow=>{self.editor_open_roadside();return true;}
@@ -253,7 +255,7 @@ impl App {
                     Some(Ok(files)) => {
                         let spline_changed = {
                             let e = world.spline_edits.lock();
-                            !e.changed.is_empty() || !e.added.is_empty()
+                            !e.changed.is_empty() || !e.added.is_empty() || !ed.path_edits.changes.is_empty()
                         };
                         format!("{} file(s) saved in mod folder ({}){}", files.len(), files.iter().filter_map(|f| f.file_name()).map(|n| n.to_string_lossy()).collect::<Vec<_>>().join(", "),
                             if spline_changed { " - reload the map to update AI traffic" } else { "" })

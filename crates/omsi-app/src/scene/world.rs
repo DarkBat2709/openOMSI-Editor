@@ -785,6 +785,17 @@ impl World {
         }
     }
 
+    /// Actual loaded drive faces near a path, including crossing objects and bridge decks.
+    /// No terrain fallback: missing road coverage must not silently create an airborne link.
+    pub(crate) fn editor_road_height(&self,p:DVec3)->Option<f64> {
+        let size=tile_size();let key=((p.x/size).floor() as i32,(p.y/size).floor() as i32);
+        let surfaces=self.surfaces.read();let surface=surfaces.get(&key)?;
+        let x=(p.x-key.0 as f64*size) as f32;let y=(p.y-key.1 as f64*size) as f32;
+        let mut zs=[0.0;64];let mut walls=None;
+        let n=surface.drive.heights(x,y,&mut zs,&mut walls).min(zs.len());
+        zs[..n].iter().filter(|z|z.is_finite()&&(**z as f64-p.z).abs()<20.0)
+            .min_by(|a,b|(**a as f64-p.z).abs().total_cmp(&(**b as f64-p.z).abs())).map(|z|*z as f64)
+    }
     pub fn ground_height(&self, x: f64, y: f64) -> Option<f64> {
         let tx = (x / tile_size()).floor() as i32;
         let ty = (y / tile_size()).floor() as i32;

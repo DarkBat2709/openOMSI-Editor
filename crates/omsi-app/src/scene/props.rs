@@ -1518,3 +1518,22 @@ pub(super) fn mesh_bounds(m: &MeshData, xf: &Mat4, origin: DVec3) -> [f64; 4] {
     }
     b
 }
+
+impl World {
+    pub(crate) fn editor_lane_editable(&self,key:omsi_sim::traffic::LaneKey,source:u32)->Result<(),String> {
+        if omsi_map::world_coordinates(){return Err("AI path editing on world-coordinate maps is not supported yet".into());}
+        if source==1 && self.spline_edits.lock().added.contains_key(&(key.tile,key.id)){return Ok(());}
+        let path=self.tile_source(key.tile.0,key.tile.1).ok_or("AI path tile is not loaded")?;
+        let base=Tile::load(&path).map_err(|e|e.to_string())?;
+        if base.version<14 {return Err("AI path editing requires a version 14 tile".into());}
+        let active=crate::tiles::read_tile(&path,&self.chrono_dirs.read()).ok_or("Active tile missing")?;
+        let valid=if source==1 {
+            let b:Vec<_>=base.splines.iter().filter(|s|s.id==key.id).collect();let a:Vec<_>=active.splines.iter().filter(|s|s.id==key.id).collect();
+            b.len()==1&&a.len()==1&&b[0]==a[0]
+        }else if source==2 {
+            let b:Vec<_>=base.objects.iter().chain(&base.attach_objects).filter(|s|s.id==key.id).collect();let a:Vec<_>=active.objects.iter().chain(&active.attach_objects).filter(|s|s.id==key.id).collect();
+            b.len()==1&&a.len()==1&&b[0]==a[0]
+        }else {false};
+        if valid{Ok(())}else{Err("This AI path belongs to a changed Chrono record or an unsupported element".into())}
+    }
+}

@@ -628,7 +628,7 @@ impl World {
     fn stage_splines(&self, out: &mut StagedTile, tile: &omsi_map::Tile, origin2: DVec2) -> (Vec<Lane>, Vec<Arc<MeshData>>) {
         let (tx, ty, origin) = (out.tx, out.ty, out.origin);
         let debug_splines = omsi_cfg::flags::OMSI_DEBUG_SPLINES.is_set();
-        let mut lanes: Vec<Lane> = Vec::new();
+        let mut lanes: Vec<Lane> = Vec::new();let mut road_curves=Vec::new();
         let mut meshes: Vec<Arc<MeshData>> = Vec::new();
         for s in tile
             .splines
@@ -644,6 +644,7 @@ impl World {
                 SPLINE_ENDS.lock().insert(s.id, (curve.point_at(0.0), curve.end_point(), s.prev_id, s.next_id, s.file.clone()));
             }
             // editor-only splines (invisible streets, flight paths) still carry lanes
+            if !st.def.only_editor {road_curves.push(curve.with_sli(&st.def));}
             let mut new_lanes = spline_lanes(&st.def, s, &curve, (tx, ty));
             for l in new_lanes.iter_mut() {
                 l.invisible = st.def.only_editor;
@@ -785,6 +786,7 @@ impl World {
                 meshes.push(Arc::new(mesh));
             }
         }
+        crate::editor_path_edit::attach_roads(&mut lanes,&road_curves,false);
         (lanes, meshes)
     }
 

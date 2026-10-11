@@ -13,11 +13,12 @@ pub struct Connector {
     /// Some(true): choose source lane END. Some(false): choose target lane START.
     pub picking:Option<bool>,
     pub reach:[f64;2],
+    pub bend:Option<[DVec3;2]>,
     pub bus_only:bool,
     pub width:f64,
 }
 impl Default for Connector {
-    fn default()->Self {Self {source:None,destination:None,picking:Some(true),reach:[10.0;2],bus_only:false,width:3.0}}
+    fn default()->Self {Self {source:None,destination:None,picking:Some(true),reach:[10.0;2],bend:None,bus_only:false,width:3.0}}
 }
 impl Connector {
     pub fn pick(&self,targets:&[Target],origin:DVec3,ray:DVec3)->Result<Option<Target>,String> {
@@ -29,7 +30,7 @@ impl Connector {
         hits.sort_by(|a,b|a.0.total_cmp(&b.0));
         let Some((distance,best))=hits.first().copied()else{return Ok(None);};
         if hits.iter().skip(1).any(|(d,t)|(*d-distance).abs()<0.1&&(t.key!=best.key||t.reversed!=best.reversed)) {
-            return Err("Mehrere Anschlüsse liegen übereinander. Kamera näher heran oder seitlich bewegen.".into());
+            return Err("Several endpoints overlap. Move the camera closer or to the side.".into());
         }
         Ok(Some(best))
     }
@@ -37,39 +38,44 @@ impl Connector {
         self.picking.is_some_and(|source|t.start!=source)
     }
     pub fn choose(&mut self,t:Target)->Result<(),String> {
-        if !self.accepts(&t){return Err("Start braucht ein Fahrwegende, Ziel einen Fahrweganfang".into());}
+        if !self.accepts(&t){return Err("Start requires a path end; destination requires a path start".into());}
         if self.picking==Some(true){self.source=Some(t);self.picking=Some(false);}else{self.destination=Some(t);self.picking=None;}
         if let (Some(a),Some(b))=(self.source,self.destination) {
-            self.reach=[(a.point.distance(b.point)*0.4).clamp(1.0,40.0);2];
+            self.reach=[(a.point.distance(b.point)*0.4).clamp(1.0,40.0);2];self.bend=None;
         }
         Ok(())
     }
     pub fn controls(&self)->Option<[DVec3;2]> {
         let a=self.source?;let b=self.destination?;
+        if let Some(p)=self.bend{return Some(p);}
         Some([a.point+a.direction.normalize_or_zero()*self.reach[0],b.point-b.direction.normalize_or_zero()*self.reach[1]])
     }
     pub fn move_handle(&mut self,index:usize,point:DVec3){
-        let Some(t)=(if index==0{self.source}else{self.destination})else{return;};
-        let along=(point-t.point).dot(t.direction.normalize_or_zero())*if index==0{1.0}else{-1.0};
-        self.reach[index.min(1)]=along.clamp(1.0,60.0);
+        let Some(mut controls)=self.controls()else{return;};
+        if !point.is_finite(){return;}
+        controls[index.min(1)]=point;self.bend=Some(controls);
     }
     pub fn status(&self)->String {
         match self.picking {
-            Some(true)=>"1. Gelben Anschluss am ENDE der ankommenden Fahrspur anklicken".into(),
-            Some(false)=>"2. Lila Anschluss am ANFANG der abgehenden Fahrspur anklicken".into(),
-            None=>"3. Grüne Bogenpunkte ziehen; Richtung bleibt am Anschluss erhalten. Dann Verbindung hinzufügen.".into(),
+            Some(true)=>"1. Click the yellow endpoint at the END of the incoming lane".into(),
+            Some(false)=>"2. Click the purple endpoint at the START of the outgoing lane".into(),
+            None=>"3. Drag the green curve handles freely. The connection follows the loaded road surface. Then add the connection.".into(),
         }
     }
-    pub fn build(&self)->Result<Plan,String> {
+    #[cfg(test)]
+    pub fn build(&self)->Result<Plan,String> {self.build_projected(None)}
+    pub fn build_on_road(&self,height:&dyn Fn(DVec3)->Option<f64>)->Result<Plan,String> {self.build_projected(Some(height))}
+    fn build_projected(&self,height:Option<&dyn Fn(DVec3)->Option<f64>>)->Result<Plan,String> {
         let (Some(a),Some(b))=(self.source,self.destination)else{return Ok(Plan {message:self.status(),..Default::default()});};
-        if a.start || !b.start || (a.key==b.key&&a.reversed==b.reversed) {return Err("Zwei verschiedene Fahrwege in Fahrtrichtung auswählen".into());}
+        if a.start || !b.start || (a.key==b.key&&a.reversed==b.reversed) {return Err("Select two different paths in the direction of travel".into());}
         if !self.width.is_finite()||!(1.5..=5.0).contains(&self.width)||!a.point.is_finite()||!b.point.is_finite()||!a.direction.is_finite()||!b.direction.is_finite()
             || a.direction.length()<0.9||b.direction.length()<0.9||!self.reach.iter().all(|r|r.is_finite()&&(1.0..=60.0).contains(r)) {
-            return Err("Ungültige Anschlussgeometrie".into());
+            return Err("Invalid connection geometry".into());
         }
         let delta=b.point-a.point;let length=delta.truncate().length();
-        if !(1.0..=200.0).contains(&length) || delta.z.abs()>20.0 {return Err("Anschlüsse müssen 1 bis 200 m auseinander liegen; Höhenunterschied höchstens 20 m".into());}
+        if !(1.0..=200.0).contains(&length) || delta.z.abs()>20.0 {return Err("Endpoints must be 1 to 200 m apart; height difference must not exceed 20 m".into());}
         let [p1,p2]=self.controls().unwrap();
+        if !p1.is_finite()||!p2.is_finite(){return Err("Invalid curve handles".into());}
         let heading=delta.x.atan2(delta.y).to_degrees();let forward=SplineCurve::dir(heading).extend(0.0);
         let right=DVec3::new(forward.y,-forward.x,0.0);
         let tile_size=omsi_map::tile_size();
@@ -78,9 +84,12 @@ impl Connector {
         let mut s=Settings {connected:false,two_way:false,width:self.width,height:0.0,offset:0.0,forward_bus:self.bus_only,..Default::default()};
         let point=|t:f64| {let u=1.0-t;a.point*u*u*u+p1*3.0*u*u*t+p2*3.0*u*t*t+b.point*t*t*t};
         // Uniform nodes plus short tangent stubs ensure the saved lane joins in travel direction.
-        for i in 0..=32 {
-            let t=i as f64/32.0;let d=point(t)-(a.point+forward*length*t);
-            if d.dot(right).abs().max(d.dot(forward).abs()).max(d.z.abs())>49.999{return Err("Bogen zu weit von der Verbindung entfernt".into());}
+        let steps=(length/0.5).ceil().clamp(32.0,127.0) as usize;
+        for i in 0..=steps {
+            let t=i as f64/steps as f64;let mut p=point(t);
+            if i>0&&i<steps {if let Some(height)=height {p.z=height(p).ok_or("No loaded road surface under the curve. Drag the curve onto the road or load the area.")?;}}
+            let d=p-(a.point+forward*length*t);
+            if d.dot(right).abs().max(d.dot(forward).abs()).max(d.z.abs())>49.999{return Err("Curve is too far from the connection".into());}
             s.nodes.push((0,[t,d.dot(right),d.dot(forward),d.z]));
         }
         for (outgoing,t) in [(false,a),(true,b)] {s.connections.push((0,outgoing,[t.key.tile.0 as i64,t.key.tile.1 as i64,t.key.id,t.key.path as i64,i64::from(t.reversed)]));}
@@ -102,6 +111,7 @@ impl Connector {
             for t in [0.0,0.25,0.5,0.75,1.0] {for sign in [-1.0,1.0] {plan.markers.push((p-d*t+side*t*0.6*sign,self.bus_only));}}
         }
         plan.handles=vec![(0,p1),(1,p2)];
+        if let Some(height)=height {for (_,p) in &mut plan.handles {if let Some(z)=height(*p){p.z=z;}}}
         plan.endpoints=vec![(a.point,a.direction,true),(b.point,b.direction,false)];
         plan.definitions.push((piece.file.clone(),body));plan.pieces.push((tile,piece));plan.message=self.status();
         Ok(plan)
@@ -139,4 +149,22 @@ mod tests {
         c.choose(target(1,DVec3::ZERO,DVec3::Y,false)).unwrap();
         c.choose(target(2,DVec3::Y*300.0,DVec3::Y,true)).unwrap();assert!(c.build().is_err());
     }
+    #[test]
+    fn free_controls_and_road_height_are_saved_in_generated_nodes() {
+        let mut c=Connector::default();
+        c.choose(target(1,DVec3::ZERO,DVec3::Y,false)).unwrap();
+        c.choose(target(2,DVec3::new(0.0,30.0,0.0),DVec3::Y,true)).unwrap();
+        let control=DVec3::new(8.0,9.0,0.0);c.move_handle(0,control);
+        assert_eq!(c.controls().unwrap()[0],control);
+        let height=|p:DVec3|Some((p.y/30.0*std::f64::consts::PI).sin()*3.0);
+        let plan=c.build_on_road(&height).unwrap();
+        let def=omsi_scenery::Spline::parse(&omsi_cfg::CfgFile::from_str(&plan.definitions[0].0,&plan.definitions[0].1));
+        let curve=SplineCurve::from_map(&plan.pieces[0].1,DVec2::ZERO);
+        for i in 0..=60 {
+            let p=omsi_geometry::editor_path_point(&curve,&def.editor_path_nodes,0,curve.length*i as f64/60.0,0.0,0.0);
+            assert!((p.z-height(p).unwrap()).abs()<0.004,"{p:?}");
+        }
+        assert!(c.build_on_road(&|_|None).is_err());
+    }
+
 }

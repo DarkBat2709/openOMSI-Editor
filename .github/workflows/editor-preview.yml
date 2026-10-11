@@ -16,7 +16,7 @@ jobs:
         os: [ubuntu-22.04, windows-latest]
     runs-on: ${{ matrix.os }}
     env:
-      OPENOMSI_VERSION: 0.2.27-editor-0.7.22-pre
+      OPENOMSI_VERSION: 0.2.27-editor-0.7.23-pre
     steps:
       - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable

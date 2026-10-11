@@ -540,21 +540,22 @@ pub fn navigation_map_of(root: &Path, tiles: &[(i32, i32, PathBuf)], chrono_dirs
         v
     };
     #[allow(clippy::type_complexity)]
-    let parts: Vec<(Vec<Lane>, Vec<(i64, DVec3)>, Vec<(DVec3, f64, String)>, Vec<(Vec<DVec3>, f32)>)> = tiles
+    let parts: Vec<(Vec<Lane>, Vec<(i64, DVec3)>, Vec<(DVec3, f64, String)>, Vec<(Vec<DVec3>, f32)>, Vec<SplineCurve>)> = tiles
         .par_iter()
         .map(|(tx, ty, path)| {
             let (tx, ty) = (*tx, *ty);
             let mut lanes = Vec::new();
             let mut positions = Vec::new();
             let mut signs = Vec::new();
-            let mut roads = Vec::new();
+            let mut roads = Vec::new();let mut road_curves=Vec::new();
             let Some(tile) = crate::tiles::read_tile(path, chrono_dirs) else {
-                return (lanes, positions, signs, roads);
+                return (lanes, positions, signs, roads,road_curves);
             };
             let origin2 = DVec2::new(tx as f64 * tile_size(), ty as f64 * tile_size());
             let terrain = Terrain::load(&tile_companion(&path, ".terrain")).unwrap_or_else(|_| Terrain::flat());
             for sp in tile.splines.iter().filter(|s| !s.deleted && !s.file.trim().is_empty()) {
                 let Some(def) = sli_of(&sp.file) else { continue };
+                if !def.only_editor {road_curves.push(SplineCurve::from_map(sp,origin2).with_sli(&def));}
                 if !def.paths.iter().any(|p| p.kind == 0) {
                     // Short surfaces also corroborate editor-only traffic paths at
                     // junctions; the navigator filters decorative patches for display.
@@ -605,19 +606,22 @@ pub fn navigation_map_of(root: &Path, tiles: &[(i32, i32, PathBuf)], chrono_dirs
                     lanes.extend(object_lanes(&sco, pos, [o.rot[0], 0.0, 0.0], None, (tx, ty), o.id, &o.rules));
                 }
             }
-            (lanes, positions, signs, roads)
+            (lanes, positions, signs, roads,road_curves)
         })
         .collect();
     let mut lanes = Vec::new();
     let mut positions = HashMap::new();
     let mut signs = Vec::new();
     let mut roads = Vec::new();
-    for (l, p, s, r) in parts {
+    let mut road_curves=Vec::new();
+    for (l, p, s, r,c) in parts {
+        road_curves.extend(c);
         lanes.extend(l);
         positions.extend(p);
         signs.extend(s);
         roads.extend(r);
     }
+    crate::editor_path_edit::attach_roads(&mut lanes,&road_curves,false);
     log::info!("navigation map: {} roads without a path for cars", roads.len());
     log::info!(
         "navigation map: {} tiles, {} lanes, {} objects placed, {} street name signs, {} object types, {} spline types, {:.1} s",

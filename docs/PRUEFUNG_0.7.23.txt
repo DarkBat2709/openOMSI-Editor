@@ -1,0 +1,148 @@
+Prüfstatus 0.7.23-pre – 11.10.2026
+
+Neue Funktion: Einzelne KI-Pfade auswählen, löschen/wiederherstellen und ihren
+Bogen bearbeiten. Ursprüngliche Straßenpfade, Kreuzungsobjektpfade und gespeicherte
+Editorpfade werden pro Instanz/Pfad/Fahrtrichtung verändert. Gemeinsame Assets bleiben
+unverändert. Änderungen sind openOMSI-spezifisch; Details siehe UPDATE_0.7.23.md.
+
+Lokale Prüfungen:
+- omsi-app --features standalone-editor --lib: 825 bestanden, 0 Fehler, 14 ignoriert.
+- Neue KI-Pfadprüfungen: 5 bestanden (Teil der gesamten Bibliothek).
+  Darunter Auswahl zwischen Stützpunkten, getrennte Instanzen/Fahrtrichtungen,
+  Undo/Redo, feste Endpunkte/Tangenten, Erhalt anderer Regeln und CRLF,
+  vollständiges Speichern/Neuladen/Undo nach Speichern mit Objekt- und Splinepfaden.
+- omsi-sim --lib traffic: 114 bestanden, 0 Fehler.
+- cargo check -p omsi-app ohne Standalone-Feature: erfolgreich.
+- Editor-Sprachprüfung: 861 Schlüssel, DE/EN-Umschaltung erfolgreich.
+- Windows-Installervertrag: 1 bestanden (lokale Dateisystemprüfung auf Linux).
+- Linux-Kandidateninstaller: 4 bestanden.
+
+Der interaktive Test auf der Benutzerkarte sowie ein tatsächlicher Windows-Lauf
+stehen noch aus. Die GitHub-Prüfung dieses neuen Quellstands ist noch nicht gelaufen.
+Die PDFs bleiben auf dem dokumentierten Stand 0.7.22-pre; die neue Bedienung ist
+in Deutsch und Englisch in UPDATE_0.7.23.md beschrieben.
+
+Linux-Release-Kompilierung 0.2.27-editor-0.7.23-pre: erfolgreich.
+
+Höhenkorrektur 2026-10-11: Regressionen für Steigung/Querneigung in beiden Richtungen,
+Kreuzungsneigung/Höhenfeld, unveränderte Endpunkte und Speichern/Neuladen.
+Gesamte Editor-Bibliothek: 827 bestanden, 0 Fehler, 14 ignoriert.
+Linux-Release mit Höhenkorrektur erfolgreich gebaut. Interaktiver Test auf Nutzerkarte offen.
+
+Höhenfix 2, 2026-10-11:
+- Kurzer 4,9-m-Pfad mit zwei Ausgangspunkten, Verschiebung um 22 m auf den
+  benachbarten Straßenabschnitt, Neigung und unveränderte Endpunkte geprüft.
+- Horizontaler Blickwinkel beim Ziehen geprüft.
+- Echte Benutzerkarte, Spline 9859315 und gespeicherte Verschiebungen nachgebildet:
+  12 Punkte über sichtbaren Straßenmeshes, maximaler Höhenabstand 0,0003 m.
+  Originalkarte ausschließlich gelesen. Nicht über Straßen liegende Punkte sind
+  in diesem Meshvergleich nicht enthalten.
+- Gesamte Editor-Bibliothek: 829 bestanden, 0 Fehler, 15 ignoriert.
+  Der lokale Kartentest wurde zusätzlich explizit ausgeführt und bestanden.
+- Linux-Release erfolgreich gebaut. Sichtprüfung im laufenden Editor noch offen.
+
+Pfadfix 3, 2026-10-11:
+- Neue Verbindung: Hügelprofil trotz gleich hoher Anschlüsse geprüft; gespeicherte
+  SLI-Knoten folgen der abgefragten Oberfläche (Abweichung im Test unter 0,004 m).
+- Frei seitlich verschiebbare grüne Bogenpunkte und fehlende Fahrbahn geprüft.
+- Pfad verlängern, vier Griffe, 65 gespeicherte Höhenstützstellen,
+  Regeln speichern/laden sowie Rückgängig/Wiederholen geprüft.
+- Gesamte Editor-Bibliothek: 831 bestanden, 0 Fehler, 15 ignoriert.
+- Lokaler Kartenvergleich zusätzlich bestanden: 12 Punkte über sichtbaren
+  Straßenmeshes, maximaler Abstand 0,0003 m. Karte nur gelesen.
+- Linux-Release gebaut. GUI-Ziehen und neue Verbindung an der Benutzer-T-Kreuzung
+  müssen noch praktisch überprüft werden; kein bestandener Sichttest behauptet.
+
+11.10.2026: Benutzer bestätigt funktionierende Pfadfix3-Bearbeitung.
+Aktuelles Log: Straßenverkehr eingeschaltet (--traffic 120), 32 Fahrzeugtypen,
+18-22 aktive KI-Fahrzeuge. Benutzer bestätigt Beobachtung nur aus freier Kamera.
+Codeprüfung: Verkehrsmittelpunkt ist bei vorhandenem Spielerbus dessen Standort.
+DE/EN-KI-Bedienungsanleitungen erstellt, je vier Seiten gerendert und geprüft.
+Verkehr über die bearbeitete Kreuzung weiterhin nicht praktisch bestätigt.
+
+KI-Kapitel in beide Haupt-PDFs integriert: 23 + 4 = 27 Seiten pro Sprache.
+Alle 23 bisherigen Seiten pro PDF gerendert und pixelidentisch verglichen.
+Neue Seiten visuell geprüft, Verweise auf Seite 27 korrigiert, Lesezeichen ergänzt.
+Vorherige Haupt-PDFs im Archiv gesichert.
+
+Speicherfix 4, 11.10.2026:
+- Ursache: KI-Verbindungsfenster konsumierte Strg statt Modifier zu verfolgen;
+  S wurde daher Kamerabewegung. Gemeinsame Strg+S-Behandlung vor Bewegung eingefügt.
+- Linke/rechte Strg-Taste, Wiederholung, Loslassen, bereits gehaltenes S und
+  normales S geprüft. Eine Wiederholung löst kein zusätzliches Speichern aus.
+- Speicher-Schaltfläche im Verbindungsfenster ergänzt; gleicher Karten-Speicherpfad
+  wie die vorhandene Schaltfläche in der Einzelpfad-Auswahl.
+- 833 Bibliothekstests bestanden, 0 Fehler, 15 ignoriert; Linux-Release gebaut.
+- Lila Auswahlpunkte zusätzlicher Verbindungen zeigen gespeicherte Bogenknoten
+  und Höhen statt der geraden Referenzgeometrie; Regressionstest bestanden.
+- Praktischer Speichertest in einer Fahrsitzung durch Benutzer noch offen.
+
+## Neuladefix 5 / Driving session reload 5
+
+Deutsch: Beim Karten-Neuladen bleibt der Bus an seiner aktuellen Position mit seiner
+Fahrtrichtung. Der Editor setzt ihn nicht mehr am ursprünglichen Einstiegspunkt ein.
+Ein aktiver Linienauftrag samt Fahrt- und Haltestellenfortschritt bleibt erhalten;
+freie Fahrt bleibt freie Fahrt. Spielzeit, gespeicherte Bus-Skriptwerte und Anzeigen
+werden übernommen. KI und Fahrgäste werden neu aufgebaut.
+Zum Testen: Bus abstellen, Karte bearbeiten, speichern, Karte neu laden, anschließend
+in die Fahreransicht wechseln und an derselben Stelle weiterfahren.
+
+English: Reloading the map now restores the bus at its current location and heading.
+The active duty and its trip/stop progress are retained; free driving stays free driving.
+The current clock, bus script values and display images are restored. AI traffic and
+passengers are rebuilt. Park, edit and save the map, reload it, then return to the cab.
+
+Validation: 835 library tests passed, 0 failed, 15 ignored; release build successful.
+Live driving-session reload with/without a duty still needs user verification.
+
+11.10.2026: PDF-Bedienungsanleitungen aktualisiert.
+Je 31 Seiten: 23 bisherige Seiten inhaltlich und als PDF-Seitenstrom unverändert;
+vier neue Bildseiten und vier aktualisierte KI-Seiten.
+Alle 16 ergänzten Haupt-PDF-Seiten gerendert und visuell geprüft.
+Vier Original-Screenshots pro Haupt-PDF; Lesezeichen und Seitenverweise geprüft.
+Separate DE/EN-KI-Anleitungen: je acht Seiten.
+Benutzer bestätigt Speichern und Neuladen mit erhaltener Busposition sowohl
+in freier Fahrt als auch mit aktivem Linienauftrag.
+
+11.10.2026: PDF-Bedienungsanleitungen aktualisiert.
+Je 29 Seiten: 22 bisherige Seiten inhaltlich und als PDF-Seitenstrom unverändert;
+vier neue Bildseiten und drei aktualisierte KI-Seiten.
+Alle 14 ergänzten Haupt-PDF-Seiten gerendert und visuell geprüft.
+Vier Original-Screenshots pro Haupt-PDF; Lesezeichen und Seitenverweise geprüft.
+Separate DE/EN-KI-Anleitungen: je sieben Seiten.
+Benutzer bestätigt Speichern und Neuladen mit erhaltener Busposition sowohl
+in freier Fahrt als auch mit aktivem Linienauftrag.
+
+11.10.2026: Beide Haupt-PDFs thematisch sortiert (29 Seiten).
+Aktuelle Bilder direkt auf Seiten 10 und 20; Werkzeugleiste ergänzt Seite 10 auf 11.
+KI-Arbeitsablauf Seiten 19-28; Version/Start/Updates letzte Seite 29.
+Geänderte Bild- und KI-Seiten visuell geprüft. Fußzeilen aller Seiten,
+Kapitel- und Seitenverweise aktualisiert. Binärdatei unverändert.
+
+11.10.2026: Begrüßung und anklickbares Inhaltsverzeichnis ergänzt.
+Beide Haupt-PDFs je 31 Seiten. Inhaltsverzeichnis: 29 geprüfte Sprungziele.
+Neue Einstiegsseiten und verschobene Bild-/Verweisseiten gerendert und geprüft.
+Seitenzahlen, Lesezeichen und interne Verweise aktualisiert. Binärdatei unverändert.
+
+11.10.2026: Englische Beschriftungen für KI-Fahrweg- und Zusatzverbindungsfenster.
+838 Tests bestanden, 0 fehlgeschlagen, 15 ignoriert. Release-Build erfolgreich.
+Drei zusätzliche Tests prüfen deutsche Übersetzungen, dynamische Fahrweg-/Spur-
+werte samt Fahrzeugtypen und die Reihenfolge numerischer Vorschauwerte.
+Keine doppelten neuen Übersetzungsschlüssel. Kein interaktiver Sprachtest durch
+den Agenten; neue englische Screenshots werden vom Benutzer aufgenommen.
+
+11.10.2026: Englische Beschriftungen für KI-Fahrweg- und Zusatzverbindungsfenster.
+838 Tests bestanden, 0 fehlgeschlagen, 15 ignoriert. Release-Build erfolgreich.
+Drei zusätzliche Tests prüfen deutsche Übersetzungen, dynamische Fahrweg-/Spur-
+werte samt Fahrzeugtypen und die Reihenfolge numerischer Vorschauwerte.
+Keine doppelten neuen Übersetzungsschlüssel. Kein interaktiver Sprachtest durch
+den Agenten; neue englische Screenshots werden vom Benutzer aufgenommen.
+
+11.10.2026: Englische Screenshots in beiden englischen PDFs integriert.
+31/7 Seiten, 19 unterschiedliche Originalbilder pixelgleich eingebettet.
+21 Hauptseiten neu gesetzt; zusätzliche englische Terminologie korrigiert.
+Alle geänderten Hauptseiten gerendert und visuell geprüft.
+29 Inhaltslinks, 31 Lesezeichen, sämtliche Fußzeilen und Originalbildzuordnung geprüft.
+Deutsche PDFs und Programmdatei unverändert. Keine Veröffentlichung.
+
+Separate KI-Anleitungen aus aktuellen Paketen entfernt und archiviert. Beide vollständigen Haupt-PDFs unverändert erhalten. Paketinhalt und Prüfsummen geprüft.

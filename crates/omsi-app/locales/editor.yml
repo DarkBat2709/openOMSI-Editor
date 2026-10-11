@@ -142,14 +142,14 @@ _version: 2
 "Brush size":
   de: "Pinselgröße"
 
-"Terrain editor 0.7.22-pre":
-  de: "Gelände-Editor 0.7.22-pre"
+"Terrain editor 0.7.23-pre":
+  de: "Gelände-Editor 0.7.23-pre"
 
-"Spline editor 0.7.22-pre":
-  de: "Spline-Editor 0.7.22-pre"
+"Spline editor 0.7.23-pre":
+  de: "Spline-Editor 0.7.23-pre"
 
-"Object editor 0.7.22-pre":
-  de: "Objekt-Editor 0.7.22-pre"
+"Object editor 0.7.23-pre":
+  de: "Objekt-Editor 0.7.23-pre"
 
 "Spline connections · entire map":
   de: "Spline-Verbindungen · ganze Karte"
@@ -967,8 +967,8 @@ _version: 2
 "Reload map":
   de: "Karte neu laden"
 
-"The map will be reloaded from its saved state. Camera position and direction are kept.\n\nSave or discard unsaved map changes first? Undo history and selections will be reset. Vehicles and AI will be rebuilt.":
-  de: "Die Karte wird vom gespeicherten Stand neu geladen. Kameraposition und Blickrichtung bleiben erhalten.\n\nUngespeicherte Kartenänderungen vorher speichern oder verwerfen? Rückgängig-Verlauf und Auswahlen werden zurückgesetzt. Fahrzeuge und KI werden neu aufgebaut."
+"The map will be reloaded from its saved state. Camera position and direction, the bus location and the active duty are kept.\n\nSave or discard unsaved map changes first? Undo history and selections will be reset. Vehicles and AI will be rebuilt.":
+  de: "Die Karte wird vom gespeicherten Stand neu geladen. Kameraposition, Blickrichtung, Busposition und aktiver Linienauftrag bleiben erhalten.\n\nUngespeicherte Kartenänderungen vorher speichern oder verwerfen? Rückgängig-Verlauf und Auswahlen werden zurückgesetzt. Fahrzeuge und KI werden neu aufgebaut."
 
 "No writable content folder":
   de: "Kein beschreibbarer Inhalteordner"
@@ -2525,3 +2525,345 @@ _version: 2
 
 "Close the map editor before opening photo mode":
   de: "Schließe den Karteneditor, bevor du den Fotomodus öffnest"
+
+"Select / edit AI paths":
+  de: "KI-Pfade auswählen / bearbeiten"
+
+"AI paths can only be edited in single-player":
+  de: "KI-Pfade sind nur im Einzelspieler bearbeitbar"
+
+"Click a blue AI path to select it":
+  de: "Einen blauen KI-Pfad zum Auswählen anklicken"
+
+"Pink: selected path. Green: drag curve handles.":
+  de: "Lila: ausgewählter Pfad. Grün: Bogenpunkte ziehen."
+
+"Next overlapping path (Tab)":
+  de: "Nächster überlagerter Pfad (Tab)"
+
+"Restore AI path":
+  de: "KI-Pfad wiederherstellen"
+
+"Delete AI path (Del)":
+  de: "KI-Pfad löschen (Entf)"
+
+"Finish curve editing":
+  de: "Bogenbearbeitung beenden"
+
+"Edit curve":
+  de: "Bogen bearbeiten"
+
+"Restore original curve":
+  de: "Ursprünglichen Bogen wiederherstellen"
+
+"Redo (Ctrl+Y)":
+  de: "Wiederholen (Strg+Y)"
+
+"Save map (Ctrl+S)":
+  de: "Karte speichern (Strg+S)"
+
+"AI paths along the selected road":
+  de: "KI-Fahrwege entlang der gewählten Straße"
+
+"Save, then reload the map to update AI traffic.":
+  de: "Speichern und Karte neu laden, um den KI-Verkehr zu aktualisieren."
+
+"Backward":
+  de: "Rückwärts"
+
+"Forward":
+  de: "Vorwärts"
+
+"AI path editing requires a version 14 tile":
+  de: "KI-Pfadbearbeitung benötigt eine Kachel der Version 14"
+
+"AI path editing on world-coordinate maps is not supported yet":
+  de: "KI-Pfadbearbeitung auf Weltkoordinatenkarten wird noch nicht unterstützt"
+
+"AI path tile is not loaded":
+  de: "Die Kachel des KI-Pfads ist nicht geladen"
+
+"This AI path belongs to a changed Chrono record or an unsupported element":
+  de: "Dieser KI-Pfad gehört zu einem geänderten Chrono-Eintrag oder einem nicht unterstützten Element"
+
+"Green: bend. Purple: move start. Yellow: move end.":
+  de: "Grün: Bogen. Lila: Anfang ziehen. Gelb: Ende ziehen."
+
+"Additional AI connection":
+  de: "Zusätzliche KI-Verbindung"
+
+"Start: path {} / lane {}":
+  de: "Start: Fahrweg {} / Spur {}"
+
+"Select start: yellow path end":
+  de: "Start wählen: gelbes Fahrwegende"
+
+"Destination: path {} / lane {}":
+  de: "Ziel: Fahrweg {} / Spur {}"
+
+"Select destination: purple path start":
+  de: "Ziel wählen: lila Fahrweganfang"
+
+"Vehicles: {}":
+  de: "Fahrzeuge: {}"
+
+"Buses only":
+  de: "Nur Busse"
+
+"All vehicles":
+  de: "Alle Fahrzeuge"
+
+"Select start and destination again":
+  de: "Start und Ziel neu wählen"
+
+"Add connection (Enter)":
+  de: "Verbindung hinzufügen (Enter)"
+
+"Back to AI paths along the road":
+  de: "Zurück zu Fahrwegen entlang der Straße"
+
+"Add connection + save (Ctrl+S)":
+  de: "Verbindung hinzufügen + speichern (Strg+S)"
+
+"Lane width: {:.2} m":
+  de: "Spurbreite: {:.2} m"
+
+"Straight-ahead paths are retained.":
+  de: "Geradeauspfade bleiben erhalten."
+
+"Yellow: start · Purple: destination · Green: drag curve":
+  de: "Gelb: Start · Lila: Ziel · Grün: Bogen ziehen"
+
+"Connect path endpoints, not the middle of a path.":
+  de: "An Fahrwegenden verbinden, nicht mitten im Pfad."
+
+"Preview only until you add the connection.":
+  de: "Nur Vorschau bis Verbindung hinzufügen."
+
+"Ctrl+S: add the completed connection and save":
+  de: "Strg+S: fertige Verbindung hinzufügen und speichern"
+
+"Then reload the map so AI traffic uses the path.":
+  de: "Danach Karte neu laden, damit die KI den Weg nutzt."
+
+"AI paths along the road":
+  de: "KI-Fahrwege entlang der Straße"
+
+"Scope: connected spline chain":
+  de: "Bereich: verbundene Splinekette"
+
+"Scope: selected spline":
+  de: "Bereich: ausgewählter Spline"
+
+"Two lanes in the same direction":
+  de: "Zwei Spuren in gleicher Richtung"
+
+"Two opposing lanes":
+  de: "Zwei Spuren mit Gegenverkehr"
+
+"One lane / one-way road":
+  de: "Eine Spur / Einbahnstraße"
+
+"Direction: reversed":
+  de: "Richtung: umgekehrt"
+
+"Direction: along the reference":
+  de: "Richtung: entlang der Referenz"
+
+"Lane 1: {}":
+  de: "Spur 1: {}"
+
+"Lane 2: {}":
+  de: "Fahrspur 2: {}"
+
+"Lane width":
+  de: "Spurbreite"
+
+"Lateral offset":
+  de: "Seitlicher Versatz"
+
+"Height above spline":
+  de: "Höhe über Spline"
+
+"Blue: all vehicles · Orange: buses only":
+  de: "Blau: alle Fahrzeuge · Orange: nur Busse"
+
+"Green: drag · Purple: connection · Release: snap":
+  de: "Grün: ziehen · Lila: Anschluss · Loslassen: einrasten"
+
+"Arrows show travel direction. Bus schedules are separate.":
+  de: "Pfeile zeigen die Fahrtrichtung. Busfahrpläne separat."
+
+"Freeform active: left-drag points":
+  de: "Freiform aktiv: Punkte mit linker Maus ziehen"
+
+"Edit freeform points":
+  de: "Freiformpunkte bearbeiten"
+
+"Select lane {}":
+  de: "Fahrspur {} wählen"
+
+"Reset point":
+  de: "Punkt zurücksetzen"
+
+"Lower point (0.1 m)":
+  de: "Punkt tiefer (0,1 m)"
+
+"Raise point (0.1 m)":
+  de: "Punkt höher (0,1 m)"
+
+"Mode: replace existing AI paths":
+  de: "Modus: vorhandene KI-Pfade ersetzen"
+
+"Mode: add missing AI paths":
+  de: "Modus: fehlende KI-Pfade ergänzen"
+
+"AI paths: visible - hide":
+  de: "KI-Pfade: sichtbar – ausblenden"
+
+"AI paths: hidden - show":
+  de: "KI-Pfade: ausgeblendet – anzeigen"
+
+"Replace AI paths (Enter)":
+  de: "KI-Pfade ersetzen (Enter)"
+
+"Create AI paths (Enter)":
+  de: "KI-Pfade anlegen (Enter)"
+
+"Create additional AI connection":
+  de: "Zusätzliche KI-Verbindung erstellen"
+
+"Refresh preview":
+  de: "Vorschau aktualisieren"
+
+"Then: Ctrl+Z undo · Ctrl+S save":
+  de: "Danach: Strg+Z rückgängig · Strg+S speichern"
+
+"Several endpoints overlap. Move the camera closer or to the side.":
+  de: "Mehrere Anschlüsse liegen übereinander. Kamera näher heran oder seitlich bewegen."
+
+"Start requires a path end; destination requires a path start":
+  de: "Start braucht ein Fahrwegende, Ziel einen Fahrweganfang"
+
+"1. Click the yellow endpoint at the END of the incoming lane":
+  de: "1. Gelben Anschluss am ENDE der ankommenden Fahrspur anklicken"
+
+"2. Click the purple endpoint at the START of the outgoing lane":
+  de: "2. Lila Anschluss am ANFANG der abgehenden Fahrspur anklicken"
+
+"3. Drag the green curve handles freely. The connection follows the loaded road surface. Then add the connection.":
+  de: "3. Grüne Bogenpunkte frei ziehen. Die Verbindung folgt der geladenen Fahrbahn. Dann Verbindung hinzufügen."
+
+"Select two different paths in the direction of travel":
+  de: "Zwei verschiedene Fahrwege in Fahrtrichtung auswählen"
+
+"Invalid connection geometry":
+  de: "Ungültige Anschlussgeometrie"
+
+"Endpoints must be 1 to 200 m apart; height difference must not exceed 20 m":
+  de: "Anschlüsse müssen 1 bis 200 m auseinander liegen; Höhenunterschied höchstens 20 m"
+
+"Invalid curve handles":
+  de: "Ungültige Bogenpunkte"
+
+"No loaded road surface under the curve. Drag the curve onto the road or load the area.":
+  de: "Keine geladene Fahrbahn unter dem Bogen. Bogen auf die Straße ziehen oder Bereich laden."
+
+"Curve is too far from the connection":
+  de: "Bogen zu weit von der Verbindung entfernt"
+
+"Select a spline or a chain of up to 500 sections":
+  de: "Bitte einen Spline oder eine Kette bis 500 Abschnitte wählen"
+
+"Invalid lane width, offset or height":
+  de: "Ungültige Spurbreite, Verschiebung oder Höhe"
+
+"Invalid freeform points (maximum offset: 50 m)":
+  de: "Ungültige Freiformpunkte (maximal 50 m Verschiebung)"
+
+"Edit freeform points on a single section":
+  de: "Freiformpunkte bitte am einzelnen Abschnitt bearbeiten"
+
+"Invalid reference spline length":
+  de: "Ungültige Länge des Referenzsplines"
+
+"Spline {}: invalid profile correction":
+  de: "Spline {}: ungültige Profilkorrektur"
+
+"Gap in the spline chain: connect the reference splines first":
+  de: "Lücke in der Splinekette: zuerst die Referenzsplines verbinden"
+
+"Curve is too tight for this lane offset":
+  de: "Kurve für diesen Spurversatz zu eng"
+
+"Preview is too large: select a shorter chain":
+  de: "Vorschau zu groß: kürzere Kette wählen"
+
+"All selected sections already have AI paths. Existing paths are unchanged.":
+  de: "Alle ausgewählten Abschnitte haben bereits KI-Pfade. Vorhandene Pfade bleiben unverändert."
+
+"Different AI profile file already exists: {}":
+  de: "Abweichende KI-Profildatei vorhanden: {}"
+
+"Freeform points are local: set scope to the selected spline":
+  de: "Freiformpunkte sind lokal: Bereich auf ausgewählten Spline stellen"
+
+"Spline profile is missing":
+  de: "Splineprofil fehlt"
+
+"Spline {} has several generated AI splines. Check their assignment first.":
+  de: "Spline {} hat mehrere erzeugte KI-Splines. Zuordnung zuerst prüfen."
+
+"Reference has its own vehicle paths; replacement is disabled here":
+  de: "Referenz besitzt eigene Fahrzeugpfade; Ersetzen hier gesperrt"
+
+"AI path is on a different tile from its reference; check the assignment":
+  de: "KI-Pfad liegt auf einer anderen Kachel als seine Referenz; Zuordnung prüfen"
+
+"Chain contains freeform paths. Edit them individually.":
+  de: "Kette enthält Freiformpfade. Diese bitte einzeln bearbeiten."
+
+"No paths generated by this tool in the selected area. Switch to add mode to create paths.":
+  de: "Keine mit diesem Werkzeug erzeugten KI-Pfade im gewählten Bereich. Zum Anlegen auf Ergänzen umschalten."
+
+"{} new sections · {} already have paths (unchanged) · {} open endpoints. Check connections; save and reload the map.":
+  de: "{} neue Abschnitte · {} bereits mit Pfaden (unverändert) · {} offene Pfadenden. Anschlüsse prüfen; nach Speichern Karte neu laden."
+
+"Replace {} AI sections · {} fixed connections · {} open endpoints. Enter applies; then Ctrl+Z to undo.":
+  de: "{} KI-Abschnitte ersetzen · {} feste Anschlüsse · {} offene Pfadenden. Enter übernimmt; danach Strg+Z rückgängig."
+
+"Connection is still a preview: add it, or press Ctrl+S to add and save. F9 keeps the curve.":
+  de: "Verbindung ist noch Vorschau: hinzufügen oder mit Strg+S hinzufügen und speichern. F9 verwirft den Bogen nicht."
+
+"Select the road or terrain spline first":
+  de: "Zuerst den Straßen- oder Terrain-Spline auswählen"
+
+"Connection is incomplete: select start and destination first.":
+  de: "Verbindung noch nicht vollständig: zuerst Start und Ziel wählen."
+
+"Endpoint has changed or is not loaded. Select start and destination again.":
+  de: "Anschluss hat sich geändert oder ist nicht geladen. Start und Ziel erneut wählen."
+
+"This additional connection already exists":
+  de: "Diese zusätzliche Verbindung existiert bereits"
+
+"Connection curve leaves the existing map":
+  de: "Verbindungsbogen verlässt die vorhandene Karte"
+
+"AI paths {}: {count} sections · Ctrl+Z undo · Ctrl+S save · Reload map for AI traffic":
+  de: "KI-Pfade {}: {count} Abschnitte · Strg+Z rückgängig · Strg+S speichern · Karte neu laden für KI"
+
+"replaced":
+  de: "ersetzt"
+
+"created":
+  de: "angelegt"
+
+"Several endpoints overlap; no unambiguous connection selected":
+  de: "Mehrere Anschlüsse liegen übereinander; keine eindeutige Verbindung gewählt"
+
+"Click a marked endpoint; arrows show travel direction":
+  de: "Auf einen markierten Anschluss klicken; Pfeile zeigen die Fahrtrichtung"
+
+"Show / hide AI paths":
+  de: "KI-Pfade anzeigen / ausblenden"

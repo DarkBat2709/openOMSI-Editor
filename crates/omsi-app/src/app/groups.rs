@@ -165,6 +165,7 @@ pub(crate) struct ViewState {
     /// The map is open but the first area is still loading: the view to start with.
     pub(crate) starting: Option<Camera>,
     pub(crate) editor_reload_view: Option<(Camera, bool, bool)>,
+    pub(crate) editor_reload_driving: Option<crate::editor_reload::DrivingReload>,
     pub(crate) speed: f32,
     /// The idle head sway waiting where it is while the cursor is on a control
     /// (see `head_idle::Hold`).
