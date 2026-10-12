@@ -107,7 +107,8 @@ impl Renderer {
         let cull_one = |i: usize, sizes: &mut Vec<([u64; 4], f32)>| -> Option<(usize, f32, bool)> {
             let inst = &scene.instances[i];
             let m = &scene.meshes[inst.mesh];
-            if m.ranges.is_empty() || !inst.visible || (inst.mirror_only && main_view) {
+            if m.ranges.is_empty() || !inst.visible || (inst.mirror_only && main_view)
+                || (scene.editor_hide_terrain && (inst.render_phase == crate::RenderPhase::Terrain || inst.ground_layer)) {
                 return None;
             }
             if let Some([x0, y0, x1, y1]) = inst.near_only {

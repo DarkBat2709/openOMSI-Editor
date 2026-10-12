@@ -268,6 +268,7 @@ flags! {
     OMSI_DUMP_GROUND: Text, Debug, Use, "-", "File: every loaded tile's final terrain and road cut as text.";
     OMSI_DUMP_SCENERY_TEXT: Text, Debug, Use, "-", "Directory: write the scenery objects' text textures as drawn.";
     OMSI_DUMP_SCRIPTTEX: Text, Debug, Use, "-", "Directory: write the player's bus's script (display) textures.";
+    OMSI_EDITOR_TREE_TRACE: Bool, Debug, Use, "off", "Log editor tree placement, terrain restoration and restored object scripts.";
     OMSI_ENHANCED: Bool, Tuning, Use, "settings", "Enhanced graphics for this run.";
     OMSI_ENHANCED_PLUS: Bool, Tuning, Use, "settings", "Enhanced+ (ray traced) graphics for this run.";
     OMSI_ENV_PHOTO: Num, Debug, Use, "1", "0 leaves the environment photo out of the debug views.";
@@ -438,6 +439,8 @@ flags! {
     OMSI_SUSP_TRACE_WINDOW: Text, Debug, Use, "-", "Window CSV: each wheel's travel every frame.";
     OMSI_TERRAIN_ALIGN: Bool, Switch, Use, "off", "Align the terrain to the splines again at load (A/B; Omsi.exe does not).";
     OMSI_TEST_CONTENT: Text, Test, Test, "-", "Content root for tests that need real OMSI content.";
+    OMSI_TEST_TRAFFIC_SPLINE: Text, Test, Test, "-", "Spline file for the terrain traffic path regression test.";
+    OMSI_TEST_TRAFFIC_TILE: Text, Test, Test, "-", "Map tile for the terrain traffic path regression test.";
     OMSI_TEST_WINE_DIR: Text, Test, Test, "-", "Plugin demo test: folder holding omsi-plugin-host.exe for Wine.";
     OMSI_TEXTURE_MEMORY: Num, Tuning, Use, "settings", "Texture budget in MB.";
     OMSI_TEXTURE_RAIN: Bool, Switch, Use, "off", "OMSI 2's own texture rain on the glass instead of the drops.";

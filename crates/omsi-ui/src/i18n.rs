@@ -59,6 +59,8 @@ pub type Template = (String, Vec<Piece>);
 struct Index {
     list: Vec<Template>,
     by_head: HashMap<(char, char), Vec<usize>>,
+    /// Explicit application templates beginning with a value (e.g. a file count).
+    unprefixed: Vec<usize>,
 }
 
 static TEMPLATES: RwLock<Option<Index>> = RwLock::new(None);
@@ -72,15 +74,42 @@ fn head2(s: &str) -> Option<(char, char)> {
 /// filled in ("Mirror panel added (3 in all)") is translated by the key it was made from.
 pub fn set_templates(keys: impl IntoIterator<Item = String>) {
     let list = templates(keys);
+    install_templates(list);
+}
+
+fn install_templates(mut list: Vec<Template>) {
+    list.sort_by_key(|(_, p)| std::cmp::Reverse(p.iter().map(|x| if let Piece::Text(s) = x { s.len() } else { 0 }).sum::<usize>()));
     let mut by_head: HashMap<(char, char), Vec<usize>> = HashMap::new();
+    let mut unprefixed = Vec::new();
     for (i, (_, p)) in list.iter().enumerate() {
         if let Some(h) = p.first().and_then(|x| if let Piece::Text(t) = x { head2(t) } else { None }) {
             by_head.entry(h).or_default().push(i);
+        } else {
+            unprefixed.push(i);
         }
     }
     if let Ok(mut s) = TEMPLATES.write() {
-        *s = Some(Index { list, by_head });
+        *s = Some(Index { list, by_head, unprefixed });
     }
+}
+
+/// Add an application's explicitly declared UI templates. Unlike automatically
+/// discovered keys, these may start with a value or end with an open-ended value.
+/// Call after `set_templates`, during initialization. Adjacent values are ambiguous
+/// and must be separated in the source format string.
+pub fn set_explicit_templates(keys: impl IntoIterator<Item = String>) {
+    let mut list = TEMPLATES.write().ok().and_then(|mut s| s.take()).map(|i| i.list).unwrap_or_default();
+    for key in keys {
+        if !key.contains('{') || key.contains("%{") || key.contains("{{") || key.contains("}}") || list.iter().any(|(k, _)| k == &key) {
+            continue;
+        }
+        let Some(p) = pieces(&key) else { continue };
+        let worded = p.iter().any(|x| matches!(x, Piece::Text(t) if t.chars().filter(|c| c.is_alphabetic()).count() >= 3));
+        if worded && !p.windows(2).any(|w| matches!(w, [Piece::Hole(_), Piece::Hole(_)])) {
+            list.push((key, p));
+        }
+    }
+    install_templates(list);
 }
 
 /// The keys that are safe templates, most literal text first. Only keys that cannot half
@@ -171,7 +200,10 @@ fn templated_among<'a>(mut templates: impl Iterator<Item = &'a Template>, text: 
     let mut got = Vec::new();
     let (key, p) = templates.find(|(_, p)| {
         got.clear();
-        matches!(p.first(), Some(Piece::Text(h)) if text.starts_with(h.as_str())) && captures(p, text, &mut got)
+        match p.first() {
+            Some(Piece::Text(h)) if !text.starts_with(h.as_str()) => false,
+            _ => captures(p, text, &mut got),
+        }
     })?;
     let translation = lookup(key)?;
     let values: Vec<String> = got.iter().map(|v| lookup(v).unwrap_or_else(|| v.to_string())).collect();
@@ -180,11 +212,20 @@ fn templated_among<'a>(mut templates: impl Iterator<Item = &'a Template>, text: 
 
 /// `text` by the templates of [`set_templates`], among those whose leading text starts as it does.
 fn by_template(text: &str, lookup: impl Fn(&str) -> Option<String>) -> Option<String> {
-    let h = head2(text)?;
     let t = TEMPLATES.read().ok()?;
     let index = t.as_ref()?;
-    let ids = index.by_head.get(&h)?;
-    templated_among(ids.iter().map(|&i| &index.list[i]), text, lookup)
+    indexed_template(index, text, &lookup, 0)
+}
+
+fn indexed_template(index: &Index, text: &str, lookup: &impl Fn(&str) -> Option<String>, depth: usize) -> Option<String> {
+    if depth >= 4 { return None; }
+    let ids = head2(text).and_then(|h| index.by_head.get(&h));
+    // Merge the two sorted candidate lists to retain the most-specific-first rule.
+    let mut candidates: Vec<usize> = ids.into_iter().flatten().copied().chain(index.unprefixed.iter().copied()).collect();
+    candidates.sort_unstable();
+    templated_among(candidates.into_iter().map(|i| &index.list[i]), text, |key| {
+        lookup(key).or_else(|| indexed_template(index, key, lookup, depth + 1))
+    })
 }
 
 /// `text` in the interface's language.

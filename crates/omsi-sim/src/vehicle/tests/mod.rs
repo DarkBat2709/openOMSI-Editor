@@ -676,7 +676,7 @@ fn a_borrowed_part_is_judged_with_its_own_pack() {
     assert_ne!(elsewhere, winding_pack(Path::new("/omsi/Sceneryobjects/w/model/y.o3d")));
 }
 
-fn restored_display_vehicle() -> VehicleInstance {
+pub(in crate::vehicle) fn restored_display_vehicle() -> VehicleInstance {
     static NEXT: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
     let dir = std::env::temp_dir().join(format!(
         "omsi_restore_{}_{}",

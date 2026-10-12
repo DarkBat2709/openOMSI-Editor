@@ -32,7 +32,7 @@ pub(super) fn path_densities(rules: &[omsi_map::MapRule], path: usize) -> (f32, 
 /// Ignoring the flag put every lane of Spandau's 40-odd mirrored road pieces 5 to 20 m
 /// beside its road and the wrong way round; a timetable route through one had its bus turn
 /// into the oncoming lanes and jump back where the next piece began.
-pub(super) fn spline_lanes(
+pub fn spline_lanes(
     def: &Spline,
     s: &omsi_map::MapSpline,
     curve: &SplineCurve,
@@ -42,14 +42,14 @@ pub(super) fn spline_lanes(
     let side = if s.mirror { -1.0 } else { 1.0 };
     let curve = &curve.with_sli(def);
     for (pi, p) in def.paths.iter().enumerate() {
-        let n = ((curve.length / 3.0).ceil() as usize).clamp(1, 300);
+        let n = ((curve.length / if def.editor_path_nodes.is_empty(){3.0}else{0.5}).ceil() as usize).clamp(1, 2000);
         let pts: Vec<DVec3> = (0..=n)
             .map(|i| {
-                curve.offset_point(
-                    curve.length * i as f64 / n as f64,
-                    side * p.start[0] as f64,
-                    p.start[2] as f64,
-                )
+                let station=curve.length*i as f64/n as f64;
+                let x=side*p.start[0] as f64;let z=p.start[2] as f64;
+                if s.rules.iter().any(|r|r.path_index==pi as i32 && r.kind=="editor_surface_path" && !r.kill) {
+                    omsi_geometry::editor_path_point(curve,&def.editor_path_nodes,pi,station,x,z)
+                } else {curve.offset_point(station,x,z)}
             })
             .collect();
         let kind = LaneKind::from_code(p.kind);
@@ -97,21 +97,32 @@ pub(super) fn spline_lanes(
             l.group_density = group_density.clone();
             l.no_cars = no_cars;
             l.rule_bus = rule_bus;
+            l.editor_bus_only = rule_of("editor_bus_only").is_some();
+            l.editor_additional_connection = rule_of("editor_additional_connection").is_some();
+            for (_,outgoing,v) in def.editor_path_connections.iter().filter(|(i,_,_)|*i==pi) {
+                let target=(LaneKey {tile:(v[0] as i32,v[1] as i32),id:v[2],path:v[3] as u16},v[4]!=0);
+                if *outgoing {l.editor_next=Some(target);}else{l.editor_previous=Some(target);}
+            }
             l.rule_trucks = rule_trucks;
             l.source = 1;
+            l.editor_path_surface=Some(omsi_sim::traffic::EditorPathSurface::Spline(*curve));
             l.key = Some(LaneKey {
                 tile,
                 id: s.id,
                 path: pi as u16,
             });
             l.reversed = reversed;
+            if l.editor_additional_connection {
+                let turn=(l.end_heading()-l.start_heading()+180.0).rem_euclid(360.0)-180.0;
+                l.turn=if turn < -15.0 {1}else if turn > 15.0 {2}else{0};
+            }
             l.offset = side as f32 * p.start[0];
             l.name = def
                 .path
                 .file_name()
                 .map(|n| n.to_string_lossy().to_string())
                 .unwrap_or_default();
-            out.push(l);
+            if crate::editor_paths::from_rules(&mut l,&s.rules) {out.push(l);}
         };
         // (a mirrored spline's forward path runs backwards and the other way round)
         match (p.direction, s.mirror) {
@@ -247,7 +258,7 @@ pub(super) fn object_lanes(
                     .filter(|t| *t >= 0)
                     .map(|t| (c, t as usize))
             });
-            out.push(l);
+            if crate::editor_paths::from_rules(&mut l,rules) {out.push(l);}
         };
         match p.direction {
             1 => push(true),
@@ -305,5 +316,11 @@ pub fn resolve_scenery_freetex_name<'a>(
         None
     } else {
         Some(name)
+    }
+}
+
+impl World {
+    pub fn editor_path_lanes(&self,def:&Spline,spline:&omsi_map::MapSpline,curve:&SplineCurve,tile:(i32,i32))->Vec<Lane> {
+        spline_lanes(def,spline,curve,tile)
     }
 }

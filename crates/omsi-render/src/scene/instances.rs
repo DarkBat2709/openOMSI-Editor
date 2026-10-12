@@ -6,6 +6,7 @@ use crate::*;
 impl Renderer {
     pub fn new_scene(&self) -> Scene {
         Scene {
+            editor_hide_terrain: false,
             meshes: Vec::new(),
             textures: Vec::new(),
             glass_slot: None,

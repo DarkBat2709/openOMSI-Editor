@@ -160,3 +160,28 @@ fn added_lanes_only_change_reach_of_their_predecessors() {
     assert_eq!(grown.reach, whole.reach);
     assert_eq!(grown.reach[2], distant_reach);
 }
+
+    #[test]
+    fn additional_connector_keeps_fixed_straight_exit_and_rejects_wrong_lanes() {
+        let mut from=straight(0.0,0.0,10.0,1,(0,0));
+        let mut straight_on=straight(0.0,10.0,30.0,2,(0,0));
+        let mut to=straight(20.0,30.0,50.0,3,(0,0));
+        from.editor_next=Some((straight_on.key.unwrap(),false));
+        straight_on.editor_previous=Some((from.key.unwrap(),false));
+        to.editor_previous=Some((LaneKey {tile:(0,0),id:99,path:0},false));
+        let mut bend=LaneBuilder::polyline(vec![DVec3::new(0.0,10.0,0.0),DVec3::new(0.0,12.0,0.0),
+            DVec3::new(20.0,28.0,0.0),DVec3::new(20.0,30.0,0.0)],LaneKind::Street,3.0);
+        bend.key=Some(LaneKey {tile:(0,0),id:4,path:0});bend.editor_additional_connection=true;
+        bend.editor_previous=Some((from.key.unwrap(),false));bend.editor_next=Some((to.key.unwrap(),false));
+        let mut wrong=from.clone();wrong.key=Some(LaneKey {tile:(0,0),id:5,path:0});
+        assert!(!wrong.accepts_editor_connection(&bend));
+        assert!(!bend.accepts_editor_connection(&straight_on));
+        let all=vec![from,straight_on,to,bend];
+        let mut net=Network {lanes:all.clone(),..Default::default()};net.link(1.5);
+        assert!(net.lanes[0].next.contains(&1));assert!(net.lanes[0].next.contains(&3));
+        assert_eq!(net.lanes[3].next,vec![2]);
+        let mut incremental=Network {lanes:all[..3].to_vec(),..Default::default()};incremental.link(1.5);
+        incremental.extend(all[3..].to_vec(),1.5);
+        assert!(incremental.lanes[0].next.contains(&1));assert!(incremental.lanes[0].next.contains(&3));
+        assert_eq!(incremental.lanes[3].next,vec![2]);
+    }

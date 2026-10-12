@@ -48,6 +48,7 @@ impl App {
     /// The lights (the lamps' cones, the light maps, every light that shines), the rain and
     /// the snow, the cabin air, the tyres' spray and the sounds of the street.
     pub(super) fn frame_lights(&mut self, dt: f32, daylight: omsi_sim::Daylight) {
+        let _diagnostic = crate::editor_diagnostics::Span::new("lights_and_path_overlay", "");
         // the lamps' cones in fog and falling rain or snow, and new light pictures
         if let Some(wt) = &self.session.weather {
             lights::set_cone_strength(wt.fog.0, precip_of(wt).1, daylight.night);
@@ -68,23 +69,116 @@ impl App {
         ) {
             let vehicles = steps::light_vehicles(self.player.as_ref(), self.session.traffic.as_ref(), &self.net.remotes);
             let __tc = Instant::now();
-            lights::collect(w, scene, &daylight, cam.position, &vehicles);
-            *self.perf.profile.entry("lights.collect").or_default() += __tc.elapsed().as_secs_f64();
-            // the object editor's pick: a magenta glow over it
-            if let Some(id) = self.menus.editor.as_ref().and_then(|e| e.selected) {
-                let at = w.edit_objects.lock().get(&id).map(|o| o.pos);
-                let moved = w.object_edits.lock().get(&id).map(|e| e.moved).unwrap_or_default();
-                if let Some(p) = at {
-                    scene.coronas.push(omsi_render::Corona {
-                        position: p + moved + glam::DVec3::Z * 3.0,
-                        size: 0.6,
-                        color: [1.0, 0.1, 0.9],
-                        brightness: 2.0,
-                        ..Default::default()
-                    });
-                }
-            }
-            if let Some(wt) = &self.session.weather {
+                    lights::collect(w, scene, &daylight, cam.position, &vehicles);
+                    *self.perf.profile.entry("lights.collect").or_default() += __tc.elapsed().as_secs_f64();
+                    // Audit markers are independent of the current selection and editor mode.
+                    if let Some(a)=self.menus.editor.as_ref().filter(|_|self.menus.game_menu.is_none()).and_then(|ed|ed.audit.as_ref()).filter(|a|a.markers&&!a.busy()) {
+                        for e in a.report.nearby(cam.position,a.show_good) {
+                            scene.coronas.push(omsi_render::Corona{position:e.at+glam::DVec3::Z*0.7,size:0.65,color:e.status.color(),brightness:2.0,..Default::default()});
+                        }
+                    }
+                    // the object editor's pick: a magenta glow over it
+                    if let Some(ed) = self.menus.editor.as_ref().filter(|ed| ed.spline_mode && !ed.terrain.active) {
+                        let markers = if ed.splines.connection_active() { ed.splines.connection_markers(w) }
+                            else { ed.splines.markers(w).into_iter().map(|p| (p, [1.0, 0.1, 0.9], 0.35)).collect() };
+                        for (p, color, size) in markers {
+                            scene.coronas.push(omsi_render::Corona {
+                                position: p + glam::DVec3::Z * 0.4,
+                                size,
+                                color,
+                                brightness: 2.0,
+                                ..Default::default()
+                            });
+                        }
+                    }
+                    if let Some(ed)=self.menus.editor.as_mut().filter(|ed|ed.show_traffic_paths && self.menus.game_menu.is_none()) {
+                        ed.traffic_overlay.refresh(w,cam.position);
+                        let network=self.session.traffic.as_ref().map(|t|&t.net).or_else(||self.menus.navigator.as_ref().and_then(|n|n.map_net()));
+                        let objects=network.into_iter().flat_map(|n|n.lanes.iter()).filter(|l|l.source!=1);
+                        let mut targets=Vec::new();let mut manager_lanes=Vec::new();
+                        for lane in ed.traffic_overlay.lanes.iter().chain(objects).filter(|l|l.kind==omsi_sim::traffic::LaneKind::Street
+                            && !ed.traffic_window.as_ref().is_some_and(|w|w.replace&&w.error.is_none()&&l.key.is_some_and(|k|w.preview.replacements.iter().any(|(key,_,_)|*key==(k.tile,k.id))))) {
+                            let Some(lane)=ed.path_edits.preview(lane)else{continue;};
+                            if ed.traffic_window.as_ref().is_some_and(|w|w.manager.is_some())&&lane.points.iter().any(|p|p.distance(cam.position)<700.0){manager_lanes.push(lane.as_ref().clone());}
+                            if let Some(key)=lane.key {for start in [true,false] {
+                                let point=if start{lane.start()}else{lane.end()};
+                                let heading=if start{lane.start_heading()}else{lane.end_heading()};
+                                if point.distance(cam.position)<700.0 {targets.push(crate::traffic_editor::Target {point,direction:omsi_geometry::SplineCurve::dir(heading as f64).extend(0.0),start,key,reversed:lane.reversed});}
+                            }}
+                            let selected=ed.traffic_window.as_ref().and_then(|w|w.manager.as_ref()).and_then(|m|m.selected.as_ref()).is_some_and(|s|crate::editor_path_edit::Id::of(s)==crate::editor_path_edit::Id::of(&lane));
+                            let color=if selected {[1.0,0.2,0.9]}else if lane.editor_bus_only {[1.0,0.6,0.0]}else{[0.0,0.7,1.0]};
+                            for p in &lane.points {if p.distance(cam.position)<700.0 {scene.coronas.push(omsi_render::Corona {position:*p+glam::DVec3::Z*0.25,size:0.18,color,brightness:2.0,..Default::default()});}}
+                            for station in (0..(lane.length()/15.0).ceil().min(100.0) as usize).map(|i|i as f32*15.0+2.0) {
+                                let (p,h)=lane.at(station.min(lane.length()));if p.distance(cam.position)>700.0 {continue;}
+                                let d=omsi_geometry::SplineCurve::dir(h as f64).extend(0.0);let side=glam::DVec3::new(d.y,-d.x,0.0);
+                                for t in [0.0,0.25,0.5,0.75,1.0] {for sign in [-1.0,1.0] {
+                                    scene.coronas.push(omsi_render::Corona {position:p-d*t+side*t*0.6*sign+glam::DVec3::Z*0.25,size:0.2,color,brightness:2.0,..Default::default()});
+                                }}
+                            }
+                        }
+                        if let Some(window)=ed.traffic_window.as_mut(){window.targets=targets;
+                            if let Some(m)=window.manager.as_mut(){m.visible=manager_lanes;m.can_undo=ed.path_edits.can_undo();m.can_redo=ed.path_edits.can_redo();
+                                m.deleted=m.selected.as_ref().is_some_and(|l|ed.path_edits.current(l).deleted);
+                                if m.editing {if let Some(l)=m.selected.as_ref().and_then(|l|ed.path_edits.preview(l)) {for (i,p) in crate::editor_path_edit::Manager::handles(&l) {
+                                    scene.coronas.push(omsi_render::Corona {position:p+glam::DVec3::Z*0.4,size:0.8,color:if i==2{[0.9,0.1,1.0]}else if i==3{[1.0,0.8,0.0]}else{[0.2,1.0,0.2]},brightness:2.0,..Default::default()});
+                                }}}
+                            }
+                        }
+                    }
+                    if let Some(panel)=self.menus.editor.as_ref().filter(|e|self.menus.game_menu.is_none()&&e.show_traffic_paths).and_then(|e|e.traffic_window.as_ref()){
+                        if let Some(c)=panel.connector.as_ref() {
+                            for target in panel.targets.iter().filter(|t|c.accepts(t)&&t.point.distance(cam.position)<300.0) {
+                                scene.coronas.push(omsi_render::Corona {position:target.point+glam::DVec3::Z*0.4,size:0.7,
+                                    color:if c.picking==Some(true){[1.0,0.8,0.0]}else{[0.9,0.1,1.0]},brightness:1.0,..Default::default()});
+                            }
+                            for (index,p) in &panel.preview.handles {
+                                scene.coronas.push(omsi_render::Corona {position:*p+glam::DVec3::Z*0.4,size:0.85,
+                                    color:if panel.selected_node==Some(*index){[1.0,0.8,0.0]}else{[0.1,1.0,0.2]},brightness:1.0,..Default::default()});
+                            }
+                            for target in [c.source,c.destination].into_iter().flatten() {
+                                scene.coronas.push(omsi_render::Corona {position:target.point+glam::DVec3::Z*0.4,size:0.85,
+                                    color:if target.start{[0.9,0.1,1.0]}else{[1.0,0.8,0.0]},brightness:1.0,..Default::default()});
+                            }
+                        }
+                        if panel.free {if let Some(index)=panel.selected_node {if let Some(start)=panel.node_is_start(index) {
+                            if let Some((_,point))=panel.preview.handles.iter().find(|(i,_)|*i==index) {
+                                for target in panel.targets.iter().filter(|t|t.start!=start&&t.point.distance(*point)<50.0) {
+                                    scene.coronas.push(omsi_render::Corona {position:target.point+glam::DVec3::Z*0.4,size:0.65,color:[0.9,0.1,1.0],brightness:1.0,..Default::default()});
+                                }
+                            }
+                        }}}
+                        if panel.free {for (index,p) in panel.preview.handles.iter().filter(|(i,_)|panel.settings.nodes[*i].0==panel.active_lane) {
+                            scene.coronas.push(omsi_render::Corona {position:*p+glam::DVec3::Z*0.4,size:if panel.selected_node==Some(*index){0.85}else{0.55},color:if panel.selected_node==Some(*index){[1.0,0.8,0.0]}else{[0.1,1.0,0.2]},brightness:1.0,..Default::default()});
+                        }}
+                        for (p,bus) in panel.preview.markers.iter().filter(|(p,_)|p.distance(cam.position)<600.0){scene.coronas.push(omsi_render::Corona {position:*p+glam::DVec3::Z*0.15,size:0.22,color:if *bus{[1.0,0.6,0.0]}else{[0.0,0.7,1.0]},brightness:2.0,..Default::default()});}
+                    }
+                    if let Some(panel)=self.menus.editor.as_ref().filter(|ed|ed.catalog.is_none()&&self.menus.game_menu.is_none()).and_then(|e|e.sidewalk_window.as_ref()){
+                        for p in panel.preview.markers.iter().filter(|p|p.distance(cam.position)<500.0){scene.coronas.push(omsi_render::Corona {position:*p+glam::DVec3::Z*0.15,size:0.18,color:[0.1,0.65,1.0],brightness:2.0,..Default::default()});}
+                        for (i,p) in panel.preview.handles.iter().enumerate(){scene.coronas.push(omsi_render::Corona {position:*p+glam::DVec3::Z*0.4,size:0.85,color:if i==0{[0.1,1.0,0.2]}else{[1.0,0.6,0.1]},brightness:2.0,..Default::default()});}
+                    }
+                    if let Some(panel) = self.menus.editor.as_ref().filter(|ed| ed.catalog.is_none() && self.menus.game_menu.is_none()).and_then(|ed| ed.roadside_window.as_ref()) {
+                        for point in panel.preview.points.iter().filter(|p| p.pos.distance(cam.position) < 500.0) {
+                            for height in [0.15, 0.75, 1.35] {
+                                scene.coronas.push(omsi_render::Corona { position: point.pos + glam::DVec3::Z * height,
+                                    size: 0.2, color: [0.1, 0.55, 1.0], brightness: 2.0, ..Default::default() });
+                            }
+                        }
+                    }
+                    if let Some(ed)=self.menus.editor.as_ref().filter(|ed|ed.terrain.active && ed.tile_window.is_none() && self.menus.game_menu.is_none()) {
+                        for p in ed.terrain.markers(w) {
+                            scene.coronas.push(omsi_render::Corona {position:p,size:0.25,color:[0.15,0.65,1.0],brightness:2.0,..Default::default()});
+                        }
+                    }
+                    if let Some(p) = self.menus.editor.as_ref().and_then(|ed| (!ed.terrain.active).then(||ed.selection_marker(w)).flatten()) {
+                        scene.coronas.push(omsi_render::Corona {
+                            position: p,
+                            size: 0.6,
+                            color: [1.0, 0.1, 0.9],
+                            brightness: 2.0,
+                            ..Default::default()
+                        });
+                    }
+                    if let Some(wt) = &self.session.weather {
                 let (kind, rate) = precip_of(wt);
                 crate::rain::set_quality(&self.settings.rain_quality);
                 self.session.rain.set(kind, rate);
@@ -225,6 +319,7 @@ impl App {
 
     /// The departure boards, the map's route arrows and the scenery's scripts.
     pub(super) fn frame_scripted(&mut self, dt: f32, daylight: omsi_sim::Daylight) {
+        let _diagnostic = crate::editor_diagnostics::Span::new("scenery_scripts", "");
         if let (Some(w), Some(r), Some(scene), Some(cam)) = (
             self.world.as_ref(),
             self.renderer.as_ref(),

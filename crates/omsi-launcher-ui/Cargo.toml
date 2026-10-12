@@ -38,6 +38,7 @@ libc.workspace = true
 arboard = { version = "3", default-features = false }
 
 [features]
+standalone-editor = ["omsi-platform/standalone-editor"]
 # what an app's tests see of the toolkit: every clickable thing's place (`Ui::drawn`)
 test-support = []
 

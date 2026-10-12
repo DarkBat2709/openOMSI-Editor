@@ -1,0 +1,38 @@
+use hashbrown::{HashMap, HashSet};
+use omsi_map::{MapSpline, Tile};
+pub type Key = ((i32,i32), i64);
+#[derive(Clone, Default)]
+pub struct Edits {
+    pub originals: HashMap<Key, MapSpline>,
+    pub changed: HashMap<Key, MapSpline>,
+    pub added: HashMap<Key, MapSpline>,
+    pub dirty: bool,
+    pub dirty_tiles: HashSet<(i32, i32)>,
+    pub terrain_cache: HashMap<(i32, i32), omsi_map::Terrain>,
+}
+
+impl Edits {
+    pub fn current(&self, key: Key) -> Option<MapSpline> {
+        self.added.get(&key).or_else(|| self.changed.get(&key))
+            .or_else(|| self.originals.get(&key)).cloned()
+    }
+
+    pub fn overlay(&self, key: (i32, i32), tile: &mut Tile) {
+        for s in &mut tile.splines {
+            if let Some(e) = self.changed.get(&(key, s.id)).or_else(|| self.added.get(&(key, s.id))) {
+                *s = e.clone();
+            }
+        }
+        let mut new: Vec<_> = self.added.iter()
+            .filter(|((t, id), _)| *t == key && !tile.splines.iter().any(|s| s.id == *id))
+            .map(|(_, s)| s.clone()).collect();
+        new.sort_by_key(|s| s.id);
+        tile.splines.extend(new);
+    }
+
+    pub fn for_tile(&self, key: (i32, i32)) -> HashMap<i64, MapSpline> {
+        self.changed.iter().chain(self.added.iter())
+            .filter(|((t, _), _)| *t == key).map(|((_, id), s)| (*id, s.clone())).collect()
+    }
+}
+

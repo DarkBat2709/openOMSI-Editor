@@ -7,6 +7,9 @@ impl App {
     /// The interface over the picture. The VR navigator's display (for the headset's
     /// picture).
     pub(super) fn frame_ui(&mut self, dt: f32) -> Option<crate::vr_navigator::Display> {
+        if let Some(scene)=self.scene.as_mut() {
+            scene.editor_hide_terrain=self.menus.game_menu.is_none() && self.menus.editor.as_ref().is_some_and(|e|e.hide_terrain);
+        }
         // (the game menu's lines, for the interface below)
         let menu_lines = if self.menus.game_menu.is_some() { self.game_menu_items() } else { Vec::new() };
         // (the mirror editor's keys and the panel under the cursor, while it is on)
@@ -99,10 +102,7 @@ impl App {
         let tooltip = self.menus.hover.as_ref().map(|h| names.control(h));
         // the editors' keys while one is on: help to look up, not news - they stay in the
         // corner as long as the editor does
-        let mut lines: Vec<String> = mirror_help;
-        if self.menus.editor.is_some() {
-            lines.push("Object editor: click picks | drag moves | wheel turns (Shift lifts) | Del | C copy | V variant | Backspace undo | Ctrl+S save | Esc".into());
-        }
+        let lines: Vec<String> = mirror_help;
         if let Some(d) = self.session.duty.as_ref().filter(|d| d.trip_done()) {
             let text = match d.trips.get(d.trip_index + 1) {
                 Some(next) => format!(
@@ -118,7 +118,9 @@ impl App {
         }
         // the game's messages (a setting saved, a key to press, the bus not loaded): one
         // card each, while the message stands
+        let selection_description = self.menus.editor.as_ref().zip(self.world.as_ref()).map(|(ed,w)| ed.describe(w));
         if let Some((msg, left)) = self.service_msg.as_mut() {
+            if selection_description.as_deref() == Some(msg.as_str()) { *left = 0.0; }
             *left -= dt;
             if *left > 0.0 {
                 let kind = message_kind(msg);
@@ -486,9 +488,57 @@ impl App {
                 tags,
                 notices: &self.menus.notices,
                 notice_anchor: self.menus.navigator.as_ref().and_then(|n| n.screen_rect()),
-            };
-            ui.draw_at(r, scene, &frame, dt, hud[0]);
-        }
+                        };
+                        let editor_visible = self.menus.editor.is_some() && self.menus.game_menu.is_none() && !vr_active;
+                        let editor_hud = self.menus.editor.as_ref().filter(|_| editor_visible).map(|ed| (
+                            ed.spline_mode, ed.terrain.active,
+                            self.world.as_ref().map(|world| ed.describe(world)).unwrap_or_default(),
+                            ed.catalog.is_none() && ed.tile_window.is_none() && ed.text_window.is_none() && ed.junction_window.is_none() && ed.roadside_window.is_none() && ed.sidewalk_window.is_none() && ed.construction_window.is_none() && ed.traffic_window.is_none() && ed.placing_asset.is_none() && !ed.splines.connection_active(),
+                        ));
+                        ui.draw_editor_hud(r, scene, editor_hud.as_ref().map(|(mode, terrain, description, expand)|
+                            (*mode, *terrain, description.as_str(), *expand)), scale * frame.ui_scale, hud, self.input.cursor);
+                        ui.draw_at(r, scene, &frame, dt, hud[0]);
+                        let connection = self.menus.editor.as_ref().filter(|ed| ed.spline_mode && !ed.terrain.active)
+                            .and_then(|ed| ed.splines.connection_status())
+                            .filter(|_| self.menus.game_menu.is_none() && !vr_active);
+                        let replace = self.menus.editor.as_ref().is_some_and(|ed| ed.spline_mode && ed.splines.connection_can_replace());
+                        let tools = self.menus.editor.as_ref().filter(|ed| editor_visible && ed.spline_mode && !ed.terrain.active
+                            && ed.catalog.is_none() && ed.tile_window.is_none() && ed.text_window.is_none() && ed.junction_window.is_none() && ed.roadside_window.is_none() && ed.sidewalk_window.is_none() && ed.construction_window.is_none() && ed.traffic_window.is_none() && ed.placing_asset.is_none() && !ed.splines.connection_active())
+                            .map(|ed| ed.splines.selected.is_some());
+                        let dock = self.menus.editor.as_ref().filter(|ed| editor_visible && ed.catalog.is_none() && ed.tile_window.is_none() && ed.text_window.is_none() && ed.junction_window.is_none() && ed.roadside_window.is_none() && ed.sidewalk_window.is_none() && ed.construction_window.is_none() && ed.traffic_window.is_none())
+                            .map(|ed| (ed.spline_mode, ed.placing_asset.is_none() && !ed.splines.connection_active()));
+                        let objects=self.menus.editor.as_ref().filter(|ed|editor_visible && !ed.spline_mode && !ed.terrain.active
+                            && ed.catalog.is_none() && ed.tile_window.is_none() && ed.text_window.is_none() && ed.junction_window.is_none() && ed.roadside_window.is_none() && ed.sidewalk_window.is_none() && ed.construction_window.is_none() && ed.traffic_window.is_none()).map(|ed|(
+                                self.world.as_ref().is_some_and(|w|ed.can_copy(w)),ed.clipboard.is_some(),ed.last_object.is_some(),
+                                ed.repeat_objects,ed.placing_asset.is_some()));
+                        if self.menus.editor.as_ref().is_none_or(|ed| ed.roadside_window.is_none() && ed.sidewalk_window.is_none() && ed.construction_window.is_none() && ed.traffic_window.is_none()) {
+                            ui.draw_editor_dock(r, scene, dock, tools, connection.as_ref(), replace,
+                                self.menus.editor.as_ref().is_some_and(|ed| ed.splines.transition_enabled()), objects,
+                                self.menus.editor.as_ref().filter(|ed|ed.terrain.active).map(|ed|&ed.terrain),
+                                scale * frame.ui_scale, hud, self.input.cursor);
+                        }
+                        let construction=self.menus.editor.as_mut().filter(|e|e.catalog.is_none()).filter(|_|editor_visible);
+                        ui.draw_construction_window(r,scene,construction,scale*frame.ui_scale,hud,self.input.cursor);
+                        let sidewalk=self.menus.editor.as_mut().filter(|e|e.catalog.is_none()).and_then(|e|e.sidewalk_window.as_mut()).filter(|_|editor_visible);
+                        ui.draw_sidewalk_window(r,scene,sidewalk,scale*frame.ui_scale,hud,self.input.cursor);
+                        let show_paths=self.menus.editor.as_ref().is_some_and(|ed|ed.show_traffic_paths);
+                        let traffic=self.menus.editor.as_mut().and_then(|e|e.traffic_window.as_mut()).filter(|_|editor_visible);
+                        ui.draw_traffic_window(r,scene,traffic,show_paths,scale*frame.ui_scale,hud,self.input.cursor);
+                        let roadside = self.menus.editor.as_mut().filter(|ed| ed.catalog.is_none()).and_then(|ed| ed.roadside_window.as_mut()).filter(|_| editor_visible);
+                        ui.draw_roadside_window(r, scene, roadside, scale * frame.ui_scale, hud, self.input.cursor);
+                        let catalog = self.menus.editor.as_mut().and_then(|ed| ed.catalog.as_mut());
+                        ui.draw_asset_catalog(r, scene, catalog, editor_visible, scale * frame.ui_scale, hud, self.input.cursor);
+                        let tiles = self.menus.editor.as_mut().and_then(|ed| ed.tile_window.as_mut()).filter(|_| editor_visible);
+                        ui.draw_tile_window(r, scene, tiles, scale * frame.ui_scale, hud, self.input.cursor);
+                        let text_window = self.menus.editor.as_mut().and_then(|ed| ed.text_window.as_mut()).filter(|_| editor_visible);
+                        ui.draw_object_text(r, scene, text_window, scale * frame.ui_scale, hud);
+                        let junction=self.menus.editor.as_mut().filter(|ed|ed.catalog.is_none()).and_then(|ed|ed.junction_window.as_mut()).filter(|_|editor_visible);
+                        let junction_root=self.world.as_ref().map(|w|w.root.as_path()).unwrap_or_else(||std::path::Path::new("."));
+                        ui.draw_junction_window(r,scene,junction,junction_root,scale*frame.ui_scale,hud,self.input.cursor);
+                        let audit=self.menus.editor.as_mut().filter(|ed|editor_visible&&crate::audit_events::panel_active(ed)).and_then(|ed|ed.audit.as_mut()).filter(|a|a.visible);
+                        ui.draw_spline_audit(r,scene,audit,scale*frame.ui_scale,hud,self.input.cursor);
+
+                    }
     }
 }
 

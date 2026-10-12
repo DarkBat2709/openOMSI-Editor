@@ -171,6 +171,9 @@ pub(crate) struct Args {
     /// Start without the menu (the command line defines everything).
     #[arg(long)]
     pub(crate) no_menu: bool,
+    /// Open the selected map directly in the editor, with a free camera and no bus.
+    #[arg(long)]
+    pub(crate) editor: bool,
     /// Situation file (.osn): map, date/time, weather, the player's vehicle and its tour.
     #[arg(long)]
     pub(crate) situation: Option<String>,

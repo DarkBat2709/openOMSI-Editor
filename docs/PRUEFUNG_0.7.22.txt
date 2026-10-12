@@ -1,0 +1,24 @@
+Prüfstatus 0.7.22-pre
+
+Bei der ursprünglichen Quellpaketerstellung bestanden die Python-Installerprüfungen;
+Rust-Prüfungen waren dort mangels Toolchain zunächst offen.
+
+Das spätere lokale Installationsprotokoll update-0.7.22-pre.log bestätigt:
+- Rust-Prüfung des Standalone-Editors
+- Diagnose-, KI-Fahrweg- und zusätzliche KI-Verbindungsregressionen
+- Speichern, Neuladen und Rückgängig für generierte KI-Pfade
+- Arm-Markierungen und Editor-Panel
+- Erhalt des Geradeauswegs beim Hinzufügen eines Abzweigs
+- Umgebungsvariablen-Verträge
+- Erfolgreiche Release-Kompilierung und separate Linux-Installation
+
+Vorbereitung des GitHub-Uploads:
+- test_windows_install.py: 1 Test bestanden
+- test_candidate_install.py: 4 Tests bestanden
+- test_editor_i18n.py: 841 Schlüssel und DE/EN-Umschaltung geprüft
+- Bash- und Python-Syntax des Installers geprüft
+- Deutsche und englische PDF-Anleitung: 0.7.22-pre, je 23 Seiten
+- SOURCE-SHA256.json passend zu den veröffentlichten Quelldateien erneuert
+
+GitHub prüft den neuen Commit separat auf Linux und Windows.
+Ein interaktiver Kartentest bleibt zusätzlich erforderlich.

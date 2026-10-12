@@ -97,6 +97,7 @@ impl World {
         }
         Ok(World {
             root: root.to_path_buf(),
+            editor_tiles: Mutex::new(HashMap::new()),
             global,
             map_dir,
             parklist: Mutex::new(HashMap::new()),
@@ -144,7 +145,17 @@ impl World {
             departed_objects: Mutex::new(std::collections::HashMap::new()),
             edit_objects: Mutex::new(HashMap::new()),
             object_edits: Mutex::new(HashMap::new()),
+            object_ground_dirty: Default::default(),
+            object_text_edits: Mutex::new(HashMap::new()),
+            spline_edits: Default::default(),
+            roadside_edits: Default::default(),
+            editor_next_id: Default::default(),
+            editor_helper_ids: Default::default(),
+            editor_object_placements: Default::default(),
+            editor_script_states: Default::default(),
             terrain_edits: Mutex::new(HashMap::new()),
+            ground_paint_edits: Mutex::new(HashMap::new()),
+            ground_texture_edits: Mutex::new(Vec::new()),
             bus_stops: Mutex::new(Vec::new()),
             waiting_places: Mutex::new(Vec::new()),
             waiting_cabins: Mutex::new(HashMap::new()),
@@ -194,6 +205,38 @@ impl World {
         self.object_type_scheme(rel, None)
     }
 
+    /// Snapshot before editor picking: no content loading or nested world locks while
+    /// traversing objects. A loaded map instance and an editor helper both retain a type.
+    pub fn editor_object_types(&self) -> HashMap<PathBuf, Arc<ObjectType>> {
+        self.object_types.lock().values().flatten()
+            .map(|ot| (ot.sco.path.clone(), ot.clone())).collect()
+    }
+
+    /// A deliberate editor placement may retry a previous miss. Return the failed
+    /// filename to the HUD as well as the log, without creating a phantom map record.
+    pub fn editor_object_type(&self, rel: &str) -> std::result::Result<Arc<ObjectType>, String> {
+        let key = rel.to_ascii_lowercase().replace('\\', "/");
+        {
+            let mut types = self.object_types.lock();
+            if matches!(types.get(&key), Some(None)) { types.remove(&key); }
+        }
+        let ot = self.object_type(rel).ok_or_else(|| {
+            scenery_definition(&self.root, rel).err()
+                .unwrap_or_else(|| format!("Objekttyp kann nicht geladen werden: {rel}"))
+        })?;
+        // An intentionally invisible trigger has no mesh definitions. An object
+        // which defines meshes but loaded none must not be reported as inserted.
+        if !ot.model.meshes.is_empty() && ot.meshes.is_empty() {
+            let error = ot.model.meshes.iter().find_map(|mesh| {
+                let path = scenery_mesh_path(&ot.model_dir, &mesh.file);
+                omsi_o3d::load_mesh(&path).err().map(|e| format!("Modelldatei {}: {e:#}", path.display()))
+            }).unwrap_or_else(|| format!("Keine Modellgeometrie geladen: {rel}"));
+            self.object_types.lock().remove(&key);
+            return Err(error);
+        }
+        Ok(ot)
+    }
+
     /// An object type with one of its `[CTC]` paint schemes applied (parked cars).
     pub fn object_type_scheme(&self, rel: &str, scheme: Option<usize>) -> Option<Arc<ObjectType>> {
         self.object_type_look(rel, scheme, None)
@@ -221,20 +264,10 @@ impl World {
             // (read by another meanwhile)
             return t.clone();
         }
-        let path = omsi_cfg::resolve_path(&self.root, rel);
         let loaded = (|| -> Option<Arc<ObjectType>> {
-            let mut sco = SceneryObject::load(&path)
+            let (mut sco, sco_dir, model, model_dir) = scenery_definition(&self.root, rel)
                 .map_err(|e| log::warn!("{e}"))
                 .ok()?;
-            let sco_dir = path.parent()?.to_path_buf();
-            let (model, model_dir) = match &sco.model_file {
-                Some(m) => {
-                    let mp = omsi_cfg::resolve_path(&sco_dir, m);
-                    let model = Model::load(&mp).map_err(|e| log::warn!("{e}")).ok()?;
-                    (model, mp.parent()?.to_path_buf())
-                }
-                None => (sco.model.clone(), sco_dir.clone()),
-            };
             // OMSI reads these world-pass tags from a referenced model.cfg as well as from
             // the .sco wrapper. Preserve explicit wrapper values, including an explicit
             // Normal/false override; otherwise inherit the model definition as the C++ path
@@ -247,12 +280,7 @@ impl World {
             if !model.lods.is_empty() {
                 let start = model.lods[0].first_mesh;
                 for (i, md) in model.lod_meshes(0).iter().enumerate() {
-                    let mesh_path = omsi_cfg::resolve_path(&omsi_cfg::resolve_path(&model_dir, "model"), &md.file);
-                    let mesh_path = if omsi_cfg::vfs::is_file(&mesh_path) {
-                        mesh_path
-                    } else {
-                        omsi_cfg::resolve_path(&model_dir, &md.file)
-                    };
+                    let mesh_path = scenery_mesh_path(&model_dir, &md.file);
                     match omsi_o3d::load_mesh(&mesh_path) {
                         Ok(m) => {
                             meshes.push((
@@ -273,12 +301,7 @@ impl World {
             for l in 1..model.lods.len() {
                 let mut list = Vec::new();
                 for md in model.lod_meshes(l) {
-                    let mesh_path = omsi_cfg::resolve_path(&omsi_cfg::resolve_path(&model_dir, "model"), &md.file);
-                    let mesh_path = if omsi_cfg::vfs::is_file(&mesh_path) {
-                        mesh_path
-                    } else {
-                        omsi_cfg::resolve_path(&model_dir, &md.file)
-                    };
+                    let mesh_path = scenery_mesh_path(&model_dir, &md.file);
                     if let Ok(m) = omsi_o3d::load_mesh(&mesh_path) {
                         list.push((mesh_from_o3d(&m), m.materials.clone(), md.materials.clone()));
                     }
@@ -462,6 +485,7 @@ impl World {
                 model,
                 model_dir,
                 meshes,
+                editor_pick_bounds: Default::default(),
                 mesh_visible,
                 mesh_def_index,
                 mesh_pivots,
@@ -572,21 +596,22 @@ pub fn navigation_map_of(root: &Path, tiles: &[(i32, i32, PathBuf)], chrono_dirs
         .clone()
     };
     #[allow(clippy::type_complexity)]
-    let parts: Vec<(Vec<Lane>, Vec<(i64, DVec3)>, Vec<(DVec3, f64, String)>, Vec<(Vec<DVec3>, f32)>)> = tiles
+    let parts: Vec<(Vec<Lane>, Vec<(i64, DVec3)>, Vec<(DVec3, f64, String)>, Vec<(Vec<DVec3>, f32)>, Vec<SplineCurve>)> = tiles
         .par_iter()
         .map(|(tx, ty, path)| {
             let (tx, ty) = (*tx, *ty);
             let mut lanes = Vec::new();
             let mut positions = Vec::new();
             let mut signs = Vec::new();
-            let mut roads = Vec::new();
+            let mut roads = Vec::new();let mut road_curves=Vec::new();
             let Some(tile) = omsi_world::map_index::read_tile(path, chrono_dirs) else {
-                return (lanes, positions, signs, roads);
+                return (lanes, positions, signs, roads,road_curves);
             };
             let origin2 = DVec2::new(tx as f64 * tile_size(), ty as f64 * tile_size());
             let terrain = Terrain::load(&tile_companion(&path, ".terrain")).unwrap_or_else(|_| Terrain::flat());
             for sp in tile.splines.iter().filter(|s| !s.deleted && !s.file.trim().is_empty()) {
                 let Some(def) = sli_of(&sp.file) else { continue };
+                if !def.only_editor {road_curves.push(SplineCurve::from_map(sp,origin2).with_sli(&def));}
                 if !def.paths.iter().any(|p| p.kind == 0) {
                     // Short surfaces also corroborate editor-only traffic paths at
                     // junctions; the navigator filters decorative patches for display.
@@ -637,19 +662,22 @@ pub fn navigation_map_of(root: &Path, tiles: &[(i32, i32, PathBuf)], chrono_dirs
                     lanes.extend(object_lanes(&sco, pos, [o.rot[0], 0.0, 0.0], None, (tx, ty), o.id, &o.rules));
                 }
             }
-            (lanes, positions, signs, roads)
+            (lanes, positions, signs, roads,road_curves)
         })
         .collect();
     let mut lanes = Vec::new();
     let mut positions = HashMap::new();
     let mut signs = Vec::new();
     let mut roads = Vec::new();
-    for (l, p, s, r) in parts {
+    let mut road_curves=Vec::new();
+    for (l, p, s, r,c) in parts {
+        road_curves.extend(c);
         lanes.extend(l);
         positions.extend(p);
         signs.extend(s);
         roads.extend(r);
     }
+    crate::editor_paths::attach_roads(&mut lanes,&road_curves,false);
     log::info!("navigation map: {} roads without a path for cars", roads.len());
     log::info!(
         "navigation map: {} tiles, {} lanes, {} objects placed, {} street name signs, {} object types, {} spline types, {:.1} s",

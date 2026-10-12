@@ -19,6 +19,18 @@ impl Launcher {
     /// one when that is what the player chose, and on a computer hand over to the new
     /// launcher once it is in place.
     pub(super) fn update_tick(&mut self, event_loop: &ActiveEventLoop) {
+        if cfg!(feature = "standalone-editor") {
+            if matches!(self.managed_updates[1].status(), Status::Restarting(_)) && !self.managed_updates[1].relaunched {
+                match self.managed_updates[1].restart() {
+                    Ok(()) => event_loop.exit(),
+                    Err(e) => {
+                        self.managed_updates[1].fail(format!("Editor update installed; please restart manually ({e})."));
+                        self.state.set_status(format!("Editor update installed; please restart manually ({e})."), true);
+                    },
+                }
+            }
+            return;
+        }
         let looking = self.setting("update_check", true) && !omsi_cfg::flags::OMSI_NO_UPDATE.is_set();
         if !self.update.checked_once && self.started.elapsed().as_secs_f32() > 1.0 {
             if looking {
@@ -83,6 +95,9 @@ impl Launcher {
 
     /// Whether the update dialog lies over the page this frame.
     pub(super) fn update_dialog_open(&self) -> bool {
+        if cfg!(feature = "standalone-editor") {
+            return self.managed_updates.iter().any(|u| matches!(u.status(), Status::Downloading {..} | Status::Installing(_) | Status::Restarting(_)));
+        }
         // (the launcher rests while a game runs: the offer waits for the session's end)
         if self.update.game_was_running {
             return false;
@@ -94,8 +109,34 @@ impl Launcher {
         }
     }
 
+    fn draw_managed_update_progress(&mut self) {
+        let Some(u) = self.managed_updates.iter().find(|u| matches!(u.status(), Status::Downloading {..} | Status::Installing(_) | Status::Restarting(_))) else { return };
+        let status = u.status();
+        let title = u.channel.title();
+        let size = self.ui.size;
+        let full = Rect::new(0.0,0.0,size.x,size.y);
+        self.ui.solid(full);
+        self.ui.p().rect(full,omsi_ui::Color::rgba(0,0,0,0.62));
+        let w=(size.x-48.0).min(560.0);
+        let r=Rect::new((size.x-w)*0.5,(size.y-200.0)*0.5,w,200.0);
+        self.ui.panel(r);
+        self.ui.heading(Rect::new(r.x+24.0,r.y+20.0,r.w-48.0,30.0),title,Some("system_update"));
+        let (text,fraction)=match status {
+            Status::Downloading {release,done,total} => (format!("{} {} · {} / {}",omsi_ui::tr("Downloading"),release.version,mb(done),mb(total)),if total>0 {done as f32/total as f32} else {0.0}),
+            Status::Restarting(_) => (omsi_ui::tr("Restarting editor...").into_owned(),1.0),
+            _ => (omsi_ui::tr("Installing...").into_owned(),1.0),
+        };
+        self.ui.paragraph(&text,Vec2::new(r.x+24.0,r.y+70.0),r.w-48.0,14.0,Weight::Regular,TEXT);
+        self.ui.progress(Rect::new(r.x+24.0,r.y+112.0,r.w-48.0,10.0),fraction,true);
+        self.ui.paragraph("Please wait until the installation is complete.",Vec2::new(r.x+24.0,r.y+138.0),r.w-48.0,13.0,Weight::Regular,TEXT_DIM);
+    }
+
     /// The update dialog over the page.
     pub(super) fn draw_update_dialog(&mut self) {
+        if cfg!(feature = "standalone-editor") {
+            self.draw_managed_update_progress();
+            return;
+        }
         let status = self.update.status();
         let size = self.ui.size;
         let full = Rect::new(0.0, 0.0, size.x, size.y);

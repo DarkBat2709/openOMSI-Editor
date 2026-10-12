@@ -330,6 +330,11 @@ impl crate::App {
     /// Into the photo mode (from the pause menu or its key): the game stands still, the
     /// camera starts where the view was.
     pub(crate) fn enter_photo(&mut self) {
+        // Editing and photography each own the keyboard, mouse and camera.
+        if self.menus.editor.is_some() {
+            self.service_msg = Some(("Close the map editor before opening photo mode".into(), 4.0));
+            return;
+        }
         if self.photo.is_some() || self.camera.is_none() {
             return;
         }

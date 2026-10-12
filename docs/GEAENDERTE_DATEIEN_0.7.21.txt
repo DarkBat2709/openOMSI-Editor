@@ -1,0 +1,7 @@
+INSTALLIEREN.sh
+README.md
+crates/omsi-app/locales/editor.yml
+crates/omsi-app/src/ui.rs
+docs/UPDATE_0.7.21.md
+scripts/editor/install_0_7_21.py
+scripts/editor/windows_editor.py

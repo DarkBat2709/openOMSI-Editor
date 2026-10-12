@@ -30,6 +30,8 @@ pub(super) struct FrameTime {
 impl App {
     /// One frame of the window: its stages (`stages::WINDOW_FRAME`) in their order.
     pub(super) fn frame(&mut self, event_loop: &ActiveEventLoop) {
+        let _diagnostic = crate::editor_diagnostics::Span::new("frame", "");
+        self.editor_traffic_drag();
         let mut frame = stages::WindowFrame::new(self, event_loop);
         // (the window's stages do not fail)
         if let Err(e) = crate::frame_stages::run(&mut frame, stages::WINDOW_FRAME) {

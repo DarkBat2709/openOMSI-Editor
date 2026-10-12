@@ -91,6 +91,10 @@ pub struct Streamer {
     requested: hashbrown::HashSet<(i32, i32)>,
     /// Tiles that could not be made (a damaged file): not asked for again.
     failed: hashbrown::HashSet<(i32, i32)>,
+    /// Edits made while a tile is being prepared: its old upload must be discarded.
+    reload_pending: hashbrown::HashSet<(i32, i32)>,
+    /// Visible old editor tiles stay alive until their replacement is complete.
+    editor_visible: hashbrown::HashMap<(i32, i32), crate::scene::TileGpu>,
     /// The first area around the start: (tiles, of which uploaded).
     initial: Option<(hashbrown::HashSet<(i32, i32)>, usize)>,
     pub stats: crate::scene::LoadStats,
@@ -129,6 +133,15 @@ pub struct Streamer {
 const LISTS_AFTER_LOADS: std::time::Duration = std::time::Duration::from_millis(400);
 
 impl Streamer {
+    /// Extend the candidate lookup without discarding loaded tiles or in-flight batches.
+    pub fn add_editor_tile(&mut self, key: (i32, i32), path: PathBuf) {
+        if self.tile_lookup.contains_key(&key) { return; }
+        let i = self.tiles.len();
+        self.tiles.push((key.0, key.1, path));
+        self.tile_lookup.entry(key).or_default().push(i);
+        self.failed.remove(&key);
+    }
+
     /// Start streaming around `centers`: the tiles within `initial_radius` of them form the
     /// first area, which is what the loading screen waits for.
     pub fn new(world: std::sync::Arc<crate::scene::World>, centers: &[DVec3], load_radius: f64, initial_radius: f64) -> Streamer {
@@ -150,6 +163,8 @@ impl Streamer {
             queue: Default::default(),
             requested: Default::default(),
             failed: Default::default(),
+            reload_pending: Default::default(),
+            editor_visible: Default::default(),
             initial: None,
             stats: Default::default(),
             loaded_total: 0,
@@ -199,16 +214,48 @@ impl Streamer {
             Some(k) => k.to_vec(),
             None => {
                 self.world.forget_all_staged();
-                self.world.loaded_tiles()
+                let mut keys = self.world.loaded_tiles();
+                keys.extend(self.requested.iter().copied());
+                keys.sort();
+                keys.dedup();
+                keys
             }
         };
         for k in &keys {
+            self.world.clear_editor_script_states(*k);
             self.failed.remove(k);
-            if !self.requested.contains(k) {
+            if self.requested.contains(k) {
+                self.reload_pending.insert(*k);
+            } else {
                 self.stale.insert(*k);
             }
         }
         log::info!("tile streaming: {} tiles to be read again", keys.len());
+    }
+
+    /// Rebuild the edited tiles and their loaded neighbours (terrain cuts cross tile
+    /// borders). Retain the old GPU resources instead of exposing a blank scene.
+    pub fn reload_editor(&mut self, renderer: &omsi_render::Renderer, scene: &mut omsi_render::Scene, changed: &[(i32, i32)], audio: Option<&omsi_audio::AudioEngine>) {
+        let mut keys = self.world.loaded_tiles();
+        keys.extend(self.requested.iter().copied());
+        keys.extend(self.editor_visible.keys().copied());
+        keys.retain(|k| changed.iter().any(|q| (k.0 - q.0).abs() <= 1 && (k.1 - q.1).abs() <= 1));
+        keys.sort(); keys.dedup();
+        let _diagnostic=crate::editor_diagnostics::Span::new("editor_reload_prepare", format!("tiles={}",keys.len()));
+        self.world.cache_editor_terrain(&keys);
+        self.world.forget_staged(&keys);
+        drop(_diagnostic);
+        for key in &keys {
+            let _diagnostic=crate::editor_diagnostics::Span::new("editor_reload_tile", format!("tile={key:?}"));
+            self.failed.remove(key);
+            if !self.editor_visible.contains_key(key) {
+                if let Some(gpu) = self.world.hold_editor_gpu(*key) { self.editor_visible.insert(*key, gpu); }
+            }
+            if self.requested.contains(key) { self.reload_pending.insert(*key); }
+            else { self.world.unload_tile(renderer, scene, *key, audio); }
+        }
+        self.world.refresh_tile_lists();
+        log::info!("spline editor: {} tiles scheduled; old rendering retained until replacement", keys.len());
     }
 
     /// (uploaded, total) of the first area while it is still loading.
@@ -250,6 +297,11 @@ impl Streamer {
             // ever: never retried, never unloaded, and the loading screen waited for it)
             let made: hashbrown::HashSet<(i32, i32)> = prepared.iter().map(|p| (p.tx, p.ty)).collect();
             for k in asked.into_iter().filter(|k| !made.contains(k)) {
+                if self.reload_pending.remove(&k) {
+                    self.requested.remove(&k);
+                    self.world.forget_all_staged();
+                    continue;
+                }
                 log::warn!("tile streaming: tile {},{} could not be loaded; left out", k.0, k.1);
                 self.requested.remove(&k);
                 self.failed.insert(k);
@@ -268,6 +320,14 @@ impl Streamer {
         let deadline = t0 + budget;
         while let Some(mut p) = self.queue.pop_front() {
             let key = p.key();
+            if self.reload_pending.remove(&key) {
+                self.world.abandon_upload(renderer, scene, p, audio);
+                self.requested.remove(&key);
+                self.world.forget_all_staged();
+                freed_types |= self.world.unload_tile(renderer, scene, key, audio);
+                changed = true;
+                continue;
+            }
             let initial = self.initial.as_ref().map(|(set, _)| set.contains(&key)).unwrap_or(false);
             if initial && self.initial_upload.as_ref().map(|(k, _)| *k) != Some(key) {
                 self.initial_upload = Some((key, std::time::Instant::now()));
@@ -277,6 +337,8 @@ impl Streamer {
                 // the GPU goes back with it
                 self.requested.remove(&key);
                 self.world.abandon_upload(renderer, scene, p, audio);
+                if let Some(old) = self.editor_visible.remove(&key) { self.world.release_editor_gpu(renderer, scene, old); }
+                self.world.clear_editor_script_states(key);
                 changed = true;
                 continue;
             }
@@ -288,6 +350,7 @@ impl Streamer {
                 self.worst_upload_ms = self.worst_upload_ms.max(ms);
             }
             if !ready {
+                if self.editor_visible.contains_key(&key) { p.hide_preview(renderer, scene); }
                 self.queue.push_front(p);
                 break;
             }
@@ -306,7 +369,13 @@ impl Streamer {
                 }
             }
             let mut stats = crate::scene::LoadStats::default();
+            if let Some(old) = self.editor_visible.get_mut(&key) {
+                self.world.reuse_editor_trees(renderer, scene, &mut p, old);
+            }
+            p.show_preview(renderer, scene);
             self.world.commit_upload(p, &mut stats);
+            if let Some(old) = self.editor_visible.remove(&key) { self.world.release_editor_gpu(renderer, scene, old); }
+            self.world.clear_editor_terrain_cache(key);
             self.stats.objects += stats.objects;
             self.stats.trees += stats.trees;
             self.stats.splines += stats.splines;
@@ -348,6 +417,7 @@ impl Streamer {
                     break;
                 }
                 self.stale.remove(&key);
+                if let Some(old) = self.editor_visible.remove(&key) { self.world.release_editor_gpu(renderer, scene, old); }
                 freed_types |= self.world.unload_tile(renderer, scene, key, audio);
                 self.unloaded_total += 1;
                 unloaded += 1;
@@ -356,6 +426,14 @@ impl Streamer {
         }
         if freed_types {
             self.world.trim_object_types();
+        }
+        // A failed or superseded replacement must not retain distant tiles forever.
+        let far_previews: Vec<_> = self.editor_visible.keys().copied()
+            .filter(|k| !self.requested.contains(k) && Self::nearest(centers, k.0, k.1) > self.unload_radius).collect();
+        for key in far_previews {
+            if let Some(old) = self.editor_visible.remove(&key) { self.world.release_editor_gpu(renderer, scene, old); }
+            self.world.clear_editor_script_states(key);
+            self.world.clear_editor_terrain_cache(key);
         }
         if unloaded > 0 {
             // the tiles only they depended on go too
@@ -533,3 +611,8 @@ mod tests {
         }
     }
 }
+
+pub use omsi_world::map_index::{read_tile,MapIndex,tile_row_objects,attachment_chain_offset,terrain_file};
+
+#[cfg(test)]
+pub use omsi_world::map_index::IndexedSpline;

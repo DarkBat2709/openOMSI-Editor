@@ -508,7 +508,7 @@ impl Network {
                                 continue;
                             }
                             let l = &self.lanes[j];
-                            if l.kind != kind {
+                            if l.kind != kind || !self.lanes[i].accepts_editor_connection(l) {
                                 continue;
                             }
                             let d = (l.start() - e).truncate().length();

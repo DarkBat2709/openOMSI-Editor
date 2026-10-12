@@ -59,6 +59,10 @@ pub const SETTINGS_TABS: [&str; 6] = ["Graphics", "Driving", "Camera", "Sound", 
 struct Outside {
     update: omsi_platform::updater::Status,
     check_updates: bool,
+    managed: [(omsi_platform::updater::Status, omsi_platform::editor_updates::Installation); 2],
+    managed_check: Option<usize>,
+    managed_install: Option<usize>,
+    game_running: bool,
     reset: bool,
     controls: Option<usize>,
 }
@@ -81,7 +85,7 @@ pub fn settings(l: &mut Launcher, area: Rect) {
     let body = Rect::new(body.x, bar.bottom() + 18.0, body.w, (body.bottom() - bar.bottom() - 18.0).max(0.0));
     let s = &mut l.state.settings;
     let dirty = &mut l.state.settings_dirty;
-    let mut out = Outside { update: l.update.status(), check_updates: false, reset: false, controls: None };
+    let mut out = Outside { update: l.update.status(), check_updates: false, managed: std::array::from_fn(|i| (l.managed_updates[i].status(), l.managed_updates[i].installation())), managed_check: None, managed_install: None, game_running: l.state.instances.iter().any(|i| i.running), reset: false, controls: None };
     // (two columns side by side; where they would be too narrow to read - a phone - one
     // under the other, each as high as it was the frame before)
     let stacked = body.w < 900.0;
@@ -107,6 +111,8 @@ pub fn settings(l: &mut Launcher, area: Rect) {
     if out.check_updates {
         l.update.check();
     }
+    if let Some(i) = out.managed_check { l.managed_updates[i].check(); }
+    if let Some(i) = out.managed_install { l.managed_updates[i].install(out.game_running); }
     if out.reset {
         l.pages.confirm_reset = true;
     }
@@ -995,6 +1001,10 @@ fn general_tab(ui: &mut Ui, s: &mut Value, dirty: &mut f32, out: &mut Outside, c
     let left = c.used();
     // updates from the GitHub releases (see `omsi_platform::updater`)
     let mut c = Col::new(ui, cols[1], "Updates");
+    if cfg!(feature = "standalone-editor") {
+        managed_update_rows(ui, &mut c, out);
+        toggle_setting(ui, s, dirty, c.row(), "Count me in the website's \"playing now\" (anonymous)", "presence");
+    } else {
     toggle_setting(ui, s, dirty, c.row(), "Look for updates when the launcher starts", "update_check");
     toggle_setting(ui, s, dirty, c.row(), "Install updates without asking", "update_auto");
     toggle_setting(ui, s, dirty, c.row(), "Tell me about a new version during a session", "update_notify");
@@ -1018,6 +1028,7 @@ fn general_tab(ui: &mut Ui, s: &mut Value, dirty: &mut f32, out: &mut Outside, c
     if ui.button("s-upd-github", c.row(), "github.com/openOmsi-project/openOMSI", Some("open_in_new"), ButtonKind::Ghost) {
         omsi_platform::updater::open_url(omsi_platform::updater::REPO_URL);
     }
+    }
     // every setting at once: here at the end, not first on the page where it was the
     // control one saw before any other
     c.section(ui, "Reset");
@@ -1025,6 +1036,57 @@ fn general_tab(ui: &mut Ui, s: &mut Value, dirty: &mut f32, out: &mut Outside, c
         out.reset = true;
     }
     [left, c.used()]
+}
+
+/// The two manual update channels have independent versions, targets and progress.
+fn managed_update_rows(ui: &mut Ui, c: &mut Col, out: &mut Outside) {
+    use omsi_platform::updater::Status;
+    use omsi_ui::{tr, Weight};
+    let working = out.managed.iter().any(|(s,_)| matches!(s, Status::Checking | Status::Downloading {..} | Status::Installing(_) | Status::Restarting(_)));
+    for i in 0..2 {
+        c.section(ui, if i==0 { "openOMSI · separate game installation" } else { "openOMSI Editor · editor package" });
+        let (status, installation) = &out.managed[i];
+        let r = c.row();
+        let busy = matches!(status, Status::Checking | Status::Downloading {..} | Status::Installing(_) | Status::Restarting(_));
+        if ui.button(&format!("s-managed-check-{i}"), Rect::new(r.x,r.y,150.0,r.h), if busy { "Checking..." } else { "Check now" }, Some("refresh"), ButtonKind::Normal) && !working {
+            out.managed_check=Some(i);
+        }
+        let text = match status {
+            Status::Idle => tr("Version and installation are checked separately").into_owned(),
+            Status::Checking => tr("Checking...").into_owned(),
+            Status::UpToDate => format!("{} · {}", installation.current, tr(if installation.installed { "Update installed" } else { "Up to date" })),
+            Status::Available(r) => format!("{} → {}", installation.current, r.version),
+            Status::Downloading {done,total,..} => format!("{} / {} MB",done/1_000_000,total/1_000_000),
+            Status::Installing(_) => tr("Installing...").into_owned(),
+            Status::Restarting(_) => tr("Restarting editor...").into_owned(),
+            Status::Failed(_) => tr("The last check failed").into_owned(),
+            _ => String::new(),
+        };
+        ui.text_in(&text,Rect::new(r.x+162.0,r.y,r.w-162.0,r.h),12.5,Weight::Regular,TEXT_DIM,omsi_ui::paint::Align::Left);
+        if let Some(p) = &installation.place {
+            let h=ui.paragraph(&p.dir.display().to_string(),Vec2::new(c.inner.x,c.y),c.inner.w,11.5,Weight::Regular,TEXT_DIM);
+            c.y+=h+8.0;
+        }
+        match status {
+            Status::Available(rel) => {
+                let r=c.row();
+                if ui.button(&format!("s-managed-install-{i}"),r,if out.game_running { "End session before installing" } else { "Download and install" },Some("download"),ButtonKind::Primary) && !working && !out.game_running {
+                    out.managed_install=Some(i);
+                }
+                if ui.button(&format!("s-managed-release-{i}"),c.row(),"What's new",Some("open_in_new"),ButtonKind::Ghost) { omsi_platform::updater::open_url(&rel.page); }
+            }
+            Status::Failed(error) => {
+                let h=ui.paragraph(error,Vec2::new(c.inner.x,c.y),c.inner.w,12.0,Weight::Regular,DANGER);
+                c.y+=h+8.0;
+            }
+            Status::Downloading {done,total,..} => {
+                ui.progress(Rect::new(c.inner.x,c.y,c.inner.w,8.0),if *total>0 { *done as f32 / *total as f32 } else {0.0},true); c.y+=18.0;
+            }
+            _ => {}
+        }
+    }
+    let h=ui.paragraph("Updates are installed manually. The editor keeps its bundled engine; updating the separate game does not upgrade the editor. Back up maps before saving them with a newer version.",Vec2::new(c.inner.x,c.y+8.0),c.inner.w,12.0,Weight::Regular,TEXT_DIM);
+    c.y+=h+22.0;
 }
 
 fn mb(v: i64) -> String {

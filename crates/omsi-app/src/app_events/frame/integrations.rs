@@ -6,6 +6,7 @@ impl App {
     /// Discord's status, Steam's callbacks, the plugins' frame (and what they asked the game
     /// to do), `OMSI_WATCH_VARS`, and the people's counts for the personnel file.
     pub(super) fn frame_integrations(&mut self, event_loop: &ActiveEventLoop, dt: f32) {
+        let _diagnostic = crate::editor_diagnostics::Span::new("plugins", "");
         // Discord's status: the map, the bus, the line (every few seconds)
         #[cfg(not(any(target_os = "android", target_os = "ios")))]
         {

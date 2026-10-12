@@ -367,7 +367,7 @@ fn height_profile_mesh_follows_the_segments() {
     def.height_profiles.push(omsi_scenery::sli::HeightProfile { x0: -4.5, x1: 4.5, z0: 0.1, z1: 0.1 });
     def.height_profiles.push(omsi_scenery::sli::HeightProfile { x0: 4.5, x1: 7.5, z0: 0.25, z1: 0.25 });
     def.height_profiles.push(omsi_scenery::sli::HeightProfile { x0: -1.25, x1: -1.25, z0: 0.25, z1: 0.25 });
-    let c = SplineCurve { start: DVec3::new(10.0, 10.0, 30.0), heading_deg: 0.0, length: 20.0, radius: 0.0, grad_start: 0.0, grad_end: 0.0, delta_h: None, cant_start: 0.0, cant_end: 0.0, skew_start: 0.0, skew_end: 0.0, tex_offset: 0.0, seed: 0, half_cant_width: DEFAULT_HALF_CANT_WIDTH };
+    let c = SplineCurve { profile_transitions: [None; 2], start: DVec3::new(10.0, 10.0, 30.0), heading_deg: 0.0, length: 20.0, radius: 0.0, grad_start: 0.0, grad_end: 0.0, delta_h: None, cant_start: 0.0, cant_end: 0.0, skew_start: 0.0, skew_end: 0.0, tex_offset: 0.0, seed: 0, half_cant_width: DEFAULT_HALF_CANT_WIDTH };
     let m = build_height_profile_mesh(&def, &c, false, DVec3::ZERO);
     let mut g = DriveGrid::default();
     for t in m.indices.chunks_exact(3) {
@@ -408,18 +408,18 @@ fn terrain_height_follows_the_drawn_triangles() {
 
 #[test]
 fn straight_and_arc() {
-    let c = SplineCurve { start: DVec3::ZERO, heading_deg: 90.0, length: 10.0, radius: 0.0, grad_start: 0.0, grad_end: 0.0, delta_h: None, cant_start: 0.0, cant_end: 0.0, skew_start: 0.0, skew_end: 0.0, tex_offset: 0.0, seed: 0, half_cant_width: DEFAULT_HALF_CANT_WIDTH };
+    let c = SplineCurve { profile_transitions: [None; 2], start: DVec3::ZERO, heading_deg: 90.0, length: 10.0, radius: 0.0, grad_start: 0.0, grad_end: 0.0, delta_h: None, cant_start: 0.0, cant_end: 0.0, skew_start: 0.0, skew_end: 0.0, tex_offset: 0.0, seed: 0, half_cant_width: DEFAULT_HALF_CANT_WIDTH };
     let e = c.end_point();
     assert!((e.x - 10.0).abs() < 1e-9 && e.y.abs() < 1e-9);
     // quarter circle to the right from heading 0 with radius 10 ends at (10, 10), heading 90
-    let c = SplineCurve { start: DVec3::ZERO, heading_deg: 0.0, length: std::f64::consts::FRAC_PI_2 * 10.0, radius: 10.0, grad_start: 0.0, grad_end: 0.0, delta_h: None, cant_start: 0.0, cant_end: 0.0, skew_start: 0.0, skew_end: 0.0, tex_offset: 0.0, seed: 0, half_cant_width: DEFAULT_HALF_CANT_WIDTH };
+    let c = SplineCurve { profile_transitions: [None; 2], start: DVec3::ZERO, heading_deg: 0.0, length: std::f64::consts::FRAC_PI_2 * 10.0, radius: 10.0, grad_start: 0.0, grad_end: 0.0, delta_h: None, cant_start: 0.0, cant_end: 0.0, skew_start: 0.0, skew_end: 0.0, tex_offset: 0.0, seed: 0, half_cant_width: DEFAULT_HALF_CANT_WIDTH };
     let e = c.end_point();
     assert!((e.x - 10.0).abs() < 1e-9 && (e.y - 10.0).abs() < 1e-9, "{e:?}");
     assert!((c.heading_at(c.length) - 90.0).abs() < 1e-9);
 }
 
 fn plain_curve(length: f64, radius: f64) -> SplineCurve {
-    SplineCurve { start: DVec3::ZERO, heading_deg: 0.0, length, radius, grad_start: 0.0, grad_end: 0.0, delta_h: None, cant_start: 0.0, cant_end: 0.0, skew_start: 0.0, skew_end: 0.0, tex_offset: 0.0, seed: 0, half_cant_width: DEFAULT_HALF_CANT_WIDTH }
+    SplineCurve { profile_transitions: [None; 2], start: DVec3::ZERO, heading_deg: 0.0, length, radius, grad_start: 0.0, grad_end: 0.0, delta_h: None, cant_start: 0.0, cant_end: 0.0, skew_start: 0.0, skew_end: 0.0, tex_offset: 0.0, seed: 0, half_cant_width: DEFAULT_HALF_CANT_WIDTH }
 }
 
 fn strip(half: f32, v_scale: f32) -> Spline {
@@ -544,7 +544,7 @@ fn patchwork_parts_join_up() {
 #[test]
 fn spline_h_height() {
     // the Ahlheim underpass ramp: 73.86 m, leaves at 6.19 %, arrives level, 5.85 m up
-    let c = SplineCurve { start: DVec3::new(0.0, 0.0, -5.79), heading_deg: 0.0, length: 73.86, radius: 0.0, grad_start: 6.19, grad_end: 0.0, delta_h: Some(5.85), cant_start: 0.0, cant_end: 0.0, skew_start: 0.0, skew_end: 0.0, tex_offset: 0.0, seed: 0, half_cant_width: DEFAULT_HALF_CANT_WIDTH };
+    let c = SplineCurve { profile_transitions: [None; 2], start: DVec3::new(0.0, 0.0, -5.79), heading_deg: 0.0, length: 73.86, radius: 0.0, grad_start: 6.19, grad_end: 0.0, delta_h: Some(5.85), cant_start: 0.0, cant_end: 0.0, skew_start: 0.0, skew_end: 0.0, tex_offset: 0.0, seed: 0, half_cant_width: DEFAULT_HALF_CANT_WIDTH };
     assert!((c.height_at(0.0) + 5.79).abs() < 1e-9);
     assert!((c.height_at(c.length) - 0.06).abs() < 1e-9, "{}", c.height_at(c.length));
     assert!((c.slope_at(0.0) - 0.0619).abs() < 1e-9);

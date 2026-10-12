@@ -98,8 +98,11 @@ pub(crate) fn staged_program(staging: &Path) -> Option<PathBuf> {
 /// `self-test ok`. A program that cannot even be loaded - a library missing, a broken build -
 /// fails here, before it has replaced anything.
 pub fn self_test(program: &Path, limit: Duration) -> Result<(), SelfTestFailed> {
-    let out = std::env::temp_dir().join(format!("openomsi-self-test-{}.txt", std::process::id()));
-    let file = std::fs::File::create(&out).map_err(|e| SelfTestFailed(format!("no file for its answer: {e}")))?;
+    static NEXT_SELF_TEST: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+    let sequence = NEXT_SELF_TEST.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    let stamp = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_nanos();
+    let out = std::env::temp_dir().join(format!("openomsi-self-test-{}-{stamp}-{sequence}.txt", std::process::id()));
+    let file = std::fs::OpenOptions::new().write(true).create_new(true).open(&out).map_err(|e| SelfTestFailed(format!("no file for its answer: {e}")))?;
     let mut cmd = std::process::Command::new(program);
     cmd.arg("--self-test").stdin(std::process::Stdio::null()).stderr(std::process::Stdio::null());
     cmd.stdout(file);

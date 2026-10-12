@@ -3,6 +3,13 @@
 
 use super::*;
 
+/// Owning road geometry: path edits follow it instead of terrain below bridges.
+#[derive(Debug, Clone)]
+pub enum EditorPathSurface {
+    Spline(omsi_geometry::SplineCurve),
+    Object { pos: DVec3, transform: glam::Mat4, field: Option<std::sync::Arc<omsi_geometry::MeshData>> },
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum LaneKind {
     Street,
@@ -76,6 +83,19 @@ pub struct Lane {
     /// `[ai_veh_type]` 2 / 3 (see [`Lane::allows`]). The rules are switches: the value
     /// after them is not read (Grundorf's 110 `trucks` rules all say 0).
     pub rule_bus: bool,
+    /// Editor-specific strict access rule; unlike OMSI bus lanes it excludes taxis.
+    pub editor_bus_only: bool,
+    pub editor_path_surface: Option<EditorPathSurface>,
+    pub editor_path_roads: Option<std::sync::Arc<Vec<omsi_geometry::SplineCurve>>>,
+    pub editor_path_base: Vec<DVec3>,
+    pub editor_path_headings: Vec<f32>,
+    pub editor_path_curvature: Vec<f32>,
+    pub editor_path_shape: [[f64;3];2],
+    pub editor_path_ends: [[f64;3];2],
+    pub editor_path_floor: Option<[f64;65]>,
+    pub editor_additional_connection:bool,
+    pub editor_next:Option<(LaneKey,bool)>,
+    pub editor_previous:Option<(LaneKey,bool)>,
     pub rule_trucks: bool,
     /// The spline this lane belongs to is editor-only: OMSI's invisible service roads at
     /// the edge of a map, where AI traffic drives with no road drawn under it.
@@ -129,11 +149,21 @@ pub fn pool_density(rules: &[(u16, f32)], defaults: &[i32], pool: usize) -> f32 
 }
 
 impl Lane {
+    pub fn accepts_editor_connection(&self,to:&Lane)->bool {
+        let bound_previous=to.editor_previous.is_some_and(|(k,r)|self.key==Some(k)&&self.reversed==r);
+        let bound_next=self.editor_next.is_some_and(|(k,r)|to.key==Some(k)&&to.reversed==r);
+        (self.editor_next.is_none_or(|(k,r)|to.key==Some(k)&&to.reversed==r)
+            || (to.editor_additional_connection&&bound_previous))
+            && (to.editor_previous.is_none_or(|(k,r)|self.key==Some(k)&&self.reversed==r)
+                || (self.editor_additional_connection&&bound_next))
+    }
+
     /// May an AI vehicle of `[ai_veh_type]` `veh_type` drive here (Omsi.exe 0x71d714, by
     /// the path's rules): a car (0) where there is no `no_cars`, a taxi (1) also where
     /// `bus` or `trucks` opens a no_cars path, a bus (2) only where `bus` and a truck (3)
     /// only where `trucks` is set. Other values (and the timetable's buses, -1) anywhere.
     pub fn allows(&self, veh_type: i32) -> bool {
+        if self.editor_bus_only { return matches!(veh_type, 2 | -1); }
         match veh_type {
             0 => !self.no_cars,
             1 => !self.no_cars || self.rule_bus || self.rule_trucks,
@@ -316,7 +346,7 @@ impl LaneBuilder {
     pub fn curve(points: Vec<DVec3>, headings: Vec<f32>, curvature: Vec<f32>, kind: LaneKind, width: f32) -> Lane {
         let dist = cumulative(&points);
         let speed_limit_kmh = if kind == LaneKind::Air { AIR_NO_LIMIT_KMH } else { 50.0 };
-        Lane { key: None, reversed: false, kind, width, points, headings, curvature, dist, speed_limit_kmh, next: Vec::new(), traffic_light: None, turn: 0, source: 0, offset: 0.0, name: String::new(), invisible: false, density: 1.0, group_density: Vec::new(), no_cars: false, rule_bus: false, rule_trucks: false, left: None, right: None, priority: DEFAULT_PRIORITY, blocks: Vec::new(), crossing_problem: false, ring: false }
+        Lane { key: None, reversed: false, kind, width, points, headings, curvature, dist, speed_limit_kmh, next: Vec::new(), traffic_light: None, turn: 0, source: 0, offset: 0.0, name: String::new(), invisible: false, density: 1.0, group_density: Vec::new(), no_cars: false, rule_bus: false, editor_bus_only: false, editor_path_roads:None, editor_path_surface:None, editor_path_base:Vec::new(), editor_path_headings:Vec::new(),editor_path_curvature:Vec::new(), editor_path_shape:[[0.0;3];2],editor_path_ends:[[0.0;3];2],editor_path_floor:None, editor_additional_connection:false, editor_next:None, editor_previous:None, rule_trucks: false, left: None, right: None, priority: DEFAULT_PRIORITY, blocks: Vec::new(), crossing_problem: false, ring: false }
     }
 
     /// Lane from bare points: headings from the neighbouring points on both sides (the

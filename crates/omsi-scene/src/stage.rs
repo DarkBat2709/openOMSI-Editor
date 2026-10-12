@@ -5,12 +5,15 @@ impl World {
     /// Every tile of global.cfg's `[map]` list whose file exists, with its index in that list
     /// (repeaters and timetable tracks name a tile by that index).
     pub fn map_tiles(&self) -> Vec<(usize, i32, i32, PathBuf)> {
-        self.global
+        let mut tiles: Vec<_> = self.global
             .tiles
             .iter()
             .map(|t| (t.index, t.x, t.y, omsi_cfg::resolve_path(&self.map_dir, &t.file)))
             .filter(|t| omsi_cfg::vfs::is_file(&t.3))
-            .collect()
+            .collect();
+        tiles.extend(self.editor_tiles.lock().iter().map(|(&(x, y), (i, p))| (*i, x, y, p.clone())));
+        tiles.sort_by_key(|t| t.0);
+        tiles
     }
 
     /// The map has tile `key` (listed in global.cfg, and its file exists).
@@ -24,15 +27,12 @@ impl World {
         center: Option<(i32, i32)>,
         radius: Option<i32>,
     ) -> Vec<(i32, i32, PathBuf)> {
-        self.global
-            .tiles
-            .iter()
+        self.map_tiles().into_iter()
             .filter(|t| match (center, radius) {
-                (Some((cx, cy)), Some(r)) => (t.x - cx).abs() <= r && (t.y - cy).abs() <= r,
+                (Some((cx, cy)), Some(r)) => (t.1 - cx).abs() <= r && (t.2 - cy).abs() <= r,
                 _ => true,
             })
-            .map(|t| (t.x, t.y, omsi_cfg::resolve_path(&self.map_dir, &t.file)))
-            .filter(|(_, _, p)| omsi_cfg::vfs::is_file(p))
+            .map(|(_, x, y, p)| (x, y, p))
             .collect()
     }
 
@@ -147,6 +147,8 @@ impl World {
         *self.chrono_dirs.write() = new;
         *self.index.lock() = None;
         let keys: Vec<(i32, i32)> = tiles.into_iter().collect();
+        self.editor_object_placements.lock().retain(|(tile, _), _| !keys.contains(tile));
+        self.editor_script_states.lock().retain(|(tile, _), _| !keys.contains(tile));
         self.forget_staged(&keys);
         keys
     }
@@ -539,7 +541,11 @@ impl World {
     pub(super) fn stage_tile(&self, tx: i32, ty: i32, path: &Path, index: &MapIndex) -> StagedTile {
         let origin2 = DVec2::new(tx as f64 * tile_size(), ty as f64 * tile_size());
         let origin = DVec3::new(origin2.x, origin2.y, 0.0);
-        let tile = omsi_world::map_index::read_tile(path, &self.chrono_dirs.read());
+        let mut tile = omsi_world::map_index::read_tile(path, &self.chrono_dirs.read());
+        if let Some(tile) = tile.as_mut() {
+            self.spline_edits.lock().overlay((tx, ty), tile);
+            self.roadside_edits.lock().overlay((tx, ty), tile);
+        }
         // (an active chrono patch may bring the tile's terrain: see `Tile::terrain_from`)
         let terrain_path = match &tile {
             Some(t) => omsi_world::map_index::terrain_file(t, path),
@@ -622,7 +628,7 @@ impl World {
     fn stage_splines(&self, out: &mut StagedTile, tile: &omsi_map::Tile, origin2: DVec2) -> (Vec<Lane>, Vec<Arc<MeshData>>) {
         let (tx, ty, origin) = (out.tx, out.ty, out.origin);
         let debug_splines = omsi_cfg::flags::OMSI_DEBUG_SPLINES.is_set();
-        let mut lanes: Vec<Lane> = Vec::new();
+        let mut lanes: Vec<Lane> = Vec::new();let mut road_curves=Vec::new();
         let mut meshes: Vec<Arc<MeshData>> = Vec::new();
         for s in tile
             .splines
@@ -638,6 +644,7 @@ impl World {
                 self.spline_ends.lock().insert(s.id, (curve.point_at(0.0), curve.end_point(), s.prev_id, s.next_id, s.file.clone()));
             }
             // editor-only splines (invisible streets, flight paths) still carry lanes
+            if !st.def.only_editor {road_curves.push(curve.with_sli(&st.def));}
             let mut new_lanes = spline_lanes(&st.def, s, &curve, (tx, ty));
             for l in new_lanes.iter_mut() {
                 l.invisible = st.def.only_editor;
@@ -779,6 +786,7 @@ impl World {
                 meshes.push(Arc::new(mesh));
             }
         }
+        crate::editor_paths::attach_roads(&mut lanes,&road_curves,false);
         (lanes, meshes)
     }
 
@@ -859,6 +867,8 @@ impl World {
                     rot: omsi_geometry::map_rotation(o.rot),
                 }
             };
+            let place = self.editor_object_placement((tx, ty), o.id, &ot.sco.path, place);
+            // Spline attachment rows are staged separately and follow their spline.
             out.objects.push(StagedObject {
                 ot,
                 id: o.id,

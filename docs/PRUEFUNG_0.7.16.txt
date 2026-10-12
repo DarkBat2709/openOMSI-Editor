@@ -1,0 +1,21 @@
+Prüfung 0.7.16-pre – 10.10.2026
+
+Linux-Kompilierung mit Rust 1.99.0, standalone-editor und unverändertem Cargo.lock.
+Gezielte Tests:
+- Sechs generated_ai-Tests. Der Integrationstest mit echter temporärer Map/SLI
+  prüft zusätzlich Laden bestehender Einstellungen, lokale Auswahl als Vorgabe,
+  Ersetzen von zwei durch eine versetzte Spur mit anderer Richtung/Busfreigabe,
+  unveränderte KI-Spline-ID und Referenzstraße, gespeicherten Map-Roundtrip,
+  Rückgängig und weiter funktionierende Anzeige.
+- Doppelte oder veraltete Ersetzungseinträge werden vor Änderungen abgewiesen.
+- Vier traffic_editor-Tests einschließlich Beibehalten der ersten Spurposition
+  und Fahrtrichtung beim Wechsel zwischen einer und zwei Spuren.
+- Frühere Geometrietests decken Überhöhung, Schrägstellung, Profilkorrekturen,
+  Fahrtrichtungen und die Erzeugung nur fehlender Abschnitte ab.
+Sprachprüfung: 841 Schlüssel.
+ZIP-Integrität und Installer-Paketprüfsummen geprüft.
+
+Keine interaktive Ausführung mit der vollständigen Benutzerkarte, kein Windows-Lauf
+und kein Release-Build hier. Der Linux-Installer prüft und baut den Release auf dem
+Zielrechner. Keine GitHub-Veröffentlichung und keine automatischen Änderungen an
+Chris' Karte. Die Ersetzung erfolgt erst mit dem entsprechenden Knopf im Editor.

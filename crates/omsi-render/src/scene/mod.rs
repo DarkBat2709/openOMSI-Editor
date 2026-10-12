@@ -169,6 +169,8 @@ pub struct Instance {
 }
 
 pub struct Scene {
+    /// Editor inspection only; does not alter terrain, collisions or saved maps.
+    pub editor_hide_terrain: bool,
     pub meshes: Vec<GpuMesh>,
     pub textures: Vec<GpuTexture>,
     /// Texture slot read by procedural rain films.

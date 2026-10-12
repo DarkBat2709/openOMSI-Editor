@@ -20,6 +20,8 @@ mod pax_vars;
 use engine_vars::Ev;
 pub use pax_vars::PaxVars;
 mod reload;
+mod editor_reload;
+pub use editor_reload::VehicleReloadState;
 pub use damage::{BrokenGlass, DynamicImpact, VehicleDent};
 mod contact;
 mod coupling;

@@ -218,14 +218,14 @@ impl crate::App {
         }
         let p = self.player.as_ref()?;
         let def = &p.vehicle.ty.def;
-        let eye = def
+        let _eye = def
             .cameras_driver
             .get(def.camera_std)
             .or(def.cameras_driver.first())?;
         let placement = self.vr_nav_profile();
         Some(Display {
             placement,
-            local_center: driver_origin(eye) + Vec3::from(placement.offset),
+            local_center: driver_origin(_eye) + Vec3::from(placement.offset),
         })
     }
 

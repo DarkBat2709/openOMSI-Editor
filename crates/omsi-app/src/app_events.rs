@@ -131,6 +131,7 @@ impl ApplicationHandler for App {
             }
             WindowEvent::Focused(false) => {
                 self.finish_vr_nav_edit();
+                if let Some(ui) = self.ui.as_mut() { ui.end_editor_dock_drag(); }
                 self.input.window_focused = false;
                 if let Some(ctl) = self.input.controllers.as_mut() {
                     ctl.set_focus(false);
@@ -183,6 +184,16 @@ impl ApplicationHandler for App {
                         }
                     }
                 }
+                let catalog_code = match event.physical_key { PhysicalKey::Code(code) => Some(code), _ => None };
+                if self.editor_construction_input(catalog_code,event.text.as_deref(),event.state==ElementState::Pressed){return;}
+                if self.editor_traffic_input(catalog_code,event.state==ElementState::Pressed,event.repeat){return;}
+                if self.editor_sidewalk_input(catalog_code,event.text.as_deref(),event.state==ElementState::Pressed,event.repeat){return;}
+                if self.editor_roadside_input(catalog_code,event.text.as_deref(),event.state==ElementState::Pressed,event.repeat) {return;}
+                if self.editor_junction_input(catalog_code,event.text.as_deref(),event.state==ElementState::Pressed) {return;}
+                if self.editor_text_input(catalog_code, event.text.as_deref(), event.state == ElementState::Pressed) { return; }
+                if self.editor_terrain_input(catalog_code, event.text.as_deref(), event.state == ElementState::Pressed) { return; }
+                if self.editor_tile_input(catalog_code, event.text.as_deref(), event.state == ElementState::Pressed) { return; }
+                if self.editor_catalog_input(catalog_code, event.text.as_deref(), event.state == ElementState::Pressed) { return; }
                 if event.state == ElementState::Pressed && self.menus.menu_edit_icao {
                     if let Some(text)=event.text.as_deref(){ self.icao_edit_text(text); }
                 }
@@ -254,6 +265,7 @@ impl ApplicationHandler for App {
                 button: winit::event::MouseButton::Right,
                 ..
             } => {
+                if self.menus.editor.as_ref().is_some_and(|ed| ed.catalog.is_some() || ed.tile_window.is_some() || ed.text_window.is_some() || ed.junction_window.is_some()) { return; }
                 if let Some(edit) = self.xr.vr_nav_edit.as_mut() {
                     edit.rotating = state == ElementState::Pressed;
                     return;
@@ -282,6 +294,7 @@ impl ApplicationHandler for App {
                 button: winit::event::MouseButton::Middle,
                 ..
             } => {
+                if self.menus.editor.as_ref().is_some_and(|ed| ed.catalog.is_some() || ed.tile_window.is_some() || ed.text_window.is_some() || ed.junction_window.is_some()) { return; }
                 if self.xr.vr_nav_edit.is_some() { return; }
                 if self.menus.navigator.as_ref().map(|n| n.map_open()).unwrap_or(false) {
                     return;
@@ -297,9 +310,19 @@ impl ApplicationHandler for App {
                     winit::event::MouseScrollDelta::LineDelta(_, y) => y,
                     winit::event::MouseScrollDelta::PixelDelta(p) => p.y as f32 / 40.0,
                 };
+                if self.menus.editor.as_ref().is_some_and(|ed| ed.catalog.is_some() || ed.tile_window.is_some() || ed.text_window.is_some() || ed.junction_window.is_some()) { self.editor_wheel(amount); return; }
                 self.wheel(amount);
             }
             WindowEvent::CursorMoved { position, .. } => {
+                if self.menus.editor.as_ref().is_some_and(|ed| ed.catalog.is_some() || ed.tile_window.is_some() || ed.text_window.is_some() || ed.junction_window.is_some()) {
+                    self.input.cursor = (position.x as f32, position.y as f32); return;
+                }
+                let cursor = (position.x as f32, position.y as f32);
+                if self.menus.editor.is_some() && self.menus.game_menu.is_none()
+                    && self.ui.as_mut().is_some_and(|ui| ui.editor_dock_move(cursor)) {
+                    self.input.cursor = cursor;
+                    return;
+                }
                 if self.xr.vr_nav_edit.is_some() { return; }
                 // (both physical pixels)
                 if let Some((x, y)) = self.input.cursor_hidden {
@@ -325,6 +348,8 @@ impl ApplicationHandler for App {
                     self.on_vr_cursor_moved(position.x as f32, position.y as f32);
                 } else {
                     self.on_mouse_moved(position.x as f32, position.y as f32);
+                    self.editor_sidewalk_drag();
+                    self.editor_traffic_queue_drag();
                 }
             }
             WindowEvent::MouseInput {
@@ -337,6 +362,7 @@ impl ApplicationHandler for App {
                     self.plugin_click(state == ElementState::Pressed);
                     return;
                 }
+                if self.menus.editor.as_ref().is_some_and(|ed| ed.catalog.is_some() || ed.tile_window.is_some() || ed.text_window.is_some() || ed.junction_window.is_some()) { self.editor_mouse(state == ElementState::Pressed); return; }
                 self.alt_tap_spoilt();
                 // ... and the game's own panels' (the quick menu, the forms, the editor)
                 if self.game_panel_click(state == ElementState::Pressed) {
@@ -372,6 +398,7 @@ impl ApplicationHandler for App {
             WindowEvent::Touch(t) => self.on_touch(event_loop, t),
             // (while the renderer is still being built, the window's start goes on instead)
             WindowEvent::RedrawRequested => {
+                if let Some(a)=self.menus.editor.as_mut().and_then(|ed|ed.audit.as_mut()){a.poll();}
                 if !self.drive_window_start(event_loop) {
                     self.frame(event_loop);
                 }

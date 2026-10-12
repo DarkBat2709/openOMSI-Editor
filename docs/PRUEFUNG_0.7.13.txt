@@ -1,0 +1,31 @@
+Prüfung 0.7.13-pre – 10.10.2026
+
+Die gemeldete Ablehnung stammt von der pauschalen Sperre für Profilkorrekturen
+im neuen KI-Werkzeug. Der bereitgestellte Spline besitzt keine Fahrzeugpfade.
+Die bereitgestellte Kachel enthält am ausgewählten Abschnitt 9859278 eine
+Endkorrektur, die in 0.7.12 zum Abbruch führte.
+
+Gezielte Regressionen:
+- Originale hochgeladene Kartendatei und SLI mit den echten Parsern geladen.
+- Einzelabschnitt 9859278: 1 Abschnitt mit Profilkorrektur erzeugbar.
+- Reziprok verbundene 8m-Terrain-Kette dieser Kachel: 20 Abschnitte,
+  davon 2 mit Profilkorrekturen, erzeugbar.
+- Erzeugte Pfadpunkte folgen an mehreren Stationen denselben korrigierten
+  Kurven wie die Referenz; Profilkorrekturen bleiben identisch erhalten.
+- Zusätzlicher reproduzierbarer Test mit den Korrekturwerten des betroffenen
+  Endes prüft tatsächliche KI-Lanes und Vorschauendpunkte.
+- Fahrzeugfreigaben, Gegenrichtung, Anschlussbildung, Speicher-/Lade-Roundtrip
+  einschließlich Profilkorrekturen sowie bisherige Geometrieprüfungen getestet.
+- Vorschaufehler werden mit Referenz-ID protokolliert.
+
+Kompilierung: Linux x86_64, Rust 1.99.0, Cargo.lock unverändert,
+standalone-editor; Testprogramm erfolgreich gebaut. Sprachprüfung erfolgreich.
+Die externe Kartentestfunktion ist ausdrücklich als ignorierter Test markiert:
+Sie läuft nur mit OMSI_TEST_TRAFFIC_TILE und OMSI_TEST_TRAFFIC_SPLINE.
+Sie wurde hier mit den bereitgestellten Dateien ausgeführt. Die Anhänge selbst
+sind nicht im Quellpaket enthalten.
+
+Keine interaktive Ausführung mit der vollständigen Karte, kein Windows-Lauf
+und kein Release-Build hier. Der Linux-Installer führt auf dem Zielrechner
+Check, gezielte Tests und Release-Build aus, bevor er den neuen Editor installiert.
+Kein automatischer Umbau der Benutzerkarte und keine Veröffentlichung auf GitHub.

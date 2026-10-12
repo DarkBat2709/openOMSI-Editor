@@ -59,7 +59,7 @@ impl Network {
         // links: ends of new lanes to any start, ends of old lanes to new starts
         let joins = |net: &Network, from: usize, to: usize| -> bool {
             let (a, b) = (&net.lanes[from], &net.lanes[to]);
-            if from == to || a.kind != b.kind {
+            if from == to || a.kind != b.kind || !a.accepts_editor_connection(b) {
                 return false;
             }
             let (e, s) = (a.end(), b.start());

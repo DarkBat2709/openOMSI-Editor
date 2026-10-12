@@ -45,6 +45,29 @@ mod cam_approach;
 use omsi_career::career;
 use omsi_input::describe;
 mod editor;
+mod editor_reload;
+mod spline_audit;
+mod audit_events;
+mod spline_editor;
+mod asset_catalog;
+mod object_text;
+mod object_angles;
+mod tile_editor;
+mod terrain_editor;
+mod ground_paint;
+mod junction_builder;
+mod junction_events;
+mod junction_connections;
+mod roadside_objects;
+mod roadside_events;
+mod editor_diagnostics;
+mod traffic_editor;
+mod editor_path_edit;
+mod traffic_connector;
+mod traffic_editor_events;
+mod sidewalk;
+mod construction_tools;
+mod sidewalk_events;
 mod duty_book;
 mod game_lists;
 mod game_panels;
@@ -134,12 +157,16 @@ rust_i18n::i18n!("locales");
 // (the tables are read when this crate compiles: this makes cargo compile it again when they
 // change - the macro alone left the old texts in the program)
 const _LOCALES: &str = include_str!("../locales/app.yml");
+const _EDITOR_LOCALES: &str = include_str!("../locales/editor.yml");
 
 /// Show the interface in `code` (the settings' ENG / DEU / FRA / RUS).
 pub(crate) fn ui_language(code: &str) {
     omsi_ui::i18n::set_lookup(|lang, text| _rust_i18n_try_translate(lang, text).map(|t| t.into_owned()));
     static TEMPLATES: std::sync::Once = std::sync::Once::new();
-    TEMPLATES.call_once(|| omsi_ui::i18n::set_templates(locale_keys(_LOCALES)));
+    TEMPLATES.call_once(|| {
+        omsi_ui::i18n::set_templates(locale_keys(_LOCALES));
+        omsi_ui::i18n::set_explicit_templates(locale_keys(_EDITOR_LOCALES));
+    });
     let iso = omsi_launcher_lib::language_iso(code);
     omsi_ui::i18n::set_language(iso);
     omsi_sim::vehicle_api::set_locale(iso);
@@ -301,6 +328,14 @@ pub(crate) fn launcher_statics() {
 /// installation and the content roots (mods, archives). None when the program has
 /// nothing more to do (a fatal error was shown).
 pub(crate) fn prepare(mut args: Args, bare: bool) -> Result<Option<(Args, Option<server::ServerCfg>)>> {
+    if args.editor {
+        anyhow::ensure!(args.server.is_none() && args.lan_join.is_none() && args.situation.is_none() && args.tutorial.is_none(), "The direct editor start needs a map, not a server, tutorial or saved situation.");
+        args.no_menu = true;
+        args.view = "free".into();
+        args.bus = None;
+        args.on_foot = false;
+        args.schedule = false;
+    }
     ui_language(&settings::Settings::load().language);
     // (a server has no interface to translate)
     mt::enable(settings::Settings::load().machine_translation && args.server.is_none());
@@ -635,10 +670,11 @@ fn assemble_app(args: Args, settings: settings::Settings) -> App {
         menus: MenuState {
             list_dirty: false,
             page_titles: Default::default(),
-            chooser: None,
-            editor: None,
-            vehicle_list: Vec::new(),
-            dropdown: None,
+        chooser: None,
+        editor: None,
+        editor_paused: None,
+        vehicle_list: Vec::new(),
+        dropdown: None,
             vehicle_meta: std::collections::HashMap::new(),
             hud: None,
             navigator: None,
@@ -682,6 +718,8 @@ fn assemble_app(args: Args, settings: settings::Settings) -> App {
         world: None,
         cam: ViewState {
             starting: None,
+            editor_reload_view: None,
+            editor_reload_driving: None,
             speed: 30.0,
             f1_reset: None,
             view_yaw: 0.0,
@@ -776,6 +814,7 @@ fn assemble_app(args: Args, settings: settings::Settings) -> App {
             pressed_scenery_object: None,
             drag_delta: (0.0, 0.0),
             cursor_kind: 0,
+            editor_cursor: None,
             touch,
         },
         last,
@@ -920,3 +959,63 @@ mod locale_tests {
         }
     }
 }
+
+#[cfg(test)]
+mod ai_panel_locale_tests {
+    use omsi_ui::i18n::{templated, templates, Piece};
+
+    fn german(key: &str) -> Option<String> {
+        super::_rust_i18n_try_translate("de", key).map(|value| value.into_owned())
+    }
+
+    #[test]
+    fn ai_panels_use_english_keys_with_german_translations() {
+        for (key, expected) in [
+            ("AI paths along the road", "KI-Fahrwege entlang der Straße"),
+            ("Additional AI connection", "Zusätzliche KI-Verbindung"),
+            ("Scope: connected spline chain", "Bereich: verbundene Splinekette"),
+            ("Show / hide AI paths", "KI-Pfade anzeigen / ausblenden"),
+            ("Edit freeform points", "Freiformpunkte bearbeiten"),
+            ("Add connection + save (Ctrl+S)", "Verbindung hinzufügen + speichern (Strg+S)"),
+            ("Then reload the map so AI traffic uses the path.", "Danach Karte neu laden, damit die KI den Weg nutzt."),
+        ] {
+            assert_eq!(german(key).as_deref(), Some(expected), "{key}");
+        }
+    }
+
+    #[test]
+    fn ai_panel_values_and_vehicle_types_are_translated_together() {
+        let mut tables = templates(super::locale_keys(super::_EDITOR_LOCALES));
+        // Open-ended labels are explicitly registered by ui_language.
+        for key in ["Lane 1: {}", "Lane 2: {}", "Select lane {}"] {
+            assert!(super::locale_keys(super::_EDITOR_LOCALES).any(|candidate| candidate == key));
+            tables.push((key.into(), vec![Piece::Text(key.strip_suffix("{}").unwrap().into()), Piece::Hole(String::new())]));
+        }
+        for (input, expected) in [
+            ("Start: path 9859416 / lane 1", "Start: Fahrweg 9859416 / Spur 1"),
+            ("Destination: path 9859284 / lane 2", "Ziel: Fahrweg 9859284 / Spur 2"),
+            ("Lane 1: All vehicles", "Spur 1: Alle Fahrzeuge"),
+            ("Lane 2: Buses only", "Fahrspur 2: Nur Busse"),
+            ("Select lane 2", "Fahrspur 2 wählen"),
+            ("Lane width: 3.00 m", "Spurbreite: 3.00 m"),
+        ] {
+            assert_eq!(templated(&tables, input, german).as_deref(), Some(expected), "{input}");
+        }
+    }
+
+    #[test]
+    fn ai_preview_counts_keep_their_order_in_german() {
+        let key = "{} new sections · {} already have paths (unchanged) · {} open endpoints. Check connections; save and reload the map.";
+        // The application's explicit templates support keys beginning with a number.
+        assert!(super::locale_keys(super::_EDITOR_LOCALES).any(|candidate| candidate == key));
+        let pattern = vec![Piece::Hole(String::new()), Piece::Text(" new sections · ".into()),
+            Piece::Hole(String::new()), Piece::Text(" already have paths (unchanged) · ".into()),
+            Piece::Hole(String::new()), Piece::Text(" open endpoints. Check connections; save and reload the map.".into())];
+        let input = "7 new sections · 5 already have paths (unchanged) · 8 open endpoints. Check connections; save and reload the map.";
+        assert_eq!(templated(&[(key.into(), pattern)], input, german).as_deref(),
+            Some("7 neue Abschnitte · 5 bereits mit Pfaden (unverändert) · 8 offene Pfadenden. Anschlüsse prüfen; nach Speichern Karte neu laden."));
+    }
+}
+
+#[cfg(test)]
+mod editor_scene_tests;

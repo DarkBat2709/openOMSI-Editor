@@ -73,6 +73,7 @@ pub mod pax_task;
 pub mod pax_driver;
 // What the renderer has to follow, the money on the desk and what the people need of the map.
 pub mod bodies;
+pub mod reload;
 pub mod money;
 pub mod world;
 #[cfg(test)]

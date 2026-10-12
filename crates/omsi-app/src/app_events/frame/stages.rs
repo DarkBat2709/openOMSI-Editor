@@ -171,7 +171,7 @@ impl frame_stages::Host<WindowStage> for WindowFrame<'_> {
                     return Ok(Flow::Stop);
                 }
             }
-            Streaming => app.drive_streaming(),
+            Streaming => { let _diagnostic = crate::editor_diagnostics::Span::new("tile_streaming", ""); app.drive_streaming(); },
             Traffic => app.frame_traffic(dt()),
             Controllers => self.controls = Some(app.frame_controllers(dt())),
             MouseDrive => {

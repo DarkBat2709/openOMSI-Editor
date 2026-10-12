@@ -102,6 +102,7 @@ effect. On Android, `openOMSI/env.txt` holds `NAME=value` lines that are set bef
 | `OMSI_DUMP_GROUND` | text | - | use | scene | File: every loaded tile's final terrain and road cut as text. |
 | `OMSI_DUMP_SCENERY_TEXT` | text | - | use | scene | Directory: write the scenery objects' text textures as drawn. |
 | `OMSI_DUMP_SCRIPTTEX` | text | - | use | app | Directory: write the player's bus's script (display) textures. |
+| `OMSI_EDITOR_TREE_TRACE` | bool | off | use | app, scene | Log editor tree placement, terrain restoration and restored object scripts. |
 | `OMSI_ENV_PHOTO` | num | 1 | use | render | 0 leaves the environment photo out of the debug views. |
 | `OMSI_FRAME_ORDER` | bool | off | once | app | Log the window's frame and the offscreen run's step as their ordered stages (phase, what each reads and writes, its profile key), once at start. |
 | `OMSI_GPU_TIMERS` | bool | off | use | render | Measure GPU time per pass with timestamp queries. |
@@ -220,6 +221,8 @@ effect. On Android, `openOMSI/env.txt` holds `NAME=value` lines that are set bef
 | `OMSI_SKIP_PIPE` | text | - | frame | render | Pipeline kinds to leave out of the main pass (comma-separated numbers). |
 | `OMSI_SPOT_SELECT` | num | - | use | scene | Turn on spotlight n (headlight pictures). |
 | `OMSI_TEST_CONTENT` | text | - | test | o3d, scene | Content root for tests that need real OMSI content. |
+| `OMSI_TEST_TRAFFIC_SPLINE` | text | - | test | app | Spline file for the terrain traffic path regression test. |
+| `OMSI_TEST_TRAFFIC_TILE` | text | - | test | app | Map tile for the terrain traffic path regression test. |
 | `OMSI_TEST_WINE_DIR` | text | - | test | plugin | Plugin demo test: folder holding omsi-plugin-host.exe for Wine. |
 | `OMSI_TOUCH` | bool | off | use | app | The on-screen touch controls on a computer. |
 | `OMSI_TRIGGER_ALL` | bool | off | use | app | Check: fire every [mouseevent] of the model and compare the variables before and after. |

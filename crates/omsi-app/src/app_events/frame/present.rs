@@ -38,6 +38,7 @@ impl App {
         lighting: &omsi_render::Lighting,
         vr_nav_display: Option<crate::vr_navigator::Display>,
     ) {
+        let _diagnostic = crate::editor_diagnostics::Span::new("render_and_present", "");
         let mut finish = false;
         let mut reconfigure = false;
         let shot = self.perf.shot.take();
@@ -149,6 +150,7 @@ impl App {
     /// The window's picture to draw into (none: the window is hidden; `reconfigure`: the
     /// drawable went away), and whether nothing is shown this frame.
     fn frame_acquire(&mut self, reconfigure: &mut bool) -> (Option<wgpu::SurfaceTexture>, Option<wgpu::TextureView>, bool) {
+        let _diagnostic = crate::editor_diagnostics::Span::new("gpu_acquire", "");
         let (Some(s), Some(r)) = (self.gfx.surface.as_ref(), self.renderer.as_ref()) else {
             return (None, None, true);
         };
@@ -241,6 +243,7 @@ impl App {
         frame: Option<wgpu::SurfaceTexture>,
         view: wgpu::TextureView,
     ) {
+        let _diagnostic = crate::editor_diagnostics::Span::new("gpu_draw_present", "");
         #[cfg(not(windows))]
         let _ = vr_nav_display;
         // (the photo mode draws the live picture while its camera moves, the photo once it

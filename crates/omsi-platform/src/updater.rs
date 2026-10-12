@@ -152,6 +152,10 @@ impl Updater {
 
     /// Download and install `r` (in the background).
     pub fn install(&mut self, r: Release) {
+        if cfg!(feature = "standalone-editor") {
+            self.set(Status::Failed("This editor is updated through its own package. The official installation can be updated separately.".into()));
+            return;
+        }
         if matches!(self.status(), Status::Downloading { .. } | Status::Installing(_) | Status::WaitingForInstaller(_) | Status::Restarting(_)) {
             return;
         }
@@ -170,6 +174,7 @@ impl Updater {
     /// Download `r` without installing it (in the background, the game's way): the file
     /// waits in the data folder, checked, until `install` puts it in place.
     pub fn prefetch(&mut self, r: Release) {
+        if cfg!(feature = "standalone-editor") { return; }
         if matches!(self.status(), Status::Downloading { .. } | Status::Downloaded(_) | Status::Installing(_) | Status::WaitingForInstaller(_) | Status::Restarting(_)) {
             return;
         }
@@ -311,7 +316,7 @@ fn with_retries<T>(what: &str, mut f: impl FnMut() -> Result<T, ureq::Error>) ->
 }
 
 /// A URL's body: `file://` read from the disk (tests), anything else over HTTP(S).
-fn fetch_text(url: &str) -> anyhow::Result<String> {
+pub(crate) fn fetch_text(url: &str) -> anyhow::Result<String> {
     if let Some(p) = url.strip_prefix("file://") {
         return Ok(std::fs::read_to_string(p)?);
     }
@@ -334,6 +339,7 @@ fn short_error(e: &ureq::Error) -> String {
 
 /// The latest release when it is newer than this build and has a file for this platform.
 pub fn latest() -> anyhow::Result<Option<Release>> {
+    if cfg!(feature = "standalone-editor") { return Ok(None); }
     if STORE_BUILD {
         return Ok(None);
     }
@@ -376,7 +382,7 @@ fn latest_from_site() -> anyhow::Result<Option<Release>> {
 }
 
 /// A release described as the GitHub API does, when newer than `current`.
-fn parse_release(v: &serde_json::Value, current: &str) -> anyhow::Result<Option<Release>> {
+pub(crate) fn parse_release(v: &serde_json::Value, current: &str) -> anyhow::Result<Option<Release>> {
     let tag = v["tag_name"].as_str().ok_or_else(|| anyhow::anyhow!("the release has no tag"))?;
     let version = tag.trim_start_matches(['v', 'V']).to_string();
     if is_test_build(current) {
@@ -411,7 +417,7 @@ fn parse_release(v: &serde_json::Value, current: &str) -> anyhow::Result<Option<
 
 /// Where downloads wait (the data folder: the program's own folder is only written when the
 /// new files go in).
-fn download_dir() -> PathBuf {
+pub(crate) fn download_dir() -> PathBuf {
     let d = omsi_launcher_lib::data_dir().join("updates");
     let _ = std::fs::create_dir_all(&d);
     d
@@ -454,7 +460,7 @@ pub fn downloaded(r: &Release) -> bool {
 /// Download the release file to `to`, with the progress in `status`, and check it. A break
 /// in the middle (a timeout, a dropped connection) goes on from where it stopped, a few
 /// times, before the download counts as failed.
-fn download(r: &Release, to: &Path, status: &Mutex<Status>) -> anyhow::Result<()> {
+pub(crate) fn download(r: &Release, to: &Path, status: &Mutex<Status>) -> anyhow::Result<()> {
     use sha2::Digest;
     if downloaded(r) {
         return Ok(());

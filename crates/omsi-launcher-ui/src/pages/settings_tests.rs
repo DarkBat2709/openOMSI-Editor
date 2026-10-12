@@ -63,11 +63,15 @@ fn by_tab() -> Vec<Vec<&'static str>> {
         "s-board", "s-stand", "s-pax-animation", "set-exact_fare", "s-pax", "set-get_up", "s-unsched", "s-maxsched", "s-maxpark", "set-ai_wait_timed_stops_only",
         "s-maint", "set-collision_vehicles", "set-collision_objects", "set-collision_pedestrians", "set-use_real_time", "set-use_real_date", "set-time_sync", "set-metar_sync", "s-timespeed",
     ];
-    let general = vec![
+    let mut general = vec![
         "s-lang", "set-machine_translation", "set-launcher_rest", "set-discord_status", "set-voice_chat", "s-uiscale", "set-ui_scale_window", "s-uiop", "set-tooltips", "set-show_fps", "s-perf", "set-notes", "set-chat", "s-chatsize", "set-name_tags",
         "set-navigator", "set-nav_arrows", "set-nav_ai", "corner-top-left", "corner-top-right", "corner-bottom-left", "corner-bottom-right",
         "set-update_check", "set-update_auto", "set-update_notify", "set-presence", "s-upd-check", "s-upd-github", "s-reset",
     ];
+    if cfg!(feature = "standalone-editor") {
+        general.retain(|n| !["set-update_check", "set-update_auto", "set-update_notify", "s-upd-check", "s-upd-github"].contains(n));
+        general.extend(["s-managed-check-0", "s-managed-check-1"]);
+    }
     vec![graphics, driving, camera, sound, gameplay, general]
 }
 
@@ -81,7 +85,7 @@ fn all_rows() -> Value {
 }
 
 fn outside() -> Outside {
-    Outside { update: Status::Idle, check_updates: false, reset: false, controls: None }
+    Outside { update: Status::Idle, check_updates: false, managed: std::array::from_fn(|_| (Status::Idle, Default::default())), managed_check: None, managed_install: None, game_running: false, reset: false, controls: None }
 }
 
 /// One frame of tab `tab`, its two columns tall enough that nothing is cut off. The Sound
@@ -191,4 +195,30 @@ fn reset_asks_first_and_changes_nothing() {
     let out = click(5, "s-reset", &mut s);
     assert!(out.reset);
     assert_eq!(s, before);
+}
+
+#[test]
+fn editor_update_buttons_choose_independent_channels_and_wait_for_session_end() {
+    if !cfg!(feature = "standalone-editor") { return; }
+    assert_eq!(click(5,"s-managed-check-0",&mut all_rows()).managed_check,Some(0));
+    assert_eq!(click(5,"s-managed-check-1",&mut all_rows()).managed_check,Some(1));
+    for i in 0..2 {
+        let mut out=outside();
+        out.managed[i].0=Status::Available(omsi_platform::updater::Release {version:"0.7.24-pre".into(),page:String::new(),notes:String::new(),asset_name:String::new(),asset_url:String::new(),size:10,sha256:None});
+        let mut ui=Ui::new();let mut settings=all_rows();
+        frame(&mut ui,5,&mut settings,&mut out);
+        let r=ui.drawn[&id_of(&format!("s-managed-install-{i}"))];
+        out.game_running=true;
+        ui.input.mouse=r.center();ui.input.pressed=true;ui.input.down=true;
+        frame(&mut ui,5,&mut settings,&mut out);
+        ui.input.pressed=false;ui.input.down=false;ui.input.released=true;
+        frame(&mut ui,5,&mut settings,&mut out);
+        assert_eq!(out.managed_install,None);
+        out.game_running=false;
+        ui.input.released=false;ui.input.pressed=true;ui.input.down=true;
+        frame(&mut ui,5,&mut settings,&mut out);
+        ui.input.pressed=false;ui.input.down=false;ui.input.released=true;
+        frame(&mut ui,5,&mut settings,&mut out);
+        assert_eq!(out.managed_install,Some(i));
+    }
 }

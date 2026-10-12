@@ -18,6 +18,10 @@ path = "src/lib.rs"
 name = "openomsi"
 path = "src/main.rs"
 
+[features]
+# Fork packaging only: never replace the editor with an official game release.
+standalone-editor = ["omsi-platform/standalone-editor", "omsi-launcher-ui/standalone-editor"]
+
 [build-dependencies]
 winresource.workspace = true
 
@@ -78,6 +82,8 @@ ring.workspace = true
 rust-i18n = "4"
 # updates: the release archives from GitHub
 zip.workspace = true
+tar = "0.4"
+flate2.workspace = true
 
 # the desktop's clipboard and file dialogs (a phone has neither in this form; an iPhone's
 # come from the Swift side, see `apple`)

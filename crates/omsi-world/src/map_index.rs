@@ -577,7 +577,7 @@ pub fn chain_offset(index: &MapIndex, id: i64) -> f64 {
 
 /// Start with this record, not a foreign spline sharing its id. After the first step
 /// the legacy chain follows the same predecessor links and loop guards as before.
-fn chain_offset_from(index: &MapIndex, id: i64, mut spline: IndexedSpline) -> f64 {
+pub fn chain_offset_from(index: &MapIndex, id: i64, mut spline: IndexedSpline) -> f64 {
     if let Some(offset) = spline.map_chain_offset {
         return offset;
     }
@@ -1341,4 +1341,8 @@ mod tests {
         assert!((child.pos - DVec3::new(100.4, 204.0, 35.0)).length() < 1e-4, "{:?}", child.pos);
         assert!((child.heading() - 270.0).abs() < 1e-3, "{}", child.heading());
     }
+}
+
+pub fn attachment_chain_offset(index: &MapIndex, spline: &MapSpline) -> f64 {
+    spline.map_chain_offset.unwrap_or_else(|| chain_offset_from(index, spline.id, IndexedSpline::from_map(spline)))
 }

@@ -51,6 +51,17 @@ pub fn place(m: &mut Money, world: &World, renderer: &Renderer, scene: &mut Scen
     }
 }
 
+/// Recreate coins at their exact cabin-local positions in a replacement scene.
+pub fn restore_scene(m: &mut Money, world: &World, renderer: &Renderer, scene: &mut Scene) {
+    m.meshes.clear(); m.hidden.clear();
+    for (_, local, coin, change, parent) in std::mem::take(&mut m.placed) {
+        if let Some((id, mats)) = mesh(m, world, renderer, scene, coin) {
+            let inst = renderer.add_instance(scene, id, DVec3::ZERO, Mat4::IDENTITY, mats);
+            m.placed.push((inst, local, coin, change, parent));
+        }
+    }
+}
+
 /// Show the coins lying in the bus where they lie now; the ones taken away hidden.
 pub fn sync(m: &mut Money, renderer: &Renderer, scene: &mut Scene, bus: &VehicleInstance) {
     for inst in m.hidden.drain(..) {

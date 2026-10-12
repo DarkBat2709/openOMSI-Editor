@@ -11,12 +11,12 @@
 use omsi_world::map_index::{MapIndex, Pose};
 use anyhow::{Context, Result};
 use glam::{DVec2, DVec3, Mat4};
-use hashbrown::HashMap;
+use hashbrown::{HashMap, HashSet};
 use omsi_geometry::{
     build_spline_mesh, build_terrain_mesh, mesh_from_o3d, object_rotation, MeshData, SplineCurve,
     TileSurface,
 };
-use omsi_map::{tile_size, GlobalCfg, Terrain};
+use omsi_map::{tile_size, GlobalCfg, Terrain, Tile};
 use omsi_model::{MaterialDef, MeshDef, Model};
 use omsi_render::{
     AlphaMode, MaterialExtra, MaterialId, MeshId, RenderPhase, Renderer, Scene, TextureId,
@@ -40,6 +40,8 @@ pub mod threads;
 pub mod wheel_surface;
 pub mod window_wipers;
 
+pub mod editor_splines;
+pub mod editor_paths;
 mod staging;
 mod batching;
 mod terrain_paint;
@@ -58,7 +60,7 @@ pub use scripted::DayKind;
 mod vehicle_materials;
 mod vehicle_types;
 mod vehicles;
-mod lanes;
+pub mod lanes;
 mod season_looks;
 mod sim_world;
 pub mod host;
@@ -75,8 +77,7 @@ pub use vehicle_types::*;
 use lanes::*;
 use lightmaps::*;
 pub use stage::*;
-#[cfg(test)]
-use place::field_height;
+pub use place::field_height;
 
 #[cfg(test)]
 mod surf_map_tests;
@@ -98,3 +99,6 @@ mod terrain_mapping_tests;
 
 #[cfg(test)]
 mod crossing_deformation_tests;
+
+pub mod ground_paint;
+pub mod roadside_objects;
