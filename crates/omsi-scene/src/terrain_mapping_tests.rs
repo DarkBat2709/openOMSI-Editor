@@ -56,7 +56,7 @@ fn triangle(z: f32) -> MeshData {
 #[ignore = "requires a graphics adapter; uploads an isolated synthetic tile"]
 fn mapped_splines_and_objects_use_uncut_base_while_ground_keeps_paint() {
     let fixture = Fixture::new();
-    fixture.write("global.cfg", "[name]\nTerrain mapping regression\n");
+    fixture.write("global.cfg", "[name]\nTerrain mapping regression\n[map]\n0\n0\ntile_0_0.map\n");
     fixture.write("mapped.png.cfg", "[terrainmapping]\n");
     fixture.write(
         "mapped.sco",
@@ -121,6 +121,7 @@ fn mapped_splines_and_objects_use_uncut_base_while_ground_keeps_paint() {
         ty: 0,
         terrain: Some(triangle(0.0)),
         hole_walls: triangle(-0.5),
+        paint_cut: None,
         paint_masks: Vec::new(),
         paint: vec![(1, TextureData::from_image(Image::solid([255; 4])), 1.0)],
         wall_paint: vec![(1, TextureData::from_image(Image::solid([255; 4])))],
@@ -222,6 +223,34 @@ fn mapped_splines_and_objects_use_uncut_base_while_ground_keeps_paint() {
         assert!(material.nightmap.is_some());
         assert!(!instance.ground_layer);
     }
+    // A paint stroke must retain the tile, stop identities and every non-paint instance.
+    world.commit_upload(upload, &mut LoadStats::default());
+    let stop = (123, DVec3::new(1.0,2.0,3.0), 0.0, "Waiting stop".to_string());
+    world.tile_state.lock().get_mut(&(0,0)).unwrap().bus_stops.push(stop.clone());
+    world.refresh_tile_lists();
+    let generation = world.tiles_generation.load(std::sync::atomic::Ordering::Relaxed);
+    let permanent = world.tile_state.lock()[&(0,0)].gpu.instances.clone();
+    let mut allocations = None;
+    for turn in 0..8 {
+        let mask = crate::ground_paint::Mask {size: 2, alpha: vec![if turn % 2 == 0 {0.0} else {1.0}; 4]};
+        world.ground_paint_edits.lock().insert(((0,0),1), mask);
+        world.refresh_editor_ground_paint(&renderer, &mut scene, &[(0,0)]);
+        let states = world.tile_state.lock();
+        let state = &states[&(0,0)];
+        assert_eq!(state.bus_stops, vec![stop.clone()]);
+        assert_eq!(state.gpu.instances, permanent);
+        assert_eq!(world.tiles_generation.load(std::sync::atomic::Ordering::Relaxed),generation);
+        let paint = state.gpu.editor_paint.as_ref().unwrap();
+        assert_eq!(paint.resources.instances.len(), if turn % 2 == 0 {0} else {2}, "erase and repaint horizontal ground and walls");
+        if turn >= 3 {
+            let now = (scene.instances.len(), scene.textures.len(), scene.materials.len());
+            if let Some(before) = allocations {assert_eq!(now,before,"paint resources must be reused");}
+            allocations = Some(now);
+        }
+    }
+    world.unload_tile(&renderer, &mut scene, (0,0), None);
+    assert!(!world.tile_state.lock().contains_key(&(0,0)));
+
 }
 
 /// #954: a route arrow the map's author put up (a `[helparrow]` object) is placed with its
@@ -259,6 +288,7 @@ fn a_maps_own_route_arrow_shows_only_with_the_route_arrows() {
         ty: 0,
         terrain: Some(triangle(0.0)),
         hole_walls: MeshData::default(),
+        paint_cut: None,
         paint_masks: Vec::new(),
         paint: Vec::new(),
         wall_paint: Vec::new(),

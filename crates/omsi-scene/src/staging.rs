@@ -1135,6 +1135,7 @@ pub struct Prepared {
     /// Ground painting: for every `[groundtex]` layer above the first that is painted on
     /// this tile, its index and the alpha mask the editor's brush left behind (as read;
     /// [`World::cut_terrain`] turns them into `paint`).
+    pub(super) paint_cut: Option<Image>,
     pub(super) paint_masks: Vec<(usize, Image)>,
     /// The painted layers ready for the GPU: index, mask (with the roads' cut taken out)
     /// and the painted fraction of the tile.
@@ -1256,6 +1257,7 @@ pub struct TileState {
 /// ones it uses (object and spline types, textures through them).
 #[derive(Default)]
 pub struct TileGpu {
+    pub(super) editor_paint: Option<Box<EditorPaint>>,
     pub instances: Vec<usize>,
     pub meshes: Vec<MeshId>,
     pub textures: Vec<TextureId>,
@@ -1420,4 +1422,14 @@ impl FreeList {
         }
         n
     }
+}
+
+/// Only the paint owns these resources; geometry and simulation stay with the tile.
+pub(super) struct EditorPaint {
+    pub origin: DVec3,
+    pub mesh: MeshId,
+    pub wall: Option<MeshId>,
+    pub light_map: Option<TextureId>,
+    pub cut: Option<Image>,
+    pub resources: TileGpu,
 }

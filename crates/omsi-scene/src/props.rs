@@ -1225,6 +1225,9 @@ impl World {
             st.gpu.spline_types.iter().for_each(|t| nearer(splines.entry(*t).or_insert(f64::MAX)));
             st.gpu.trees.iter().for_each(|t| nearer(trees.entry(t.as_str()).or_insert(f64::MAX)));
             st.gpu.shared_textures.iter().for_each(|p| nearer(shared.entry(p).or_insert(f64::MAX)));
+            if let Some(paint) = &st.gpu.editor_paint {
+                paint.resources.shared_textures.iter().for_each(|p| nearer(shared.entry(p).or_insert(f64::MAX)));
+            }
         }
         {
             let g = &*gpu;

@@ -315,9 +315,14 @@ impl App {
     }
 
     pub(crate) fn editor_terrain_flush(&mut self,dt:f32,force:bool) {
+        // Keep pending strokes until an earlier geometry upload has committed its GPU.
+        if self.gfx.streamer.as_ref().is_some_and(|s| s.editor_rebuilding()) { return; }
         let Some(ed)=self.menus.editor.as_mut() else {return;};
-        let mut tiles=ed.terrain.take_pending(dt,force);
-        if force {
+        let (mut tiles,paint_tiles)=ed.terrain.take_pending(dt,force);
+        if let (Some(w),Some(r),Some(scene))=(self.world.as_ref(),self.renderer.as_ref(),self.scene.as_mut()) {
+            w.refresh_editor_ground_paint(r,scene,&paint_tiles);
+        }
+        if force && !tiles.is_empty() {
             if let Some(world) = self.world.as_ref() {
                 if world.roadside_edits.lock().groups.iter().any(|g| g.settings.ground) {
                     if let Err(error) = crate::roadside_objects::refresh(world) { log::warn!("Object rows after terrain change: {error}"); }

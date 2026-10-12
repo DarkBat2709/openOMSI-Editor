@@ -10,7 +10,7 @@ import subprocess
 import sys
 import tempfile
 
-VERSION = '0.7.23-pre-port-fix1'
+VERSION = '0.7.23-pre-port-fix2'
 ROOT = Path(__file__).resolve().parents[2]
 
 

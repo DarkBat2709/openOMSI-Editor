@@ -74,6 +74,7 @@ pub struct TerrainEditor {
     undo: Vec<Change>,
     redo: Vec<Change>,
     pending: HashSet<Key>,
+    pending_paint: HashSet<Key>,
     refresh: f32,
 }
 
@@ -82,7 +83,7 @@ impl Default for TerrainEditor {
         texture_erase:false,sample_texture:false,tool:Tool::Raise, radius:10.0, strength:1.0, softness:50.0,
         height:0.0, tile_step:1.0, blend:true, tile:None, cursor:None, sample_height:false, pick_tile:false,
         input:None, message:"Hold left mouse button to sculpt · Mouse wheel: brush size · Ctrl+S: save".into(),
-        stroke:None, undo:Vec::new(), redo:Vec::new(), pending:HashSet::new(), refresh:0.0 } }
+        stroke:None, undo:Vec::new(), redo:Vec::new(), pending:HashSet::new(), pending_paint:HashSet::new(), refresh:0.0 } }
 }
 
 pub fn parse_number(text: &str, min: f64, max: f64) -> Result<f64,String> {
@@ -339,7 +340,7 @@ impl TerrainEditor {
         let restore=if redo { &change.after } else { &change.before };
         { let mut edits=world.terrain_edits.lock();for (&key,t) in restore { edits.insert(key,t.clone());self.pending.insert(key); } }
         let masks=if redo {&change.after_masks} else {&change.before_masks};
-        {let mut edits=world.ground_paint_edits.lock();for (&key,mask) in masks {edits.insert(key,mask.clone());self.pending.insert(key.0);}}
+        {let mut edits=world.ground_paint_edits.lock();for (&key,mask) in masks {edits.insert(key,mask.clone());self.pending_paint.insert(key.0);}}
         if redo { self.undo.push(change); } else { self.redo.push(change); }
         self.message=if redo { "Terrain change redone" } else { "Terrain change undone" }.into();
     }
@@ -357,12 +358,12 @@ impl TerrainEditor {
         let after=crate::ground_paint::dab(&before,at,self.radius,self.softness,self.texture_layer,self.texture_erase,self.strength*dt);
         let stroke=self.stroke.as_mut().unwrap();let mut edits=world.ground_paint_edits.lock();
         for (key,mask) in after {stroke.before_masks.entry(key).or_insert_with(||before[&key].clone());
-            edits.insert(key,mask);self.pending.insert(key.0);}
+            edits.insert(key,mask);self.pending_paint.insert(key.0);}
     }
-    pub fn take_pending(&mut self,dt:f32,force:bool)->Vec<Key> {
+    pub fn take_pending(&mut self,dt:f32,force:bool)->(Vec<Key>,Vec<Key>) {
         self.refresh+=dt;
-        if !force && self.refresh<0.25 { return Vec::new(); }
-        self.refresh=0.0; self.pending.drain().collect()
+        if !force && self.refresh<0.25 { return (Vec::new(),Vec::new()); }
+        self.refresh=0.0; (self.pending.drain().collect(), self.pending_paint.drain().collect())
     }
     pub fn ground_hit(world:&World,origin:DVec3,direction:DVec3)->Option<DVec3> {
         let above=|t:f64| { let p=origin+direction*t;world.editor_terrain_height(p.x,p.y).map(|h|p.z>h) };
@@ -392,6 +393,19 @@ impl TerrainEditor {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn texture_refresh_is_separate_from_height_rebuild_even_after_mode_change() {
+        let mut editor = TerrainEditor::default();
+        editor.pending_paint.insert((1,2));
+        editor.mode = Mode::Heights;
+        assert_eq!(editor.take_pending(0.1,false),(vec![],vec![]));
+        assert_eq!(editor.take_pending(0.0,true),(vec![],vec![(1,2)]));
+        editor.pending.insert((3,4));
+        editor.mode = Mode::Textures;
+        assert_eq!(editor.take_pending(0.0,true),(vec![(3,4)],vec![]));
+        assert_eq!(editor.take_pending(1.0,true),(vec![],vec![]));
+    }
+
     use super::*;
     fn flat(height:f32)->Terrain { let mut t=Terrain::flat();t.heights.fill(height);t }
     #[test]

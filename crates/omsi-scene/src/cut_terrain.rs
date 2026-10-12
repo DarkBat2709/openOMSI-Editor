@@ -472,9 +472,15 @@ const GROUND_SOUND_CELLS: usize = 64;
 /// The painted ground layers of a tile without what the roads cut away (`p.paint`), and
 /// the same masks uncut for the walls of the holes (`p.wall_paint`).
 fn cut_paint(p: &mut Prepared, cut: Option<&Image>) {
-    let masks = std::mem::take(&mut p.paint_masks);
-    p.wall_paint.clear();
-    p.paint = masks
+    p.paint_cut = cut.cloned();
+    (p.paint, p.wall_paint) = prepare_paint_masks(std::mem::take(&mut p.paint_masks), cut, !p.hole_walls.indices.is_empty(), false);
+}
+
+pub(super) fn prepare_paint_masks(masks: Vec<(usize, Image)>, cut: Option<&Image>, has_walls: bool, live: bool)
+    -> (Vec<(usize, TextureData, f32)>, Vec<(usize, TextureData)>) {
+    let texture = |image: Image, mask: bool| if live { TextureData::from_image(image) } else { tile_texture(image, mask) };
+    let mut walls = Vec::new();
+    let paint = masks
         .into_iter()
         .filter_map(|(layer, img)| {
             let (mut rgba, w, h) = smooth_paint_mask(
@@ -482,12 +488,12 @@ fn cut_paint(p: &mut Prepared, cut: Option<&Image>) {
                 img.width as usize,
                 img.height as usize,
             );
-            if !p.hole_walls.indices.is_empty()
+            if has_walls
                 && rgba.chunks_exact(4).any(|v| v[3] > 8)
             {
-                p.wall_paint.push((
+                walls.push((
                     layer,
-                    tile_texture(
+                    texture(
                         Image {
                             width: w as u32,
                             height: h as u32,
@@ -527,7 +533,7 @@ fn cut_paint(p: &mut Prepared, cut: Option<&Image>) {
             (painted > 0).then(|| {
                 (
                     layer,
-                    tile_texture(
+                    texture(
                         Image {
                             width: img.width,
                             height: img.height,
@@ -541,6 +547,7 @@ fn cut_paint(p: &mut Prepared, cut: Option<&Image>) {
             })
         })
         .collect();
+    (paint, walls)
 }
 
 impl World {
@@ -618,3 +625,19 @@ const BUILDING_HEIGHT: f32 = 4.0;
 const BUILDING_WIDTH: f32 = 4.0;
 /// Cells per tile edge where the ambience looks for water (some 19 m on a Berlin tile).
 const WATER_CELLS: usize = 16;
+
+#[cfg(test)]
+mod editor_paint_refresh_tests {
+    use super::*;
+    #[test]
+    fn live_paint_keeps_road_holes_and_uncut_wall_masks() {
+        let mask = Image {width: 2, height: 2, rgba: vec![255;16], has_alpha: true};
+        let cut = Image {width: 2, height: 2, rgba: vec![0;16], has_alpha: true};
+        let (ground, walls) = prepare_paint_masks(vec![(1,mask.clone())],Some(&cut),true,true);
+        assert!(ground.is_empty(), "a paint refresh must not cover the road hole");
+        assert_eq!(walls.len(),1,"tunnel walls keep their uncut paint");
+        let (ground, _) = prepare_paint_masks(vec![(1,mask)],None,false,true);
+        assert_eq!(ground.len(),1);
+        assert!(ground[0].1.gpu_mips,"live strokes avoid synchronous mask compression");
+    }
+}

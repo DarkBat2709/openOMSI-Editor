@@ -287,7 +287,10 @@ impl World {
             }
             Some(wall)
         };
-        self.place_ground_paint(renderer, scene, gpu, p, tg, id, wall_id, lm);
+        let mut paint = EditorPaint { origin: p.origin, mesh: id, wall: wall_id, light_map: lm,
+            cut: p.paint_cut.clone(), resources: TileGpu::default() };
+        self.place_ground_paint(renderer, scene, gpu, &p.images, &p.paint, &p.wall_paint, &mut paint);
+        tg.editor_paint = Some(Box::new(paint));
         place_water(renderer, scene, gpu, p, tg, water_mat);
     }
 
@@ -297,20 +300,23 @@ impl World {
         renderer: &Renderer,
         scene: &mut Scene,
         gpu: &mut GpuCache,
-        p: &Prepared,
-        tg: &mut TileGpu,
-        id: MeshId,
-        wall_id: Option<MeshId>,
-        lm: Option<TextureId>,
+        images: &HashMap<PathBuf, Arc<TextureData>>,
+        painted_layers: &[(usize, TextureData, f32)],
+        wall_layers: &[(usize, TextureData)],
+        paint: &mut EditorPaint,
     ) {
-        let images: &HashMap<PathBuf, Arc<TextureData>> = &p.images;
+        let id = paint.mesh;
+        let wall_id = paint.wall;
+        let lm = paint.light_map;
+        let origin = paint.origin;
+        let tg = &mut paint.resources;
         let ground_dirs = vec![self.root.clone()];
         // The painted ground: every further [groundtex] the editor's brush put on this
         // tile is the same tile mesh once more, blended in through its own mask - which
         // is how OMSI's car parks get their asphalt, its side streets their cobbles and
         // its meadows their fields.
         let no_paint = omsi_cfg::flags::OMSI_NO_GROUND_PAINT.is_set();
-                        for (layer, mask, painted) in p.paint.iter().filter(|_| !no_paint) {
+                        for (layer, mask, painted) in painted_layers.iter().filter(|_| !no_paint) {
                             let ground_layers = crate::ground_paint::layers(self);
                             let Some(gt) = ground_layers.get(*layer) else {
                                 continue;
@@ -347,7 +353,7 @@ impl World {
             let li = instance!(gpu, renderer, scene, tg; renderer.add_surface_instance(
                 scene,
                 id,
-                p.origin,
+                origin,
                 Mat4::IDENTITY,
                 vec![m]
             ));
@@ -356,13 +362,13 @@ impl World {
                 inst.render_phase = RenderPhase::Terrain;
             }
             if omsi_cfg::flags::OMSI_DEBUG_SURFACES.is_set() {
-                log::info!("tile ({}, {}): ground layer {layer} '{}' painted on {:.1} % of the tile, mask {:?}", p.tx, p.ty, gt.texture, painted * 100.0, mask.format);
+                log::info!("tile ({}, {}): ground layer {layer} '{}' painted on {:.1} % of the tile, mask {:?}", origin.x, origin.y, gt.texture, painted * 100.0, mask.format);
             }
         }
         // Exposed sides keep the original brush layers. The horizontal ground's
         // masks include the hole cut and would erase these vertical faces again.
                         if let Some(wall) = wall_id {
-                            for (layer, mask) in p.wall_paint.iter().filter(|_| !no_paint) {
+                            for (layer, mask) in wall_layers.iter().filter(|_| !no_paint) {
                                 let ground_layers = crate::ground_paint::layers(self);
                                 let Some(gt) = ground_layers.get(*layer) else {
                                     continue;
@@ -398,7 +404,7 @@ impl World {
                 let wi = instance!(gpu, renderer, scene, tg; renderer.add_surface_instance(
                     scene,
                     wall,
-                    p.origin,
+                    origin,
                     Mat4::IDENTITY,
                     vec![m]
                 ));
@@ -407,6 +413,23 @@ impl World {
                     inst.render_phase = RenderPhase::Terrain;
                 }
             }
+        }
+    }
+
+    /// Refresh only paint overlays. Never unload stops, paths, scripts or collision data.
+    /// Missing tiles use the current masks on their next ordinary upload.
+    pub fn refresh_editor_ground_paint(&self, renderer: &Renderer, scene: &mut Scene, keys: &[(i32,i32)]) {
+        if omsi_cfg::flags::OMSI_NO_GROUND_PAINT.is_set() { return; }
+        for &key in keys {
+            let Some(path) = self.tile_source(key.0, key.1) else { continue; };
+            let masks = self.load_ground_paint(&path, key);
+            let mut states = self.tile_state.lock();
+            let Some(paint) = states.get_mut(&key).and_then(|s| s.gpu.editor_paint.as_mut()) else { continue; };
+            let (layers, walls) = crate::cut_terrain::prepare_paint_masks(masks, paint.cut.as_ref(), paint.wall.is_some(), true);
+            let old = std::mem::take(&mut paint.resources);
+            let mut gpu = self.gpu.lock();
+            self.place_ground_paint(renderer, scene, &mut gpu, &HashMap::new(), &layers, &walls, paint);
+            gpu.release_tile(renderer, scene, old);
         }
     }
 

@@ -494,6 +494,9 @@ impl GpuCache {
     /// Give back everything a tile held.
     pub(super) fn release_tile(&mut self, renderer: &Renderer, scene: &mut Scene, tg: TileGpu) -> usize {
         let mut freed_types = 0;
+        if let Some(paint) = tg.editor_paint {
+            freed_types += self.release_tile(renderer, scene, paint.resources);
+        }
         for i in tg.instances {
             renderer.remove_instance(scene, i);
             let slots = renderer.instance_slots(scene, i);

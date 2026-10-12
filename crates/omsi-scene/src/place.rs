@@ -470,6 +470,7 @@ impl World {
             ty,
             terrain: Some(build_terrain_mesh(terrain)),
             hole_walls: MeshData::default(),
+            paint_cut: None,
             paint_masks: self.load_ground_paint(&st.path, (st.tx, st.ty)),
             paint: Vec::new(),
             wall_paint: Vec::new(),
