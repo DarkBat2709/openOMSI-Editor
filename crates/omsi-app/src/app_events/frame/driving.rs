@@ -35,6 +35,7 @@ impl App {
     /// The bus's step (scripts, physics, the head), the situation's other vehicles, and the
     /// bus and its driver into the scene.
     fn frame_player_physics(&mut self, dt: f32) {
+        if self.gfx.streamer.as_ref().is_some_and(|s| s.editor_rebuilding()) { return; }
         let (Some(p), Some(r), Some(scene)) = (
             self.player.as_mut(),
             self.renderer.as_ref(),

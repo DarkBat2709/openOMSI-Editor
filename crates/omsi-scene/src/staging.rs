@@ -1203,7 +1203,7 @@ impl PendingUpload {
 
     /// A replacement is uploaded invisibly while the previous tile is still drawn.
     pub fn hide_preview(&mut self, renderer: &Renderer, scene: &mut Scene) {
-        for &id in &self.tg.instances {
+        for &id in self.tg.instances.iter().chain(self.tg.editor_paint.iter().flat_map(|p| p.resources.instances.iter())) {
             if !self.hidden_preview.contains_key(&id) {
                 if let Some(i) = scene.instances.get(id) { self.hidden_preview.insert(id, i.visible); }
             }

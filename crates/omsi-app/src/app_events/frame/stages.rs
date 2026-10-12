@@ -156,6 +156,8 @@ impl frame_stages::Host<WindowStage> for WindowFrame<'_> {
     fn run_stage(&mut self, stage: WindowStage) -> anyhow::Result<Flow> {
         use WindowStage::*;
         let app = &mut *self.app;
+        if matches!(stage, OnFoot | AfterHumans | Duty | Scripted | WheelSurface)
+            && app.gfx.streamer.as_ref().is_some_and(|s| s.editor_rebuilding()) { return Ok(Flow::Go); }
         let el = self.event_loop;
         let times = self.time.as_ref().map(|t| (t.dt, t.raw_dt));
         let dt = || times.expect(NO_TIME).0;

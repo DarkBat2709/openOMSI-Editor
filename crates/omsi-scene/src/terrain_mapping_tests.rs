@@ -154,6 +154,12 @@ fn mapped_splines_and_objects_use_uncut_base_while_ground_keeps_paint() {
     let mut upload = world.begin_upload(prepared);
     while !world.upload_step(&renderer, &mut scene, &mut upload, None) {}
     while !world.place_step(&renderer, &mut scene, &mut upload, None) {}
+    let paint_slots = upload.tg.editor_paint.as_ref().unwrap().resources.instances.clone();
+    assert!(!paint_slots.is_empty());
+    upload.hide_preview(&renderer, &mut scene);
+    for &id in &paint_slots { assert!(!scene.instances[id].visible, "partial rebuild must hide paint with its tile"); }
+    upload.show_preview(&renderer, &mut scene);
+    for &id in &paint_slots { assert!(scene.instances[id].visible); }
     let base_texture = world.gpu.lock().ground.as_ref().unwrap().ground_id.unwrap();
     let terrain: Vec<_> = scene
         .instances

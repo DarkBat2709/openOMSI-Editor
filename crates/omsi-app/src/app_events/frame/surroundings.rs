@@ -9,7 +9,7 @@ impl App {
     pub(super) fn frame_weather(&mut self, dt: f32) -> omsi_sim::Daylight {
         // (the METAR sync: the report's weather, in real time)
         self.tick_metar(dt);
-        if !self.paused {
+        if !self.paused && !self.gfx.streamer.as_ref().is_some_and(|s| s.editor_rebuilding()) {
             // (the time speed: the settings', or the session's in LAN play)
             let speed = self.time_speed();
             self.clock.advance(dt * speed as f32);

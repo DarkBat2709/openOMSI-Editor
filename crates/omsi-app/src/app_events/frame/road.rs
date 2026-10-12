@@ -6,6 +6,7 @@ impl App {
     /// The AI traffic: what it needs to know, the timetable's departures, its step, its
     /// sound and its pictures.
     pub(super) fn frame_traffic(&mut self, dt: f32) {
+        if self.gfx.streamer.as_ref().is_some_and(|s| s.editor_rebuilding()) { return; }
         let _diagnostic = crate::editor_diagnostics::Span::new("traffic_simulation", "");
         // (with a triple screen, all of its three panels are in sight)
         let sight = self.camera.as_ref().zip(self.gfx.surface.as_ref())

@@ -94,6 +94,9 @@ pub struct Streamer {
     /// Edits made while a tile is being prepared: its old upload must be discarded.
     reload_pending: hashbrown::HashSet<(i32, i32)>,
     /// Visible old editor tiles stay alive until their replacement is complete.
+    editor_queued: hashbrown::HashSet<(i32,i32)>,
+    editor_last_edit: Option<std::time::Instant>,
+    editor_batch: bool,
     editor_visible: hashbrown::HashMap<(i32, i32), crate::scene::TileGpu>,
     /// The first area around the start: (tiles, of which uploaded).
     initial: Option<(hashbrown::HashSet<(i32, i32)>, usize)>,
@@ -165,6 +168,9 @@ impl Streamer {
             failed: Default::default(),
             reload_pending: Default::default(),
             editor_visible: Default::default(),
+            editor_queued: Default::default(),
+            editor_last_edit: None,
+            editor_batch: false,
             initial: None,
             stats: Default::default(),
             loaded_total: 0,
@@ -235,13 +241,19 @@ impl Streamer {
 
     /// Rebuild the edited tiles and their loaded neighbours (terrain cuts cross tile
     /// borders). Retain the old GPU resources instead of exposing a blank scene.
-    pub fn reload_editor(&mut self, renderer: &omsi_render::Renderer, scene: &mut omsi_render::Scene, changed: &[(i32, i32)], audio: Option<&omsi_audio::AudioEngine>) {
+    pub fn reload_editor(&mut self, _renderer: &omsi_render::Renderer, _scene: &mut omsi_render::Scene, changed: &[(i32,i32)], _audio: Option<&omsi_audio::AudioEngine>) {
+        self.editor_queued.extend(changed.iter().copied());
+        if !changed.is_empty() { self.editor_last_edit = Some(std::time::Instant::now()); }
+    }
+
+    fn reload_editor_now(&mut self, renderer: &omsi_render::Renderer, scene: &mut omsi_render::Scene, changed: &[(i32, i32)], audio: Option<&omsi_audio::AudioEngine>) {
         let mut keys = self.world.loaded_tiles();
         keys.extend(self.requested.iter().copied());
         keys.extend(self.editor_visible.keys().copied());
         keys.retain(|k| changed.iter().any(|q| (k.0 - q.0).abs() <= 1 && (k.1 - q.1).abs() <= 1));
         keys.sort(); keys.dedup();
         let _diagnostic=crate::editor_diagnostics::Span::new("editor_reload_prepare", format!("tiles={}",keys.len()));
+        self.editor_batch = !keys.is_empty();
         self.world.cache_editor_terrain(&keys);
         self.world.forget_staged(&keys);
         drop(_diagnostic);
@@ -260,7 +272,7 @@ impl Streamer {
 
     /// Keep people from interpreting an editor's temporary missing tiles as deletions.
     pub fn editor_rebuilding(&self) -> bool {
-        !self.reload_pending.is_empty() || self.editor_visible.keys().any(|k| !self.failed.contains(k))
+        self.editor_batch || !self.reload_pending.is_empty() || self.editor_visible.keys().any(|k| !self.failed.contains(k))
     }
 
     /// (uploaded, total) of the first area while it is still loading.
@@ -286,6 +298,11 @@ impl Streamer {
     /// about half a budget more, at least one tile), and start the next batch. Returns true
     /// when the loaded tiles changed (the caller then refreshes whatever copies world data).
     pub fn update(&mut self, renderer: &omsi_render::Renderer, scene: &mut omsi_render::Scene, centers: &[DVec3], budget: std::time::Duration, audio: Option<&omsi_audio::AudioEngine>) -> bool {
+        if !self.editor_rebuilding() && self.editor_last_edit.is_some_and(|t| t.elapsed() >= std::time::Duration::from_millis(250)) {
+            let keys: Vec<_> = self.editor_queued.drain().collect();
+            self.editor_last_edit = None;
+            self.reload_editor_now(renderer, scene, &keys, audio);
+        }
         let mut changed = false;
         let first_area = self.initial.is_some();
         while let Ok((asked, prepared, stats, secs)) = self.rx.try_recv() {
@@ -452,10 +469,16 @@ impl Streamer {
         if changed {
             self.lists_due.get_or_insert_with(std::time::Instant::now);
         }
-        let lists_now = self.lists_due.is_some_and(|t| unloaded > 0 || first_area || t.elapsed() >= LISTS_AFTER_LOADS);
+        // Editor simulations resume in this very frame: publish the complete stop and
+        // collision lists before dropping the editor barrier, never 0.4 seconds later.
+        let lists_now = self.lists_due.is_some_and(|t| unloaded > 0 || first_area || self.editor_batch || t.elapsed() >= LISTS_AFTER_LOADS);
         if lists_now {
             self.lists_due = None;
             self.world.refresh_tile_lists();
+        }
+        if self.editor_batch && self.reload_pending.is_empty()
+            && !self.editor_visible.keys().any(|k| !self.failed.contains(k)) && self.lists_due.is_none() {
+            self.editor_batch = false;
         }
         // (the caller hands the new lists on - the bus's obstacles - when they change)
         let changed = changed || lists_now;
@@ -587,6 +610,12 @@ mod tests {
         stream.editor_visible.insert((0,0),Default::default());
         stream.reload_pending.clear();assert!(stream.editor_rebuilding());
         stream.editor_visible.clear();assert!(!stream.editor_rebuilding());
+        stream.editor_batch = true;
+        stream.lists_due = Some(std::time::Instant::now());
+        assert!(stream.editor_rebuilding(), "last GPU upload is not enough: stop lists must be published first");
+        stream.lists_due = None;
+        stream.editor_batch = false;
+        assert!(!stream.editor_rebuilding());
         stream.editor_visible.insert((0,0),Default::default());stream.failed.insert((0,0));
         assert!(!stream.editor_rebuilding(),"a failed tile cannot freeze people forever");
         std::fs::remove_dir_all(dir).unwrap();

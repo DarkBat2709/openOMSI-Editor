@@ -386,9 +386,8 @@ impl World {
             if counts.get(&object.map_id) != Some(&1) { continue; }
             let Some(record) = objects.get(&object.map_id).filter(|r| r.tile == key && r.sco == object.ty.sco.path)
                 else { continue; };
-            // These have their own external state/resources. Their usual initialization
-            // remains intact; the plain animated trees have neither pages nor text/sound.
-            if !object.texts.is_empty() || !object.htmls.is_empty() || object.ty.sco.sound.is_some() { continue; }
+            // Preserve script variables (including advertisement choices), not GPU/audio
+            // handles. Textures, pages and sound resources are built for the new instance.
             saved.insert((key, object.map_id), EditorScriptState::capture(&record.sco, &record.strings, &object.inst));
         }
         Some(gpu)
