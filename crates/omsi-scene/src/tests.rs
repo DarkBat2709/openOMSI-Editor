@@ -1367,6 +1367,7 @@ fn scenery_mouseevent_hit_and_trigger() {
     });
 
     world.scripted.lock().push(ScriptedObject {
+        map_labels: Vec::new(),
         ty: ot,
         pos: DVec3::ZERO,
         xf: glam::Mat4::IDENTITY,
@@ -1424,4 +1425,36 @@ fn a_trees_cards_turn_against_its_object_as_in_omsi() {
     let card = terrain_paint::tree_card_turn(30.0).transform_vector3(glam::Vec3::X);
     let (s, c) = 30f32.to_radians().sin_cos();
     assert!((card - glam::Vec3::new(c, s, 0.0)).length() < 1e-5, "{card:?}");
+}
+
+#[test]
+fn editor_keeps_attachment_advertisement_without_editable_object_record() {
+    let dir = std::env::temp_dir().join(format!("editor-advert-{}",std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(dir.join("global.cfg"),"[name]\nAdvert regression\n").unwrap();
+    std::fs::write(dir.join("advert.sco"),"[friendlyname]\nAttached advert\n").unwrap();
+    let world = World::open(&dir,&dir.join("global.cfg"),20261012).unwrap();
+    let ty = world.object_type("advert.sco").unwrap();
+    let mut program = omsi_script::Program::default();
+    let advert = program.declare_var("Werbung") as usize;
+    let program = Arc::new(program);
+    let labels = vec!["Hoheneck".to_string()];
+    let make = || omsi_sim::scenery::SceneryInstance::new(program.clone(), &[], omsi_sim::SimClock::default(), &labels);
+    let mut inst = make(); inst.state.vars[advert] = 5.0;
+    world.scripted.lock().push(ScriptedObject {
+        map_labels: labels.clone(), ty: ty.clone(), pos: DVec3::ZERO, xf: Mat4::IDENTITY,
+        instances: vec![0], inst, controller: None, light_index: 0, light_parent: None,
+        map_id: 726561, variants: Vec::new(), sounds: None, tile: (0,0), var_parent: None,
+        texts: Vec::new(), arrivals: false, htmls: Vec::new(), alpha_slots: Vec::new(), alpha_last: Vec::new(),
+    });
+    world.tile_state.lock().entry((0,0)).or_default().gpu.instances.push(0);
+    assert!(world.edit_objects.lock().is_empty(),"spline attachments have no editable-object entry");
+    world.hold_editor_gpu((0,0)).unwrap();
+    let saved = world.editor_script_states.lock();
+    let saved = saved.get(&((0,0),726561)).expect("attached advertisement must be captured");
+    let mut rebuilt = make();
+    assert!(saved.restore(&ty.sco.path,&labels,&mut rebuilt));
+    assert_eq!(rebuilt.var("Werbung"),Some(5.0));
+    assert!(!saved.restore(&ty.sco.path,&["changed label".into()],&mut rebuilt));
+    std::fs::remove_dir_all(dir).unwrap();
 }

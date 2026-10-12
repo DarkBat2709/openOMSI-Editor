@@ -375,7 +375,6 @@ impl World {
         if state.gpu.instances.is_empty() { return None; }
         let gpu = std::mem::take(&mut state.gpu);
         drop(states);
-        let objects = self.edit_objects.lock();
         let scripted = self.scripted.lock();
         let mut saved = self.editor_script_states.lock();
         let mut counts = HashMap::new();
@@ -384,11 +383,9 @@ impl World {
         }
         for object in scripted.iter().filter(|o| o.tile == key) {
             if counts.get(&object.map_id) != Some(&1) { continue; }
-            let Some(record) = objects.get(&object.map_id).filter(|r| r.tile == key && r.sco == object.ty.sco.path)
-                else { continue; };
             // Preserve script variables (including advertisement choices), not GPU/audio
             // handles. Textures, pages and sound resources are built for the new instance.
-            saved.insert((key, object.map_id), EditorScriptState::capture(&record.sco, &record.strings, &object.inst));
+            saved.insert((key, object.map_id), EditorScriptState::capture(&object.ty.sco.path, &object.map_labels, &object.inst));
         }
         Some(gpu)
     }

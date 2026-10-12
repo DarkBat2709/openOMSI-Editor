@@ -429,6 +429,8 @@ impl ObjectType {
 
 /// A placed scenery object with a running script / animations.
 pub struct ScriptedObject {
+    /// Original map labels, including spline attachments outside the editable-object index.
+    pub map_labels: Vec<String>,
     pub ty: Arc<ObjectType>,
     pub pos: DVec3,
     pub xf: Mat4,

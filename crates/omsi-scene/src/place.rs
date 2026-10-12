@@ -342,6 +342,7 @@ impl World {
                         &o.extra,
                     );
                     self.scripted.lock().push(ScriptedObject {
+                        map_labels: o.extra.clone(),
                         ty: ot.clone(),
                         pos,
                         xf,

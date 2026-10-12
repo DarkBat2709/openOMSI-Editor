@@ -1340,6 +1340,7 @@ impl World {
                                 }
                             }
                             scripted.push(ScriptedObject {
+                                map_labels: strings.to_vec(),
                                 ty: ot.clone(),
                                 pos,
                 xf,
