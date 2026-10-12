@@ -258,6 +258,11 @@ impl Streamer {
         log::info!("spline editor: {} tiles scheduled; old rendering retained until replacement", keys.len());
     }
 
+    /// Keep people from interpreting an editor's temporary missing tiles as deletions.
+    pub fn editor_rebuilding(&self) -> bool {
+        !self.reload_pending.is_empty() || self.editor_visible.keys().any(|k| !self.failed.contains(k))
+    }
+
     /// (uploaded, total) of the first area while it is still loading.
     pub fn initial_progress(&self) -> Option<(usize, usize)> {
         self.initial.as_ref().filter(|(set, done)| *done < set.len()).map(|(set, done)| (*done, set.len()))
@@ -569,6 +574,23 @@ impl Streamer {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn editor_rebuild_stays_pending_through_upload_and_releases_after_failure() {
+        let dir=std::env::temp_dir().join(format!("editor-stream-rebuild-{}",std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("global.cfg"),"[name]\nRebuild test\n").unwrap();
+        let world=std::sync::Arc::new(crate::scene::World::open(&dir,&dir.join("global.cfg"),20261012).unwrap());
+        let mut stream=Streamer::new(world,&[DVec3::ZERO],300.0,300.0);
+        assert!(!stream.editor_rebuilding());
+        stream.reload_pending.insert((0,0));assert!(stream.editor_rebuilding());
+        stream.editor_visible.insert((0,0),Default::default());
+        stream.reload_pending.clear();assert!(stream.editor_rebuilding());
+        stream.editor_visible.clear();assert!(!stream.editor_rebuilding());
+        stream.editor_visible.insert((0,0),Default::default());stream.failed.insert((0,0));
+        assert!(!stream.editor_rebuilding(),"a failed tile cannot freeze people forever");
+        std::fs::remove_dir_all(dir).unwrap();
+    }
 
     #[test]
     fn first_area_stall_log_is_delayed_and_rate_limited() {

@@ -34,6 +34,9 @@ impl App {
         if self.net.lan.is_some() || self.cam.starting.is_some(){
             self.service_msg=Some(("Reload map is available in the loaded single-player editor".into(),5.0));return;
         }
+        if self.gfx.streamer.as_ref().is_some_and(|s| s.editor_rebuilding()) {
+            self.service_msg=Some(("The edited tiles are still loading. Please reload the map once they are ready.".into(),5.0));return;
+        }
         if self.renderer.is_none(){return;}
         let (Some(cam),Some(ed),Some(old))=(self.camera,self.menus.editor.as_ref(),self.world.clone())else{return;};
         let mode=(ed.spline_mode,ed.terrain.active);
@@ -142,6 +145,7 @@ impl App {
                 }
                 if let Some(vehicle)=saved.vehicle {
                     if !p.vehicle.restore_reload_state(vehicle) {log::warn!("editor reload: live bus state incompatible with replacement model");}
+                    if let Some(sounds)=p.sounds.as_mut() { sounds.resume_conditions(&|n| p.vehicle.var(n)); }
                     log_reload_bus("restored",&p.vehicle);
                 }
                 if let Some((at,heading,pitch,bank))=saved.pose {

@@ -17,6 +17,10 @@ impl App {
 
     /// The people at the stops and in the buses, and their view sync.
     pub(super) fn frame_humans(&mut self, dt: f32) {
+        // Editor rebuilds retain the old picture while stops/ground are temporarily absent.
+        // Do not populate or prune people until the replacement is complete.
+        if self.gfx.streamer.as_ref().is_some_and(|s| s.editor_rebuilding()) { return; }
+
         let sight = self.camera.as_ref().zip(self.gfx.surface.as_ref())
             .and_then(|(c, s)| self.sight_extent(c, (s.config.width, s.config.height)));
         if let (Some(h), Some(w), Some(r), Some(scene)) = (

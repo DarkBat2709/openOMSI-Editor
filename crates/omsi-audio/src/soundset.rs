@@ -501,6 +501,15 @@ impl SoundSet {
         out
     }
 
+    /// Resume an existing bus after scene reload: already-held conditions are not new
+    /// one-shot events. Loops and subsequent real trigger/condition edges still work.
+    pub fn resume_conditions(&mut self, var: &dyn Fn(&str) -> Option<f32>) {
+        for sound in &mut self.sounds {
+            sound.held = sound.def.triggers.is_empty() && Self::conditions_hold(&sound.def, var);
+        }
+        for (_, part) in &mut self.parts { part.resume_conditions(var); }
+    }
+
     /// Per-frame update. `triggers` are the sound triggers fired by the scripts this frame.
     pub fn update(
         &mut self,
@@ -1121,6 +1130,28 @@ mod tests {
         // 6 x 44100 = 264 600 Hz: refused, the rate stays at 2x
         let e = c.eval(&mut s, &|_| Some(6000.0), &Mat4::IDENTITY);
         assert!(e.audible && (e.pitch - 2.0).abs() < 1e-4, "{}", e.pitch);
+    }
+
+    #[test]
+    fn scene_resume_does_not_replay_held_one_shots_but_keeps_loops_and_new_events() {
+        let engine=AudioEngine::capture(48_000);
+        let clip=Arc::new(Clip {sample_rate:48_000,channels:1,samples:vec![1000;4800]});
+        let one=SoundEntry {volume:1.0,no_loop:true,conditions:vec![omsi_vehicle::sound::Condition {
+            variable:"held".into(),value:1.0,relation:1,kind:Default::default()}],..Default::default()};
+        let looping=SoundEntry {no_loop:false,..one.clone()};
+        let triggered=SoundEntry {conditions:vec![],triggers:vec!["collision".into()],..one.clone()};
+        let sounds=[one,looping,triggered].into_iter().map(|d|RuntimeSound::new(d,Some(clip.clone()))).collect();
+        let mut set=SoundSet {sounds,master:1.0,dir:Default::default(),inside:false,amount:0.0,
+            ai:false,listener_vehicle:false,muffled:false,parts:Vec::new(),vars:None};
+        set.resume_conditions(&|_|Some(1.0));
+        set.update(&engine,&|_|Some(1.0),&Mat4::IDENTITY,&[]);
+        assert!(set.sounds[0].voice.is_none(),"old one-shot must not replay");
+        assert!(set.sounds[1].voice.is_some(),"engine loops resume");
+        assert!(set.sounds[2].voice.is_none());
+        set.update(&engine,&|_|Some(0.0),&Mat4::IDENTITY,&[]);
+        set.update(&engine,&|_|Some(1.0),&Mat4::IDENTITY,&["collision".into()]);
+        assert!(set.sounds[0].voice.is_some(),"a real new condition edge remains audible");
+        assert!(set.sounds[2].voice.is_some(),"a real collision trigger remains audible");
     }
 
     /// The SD200's door hit: `[volcurve] doorSpeed_0` from 1 at -1 down to 0 at -0.5,

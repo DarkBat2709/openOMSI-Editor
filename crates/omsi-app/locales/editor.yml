@@ -2994,3 +2994,6 @@ _version: 2
 
 "Editor update installed; please restart manually ({}).":
   de: "Editorupdate installiert. Bitte manuell neu starten ({})."
+
+"The edited tiles are still loading. Please reload the map once they are ready.":
+  de: "Die bearbeiteten Kacheln werden noch geladen. Bitte die Karte danach erneut laden."
