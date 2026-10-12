@@ -97,6 +97,7 @@ pub struct Streamer {
     editor_queued: hashbrown::HashSet<(i32,i32)>,
     editor_last_edit: Option<std::time::Instant>,
     editor_batch: bool,
+    pub editor_gesture_active: bool,
     editor_visible: hashbrown::HashMap<(i32, i32), crate::scene::TileGpu>,
     /// The first area around the start: (tiles, of which uploaded).
     initial: Option<(hashbrown::HashSet<(i32, i32)>, usize)>,
@@ -171,6 +172,7 @@ impl Streamer {
             editor_queued: Default::default(),
             editor_last_edit: None,
             editor_batch: false,
+            editor_gesture_active: false,
             initial: None,
             stats: Default::default(),
             loaded_total: 0,
@@ -298,7 +300,7 @@ impl Streamer {
     /// about half a budget more, at least one tile), and start the next batch. Returns true
     /// when the loaded tiles changed (the caller then refreshes whatever copies world data).
     pub fn update(&mut self, renderer: &omsi_render::Renderer, scene: &mut omsi_render::Scene, centers: &[DVec3], budget: std::time::Duration, audio: Option<&omsi_audio::AudioEngine>) -> bool {
-        if !self.editor_rebuilding() && self.editor_last_edit.is_some_and(|t| t.elapsed() >= std::time::Duration::from_millis(250)) {
+        if !self.editor_gesture_active && !self.editor_rebuilding() && self.editor_last_edit.is_some_and(|t| t.elapsed() >= std::time::Duration::from_millis(250)) {
             let keys: Vec<_> = self.editor_queued.drain().collect();
             self.editor_last_edit = None;
             self.reload_editor_now(renderer, scene, &keys, audio);

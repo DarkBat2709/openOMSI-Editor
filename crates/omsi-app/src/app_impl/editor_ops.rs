@@ -681,6 +681,9 @@ impl App {
     /// Rebuild the surfaces when an edit is committed. During a drag only the markers
     /// follow the cursor; release rebuilds once, rather than reloading at every pixel.
     pub(crate) fn editor_reload_splines(&mut self) {
+        // Do not drain dirty edits or rebuild object rows during a continuous gesture.
+        if self.menus.editor.is_some() && crate::editor::geometry_gesture_active(self.menus.editor_drag, &self.input.keys) { return; }
+
         let _diagnostic = crate::editor_diagnostics::Span::new("editor_tile_reload", "");
         let Some(world) = self.world.clone() else { return; };
         let (changed, mut tiles): (bool, hashbrown::HashSet<_>) = {

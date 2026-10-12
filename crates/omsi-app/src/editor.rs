@@ -1873,3 +1873,29 @@ mod portable_save_tests {
         assert_eq!(crate::spline_editor::OFFICIAL_UPDATES_DISABLED, cfg!(feature = "standalone-editor"));
     }
 }
+
+/// A geometry gesture is active until release, even across long OS key-repeat gaps.
+pub(crate) fn geometry_gesture_active(dragging: bool, keys: &hashbrown::HashSet<winit::keyboard::KeyCode>) -> bool {
+    use winit::keyboard::KeyCode as K;
+    dragging || keys.iter().any(|k| matches!(k,
+        K::KeyI | K::KeyJ | K::KeyK | K::KeyL | K::KeyU | K::KeyO | K::KeyN | K::KeyM
+        | K::Equal | K::NumpadAdd | K::Minus | K::NumpadSubtract | K::Comma | K::Period | K::Home | K::End))
+}
+
+#[cfg(test)]
+mod geometry_gesture_tests {
+    use super::geometry_gesture_active;
+    use winit::keyboard::KeyCode as K;
+    #[test]
+    fn held_edit_keys_wait_for_release_but_camera_keys_do_not() {
+        let mut keys = hashbrown::HashSet::new();
+        keys.insert(K::KeyI);
+        for _ in 0..100 { assert!(geometry_gesture_active(false,&keys)); }
+        keys.remove(&K::KeyI);
+        keys.insert(K::KeyW); keys.insert(K::ShiftLeft);
+        assert!(!geometry_gesture_active(false,&keys));
+        assert!(geometry_gesture_active(true,&keys));
+        assert!(!geometry_gesture_active(false,&keys));
+        keys.insert(K::Home); assert!(geometry_gesture_active(false,&keys));
+    }
+}

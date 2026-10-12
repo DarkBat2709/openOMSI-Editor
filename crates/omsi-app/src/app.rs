@@ -880,6 +880,9 @@ impl App {
     /// keeps its own copy (the bus's obstacles, the traffic network, the navigator, the
     /// street lamps).
     pub(crate) fn drive_streaming(&mut self) {
+        let editor_gesture_active = self.menus.editor.is_some()
+            && crate::editor::geometry_gesture_active(self.menus.editor_drag, &self.input.keys);
+
         let mut centers: Vec<DVec3> = self.camera.iter().map(|c| c.position).collect();
         centers.extend(self.player.iter().map(|p| p.vehicle.position));
         // a LAN host simulates the world around every player: the ground and the roads there
@@ -894,6 +897,7 @@ impl App {
         ) else {
             return;
         };
+        streamer.editor_gesture_active = editor_gesture_active;
         // textures uploaded as RGBA to spare a frame, compressed on the workers since, and the
         // texture budget
         w.apply_texture_upgrades(

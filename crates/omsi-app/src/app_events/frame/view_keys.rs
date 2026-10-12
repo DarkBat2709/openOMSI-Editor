@@ -7,6 +7,10 @@ impl App {
     /// The keys held this frame that turn the head, aim the mirrors, run the clock, zoom
     /// and fly the free camera.
     pub(super) fn frame_view_keys(&mut self, dt: f32) {
+        // Publish deferred geometry once the key/mouse gesture is over, even if the
+        // release itself does not dispatch an editor action.
+        if self.menus.editor.is_some() { self.editor_reload_splines(); }
+
         // looking around and zooming work in every view, not only the free camera
         self.sync_view_look();
         if self.player.is_some() && self.view != "free" {
