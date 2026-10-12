@@ -93,7 +93,7 @@ def main():
             raise ValueError(f'{name} fehlt. Bitte die bisherige Rust-Bauumgebung verwenden.')
     verify_package(ROOT)
     env = dict(os.environ, OPENOMSI_VERSION='0.2.38-editor-' + VERSION,
-               CARGO_TARGET_DIR=str(ROOT / 'target'))
+               CARGO_TARGET_DIR=os.environ.get('CARGO_TARGET_DIR', str(ROOT / 'target')))
     run('cargo', 'check', '--locked', '-p', 'omsi-app', '--features', 'standalone-editor', env=env)
     for group in ['editor_path_edit', 'editor_reload::tests', 'editor_diagnostics::tests', 'traffic_editor::tests', 'traffic_connector::tests', 'generated_ai', 'arm_labels_keep_identity', 'editor_dock_keeps_catalogue']:
         run('cargo', 'test', '--locked', '-p', 'omsi-app', '--features', 'standalone-editor', '--lib', group, env=env)

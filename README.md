@@ -1,3 +1,5 @@
+> **Lokaler Testzweig auf openOMSI 0.2.38:** Dieser Stand ist ein separater Portierungskandidat. Hinweise und verbleibende Freigabeprüfungen: [Portierung 0.2.38](docs/PORTIERUNG_0.2.38.md). Die unten verlinkte veröffentlichte Version ist davon getrennt.
+
 # openOMSI Editor — 0.7.23-pre (development)
 
 A free, experimental map editor fork by DarkBat2709,

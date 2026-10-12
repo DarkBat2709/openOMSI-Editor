@@ -16,7 +16,7 @@ jobs:
         os: [ubuntu-22.04, windows-latest]
     runs-on: ${{ matrix.os }}
     env:
-      OPENOMSI_VERSION: 0.2.27-editor-0.7.23-pre
+      OPENOMSI_VERSION: 0.2.38-editor-0.7.23-pre-port
     steps:
       - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
@@ -31,7 +31,7 @@ jobs:
         run: python scripts/editor/test_windows_install.py
       - name: Separate Linux candidate installation
         if: runner.os == 'Linux'
-        run: python scripts/editor/test_candidate_install.py
+        run: python scripts/editor/test_basis_0_2_38_install.py
       - name: Editor language switching
         run: python scripts/editor/test_editor_i18n.py
       - name: Default upstream configuration
