@@ -1,60 +1,42 @@
-> **Lokaler Testzweig auf openOMSI 0.2.38:** Dieser Stand ist ein separater Portierungskandidat. Hinweise und verbleibende Freigabeprüfungen: [Portierung 0.2.38](docs/PORTIERUNG_0.2.38.md). Die unten verlinkte veröffentlichte Version ist davon getrennt.
+# openOMSI Editor — 0.8.0-pre
 
-# openOMSI Editor — 0.7.23-pre (development)
+Kostenloser, experimenteller Karteneditor von DarkBat2709 auf Basis von **openOMSI 0.2.38**.
+Free experimental map editor based on **openOMSI 0.2.38**.
 
-A free, experimental map editor fork by DarkBat2709,
-based on openOMSI 0.2.27.
+## Download und Bedienung / Download and usage
 
-See [0.7.22 installation and correction notes](docs/UPDATE_0.7.22.md) for additional AI turn connections between existing lane endpoints; normal startup leaves diagnostics disabled. See the 0.7.17 notes for freeform AI paths. The [0.7.12 notes](docs/UPDATE_0.7.12.md) describe the tools.
+- [Downloads und Projektinformationen](https://github.com/DarkBat2709/openOMSI-Editor-Download)
+- [Deutsche Bedienungsanleitung](docs/openOMSI-Editor-Kurzanleitung.pdf)
+- [English operating guide](docs/openOMSI-Editor-Quick-Guide-EN.pdf)
+- [Änderungen und Testumfang / Changes and validation](docs/UPDATE_0.8.0.md)
 
-See [0.7.23 AI path selection, deletion and curve editing](docs/UPDATE_0.7.23.md). This candidate keeps the 0.7.22 PDF guides; the new workflow is documented in the bilingual update notes.
+## Funktionen / Features
 
-## Editor features
+- Objekte und Splines platzieren, verbinden, verschieben, kopieren und löschen.
+- KI-Fahrwege auswählen, Kurven formen und zusätzliche Abbiegeverbindungen erstellen.
+- Gelände formen und texturieren; Karten und Tiles anlegen.
+- Kreuzungen und Kreisverkehre erstellen.
+- Höhenwerkzeuge für Brücken und Tunnel, Arbeitsebene und ausgeblendetes Gelände.
+- Verschiebbare Editorfenster und deutsche/englische Bedienung.
+- Kartenbearbeitung während einer Fahrt und Neuladen mit Übernahme des eigenen Busses und der Fahrgäste im dokumentierten Umfang.
+- Getrennte Updateprüfung für das Editorpaket und eine separate Spielinstallation.
+- Bauteilkatalog durchsucht Zusatzinhalte und Originalinstallation gemeinsam.
 
-- Per-map editor camera position, remembered on saving or leaving the editor
+## Installation und Status
 
-- Launcher Editor page below Sessions: create a blank map or edit an existing map directly
-- New map form with name, optional author and description; one flat tile and a generated ground texture
-- Object and spline editing
-- Asset catalogue with spline texture information
-- Select and delete individual original or generated AI paths, including paths in junction objects; undo/redo and per-instance curve controls
-- Additional AI turn connections: select lane endpoints, shape the bend and keep the straight-ahead path
-- AI driving paths along terrain/road splines, with all-vehicle or strict bus-only access per direction
-- Clickable A–D arm labels and selected-arm outline in junction and roundabout previews
-- Junction builder
-- Connected approach roads follow builder movement, rotation and tilt ([connection guide](docs/JUNCTION_CONNECTIONS.md))
-- Pitch/bank controls for builder junctions and roundabouts ([keys and limits](docs/OBJECT_ANGLES.md))
-- Single-lane roundabout builder with 3/4 entrances, adjustable island and ring width
-- Terrain height editing and texture painting
-- Tile creation and spline connection checks
-- German and English PDF guides
+Linux x64 prerelease. Das Editorpaket wird in einen eigenen Ordner entpackt.
+Start: `bash start-editor.sh "/Pfad/zum/openOMSI-Inhaltsordner"`.
+Die originale OMSI-2-Installation muss wie beim normalen Spiel eingerichtet sein.
+Das Paket enthält keine OMSI-2-Spielinhalte. Bestehende Karten vor Änderungen sichern.
 
-## Documentation
+Der Editor enthält seine eigene Engine auf Basis 0.2.38. Ein Update der separaten
+Spielinstallation ersetzt diese nicht. Dies ist ein eigenständiger Community-Fork,
+keine offizielle openOMSI-Veröffentlichung.
 
-- [Deutsche Kurzanleitung](docs/openOMSI-Editor-Kurzanleitung.pdf)
-- [English quick guide](docs/openOMSI-Editor-Quick-Guide-EN.pdf)
-
-## Current status
-
-Editor **0.7.23-pre** is an integration candidate based on **openOMSI 0.2.27**.
-The upstream release is merged, including its photo mode, plugins, rendering,
-traffic and ambience changes. The editor retains its tools and map saving.
-Photo mode requires closing the map editor first; editing is not discarded.
-
-Linux compilation and targeted regressions, including the reported terrain-chain
-case, were checked for 0.7.17; 0.7.18 added diagnostic instrumentation. The local 0.7.22 installation log records successful targeted regression tests and a release build. GitHub validates Linux and Windows separately.
-For 0.7.23, the local editor library passed 825 tests (14 ignored), including five new path-edit checks; traffic tests passed 114 checks. The default upstream configuration and DE/EN translation checks also passed. Interactive map validation and actual Windows execution remain outstanding. See [the current validation record](docs/PRUEFUNG_0.7.23.txt), [the update notes](docs/UPDATE_0.7.23.md) and
-[the migration notes](docs/UPDATE_0.2.27.md).
-The existing [0.7.10 preview release](https://github.com/DarkBat2709/openOMSI-Editor/releases/tag/v.0.7.10)
-remains available and is based on openOMSI 0.2.20.
-
-Use a separate editor installation and original OMSI 2 content. Test with a map
-copy before using the new candidate for regular editing. The PDF guides describe
-0.7.22-pre, including the additional connection tool and three updated screenshots.
+Fresh Linux/Windows VM installation tests are planned for v0.9. Windows build checks
+are not a substitute for testing installation and graphics in Windows.
 
 This fork builds on the work of the openOMSI contributors.
-It is not an official openOMSI release. Original OMSI 2 content is required
-and is not included.
 
 ---
 

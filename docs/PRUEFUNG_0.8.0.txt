@@ -1,0 +1,16 @@
+openOMSI Editor 0.8.0-pre / openOMSI-Basis 0.2.38
+Lokale Prüfung, 13.10.2026
+
+PASS: Release-Build Linux x64, standalone-editor.
+PASS: cargo check --workspace --locked (Standardkonfiguration).
+PASS: omsi-app --lib mit standalone-editor: 490 bestanden, 7 ignoriert.
+PASS: omsi-sim --lib: 568 bestanden, 25 ignoriert.
+PASS: catalogue_roots: Original- und Zusatzordner getrennt, Groß-/Kleinschreibung, fehlende Ordner.
+PASS: Sprachprüfung: 998 Schlüssel, DE/EN-Wechsel und Rückfalltexte.
+PASS: Windows-Installationsvertrag auf Linux (kein Windows-Laufzeittest).
+PASS: separater Linux-Installer: Pfade mit Leerzeichen, Argumente, Überschreibschutz, Prüfsummen.
+PDFs: jeweils 34 Seiten, Kapitelreihenfolge und neue Seiten visuell geprüft.
+
+GitHub-Prüfungen werden für den Release-Commit separat ausgeführt.
+VM-Neuinstallationen auf Linux und Windows sind für v0.9 geplant.
+Praktische Linux-Tests der bisherigen fix5-Fassung wurden vom Nutzer bestätigt.

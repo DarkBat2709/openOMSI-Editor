@@ -408,7 +408,7 @@ fn scan(root: &Path, stop: &AtomicBool) -> Vec<Asset> {
     if !roots.iter().any(|r| r == root) { roots.push(root.to_path_buf()); }
     for (folder, extension, kind) in [("Splines", "sli", Kind::Spline), ("Sceneryobjects", "sco", Kind::Object)] {
         for root in &roots {
-            let dir = omsi_cfg::resolve_path(root, folder);
+            let Some(dir) = omsi_cfg::resolve_in_content_root(root, folder) else { continue; };
             let mut stack = vec![(dir, folder.to_string(), 0usize)]; let mut visited = HashSet::new();
             while let Some((dir, relative, depth)) = stack.pop() {
                 if stop.load(Ordering::Relaxed) { return out; }
@@ -481,7 +481,8 @@ fn scan_textures(root:&Path,map_dir:Option<&Path>,stop:&AtomicBool)->Vec<Asset> 
         let mut folders=vec!["Texture".to_string(),"Splines".into(),"Sceneryobjects".into()];
         if let Some(map)=&map_rel {folders.push(map.join("texture").to_string_lossy().replace('\\',"/"));}
         for relative in folders {
-            let mut stack=vec![(omsi_cfg::resolve_path(root,&relative),relative,0usize)];let mut visited=HashSet::new();
+            let Some(dir)=omsi_cfg::resolve_in_content_root(root,&relative) else {continue;};
+            let mut stack=vec![(dir,relative,0usize)];let mut visited=HashSet::new();
             while let Some((dir,relative,depth))=stack.pop() {
                 if stop.load(Ordering::Relaxed) {return out;}
                 if depth>32 || !visited.insert(dir.canonicalize().unwrap_or_else(|_|dir.clone())) {continue;}

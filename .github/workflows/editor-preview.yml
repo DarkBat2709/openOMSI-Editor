@@ -2,7 +2,7 @@
 name: Editor preview validation
 on:
   push:
-    branches: [editor-preview, "update/**"]
+    branches: [editor-preview, "update/**", "codex/editor-0.8.0-pre"]
   pull_request:
     branches: [editor-preview]
   workflow_dispatch:
@@ -16,7 +16,7 @@ jobs:
         os: [ubuntu-22.04, windows-latest]
     runs-on: ${{ matrix.os }}
     env:
-      OPENOMSI_VERSION: 0.2.38-editor-0.7.23-pre-port-fix5
+      OPENOMSI_VERSION: 0.2.38-editor-0.8.0-pre
     steps:
       - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable

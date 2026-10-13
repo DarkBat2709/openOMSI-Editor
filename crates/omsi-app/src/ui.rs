@@ -732,7 +732,7 @@ impl Ui {
         let flat = self.text.flat;
         self.text.flat = true;
         self.editor_surface(r, scene, layout.panel, 5.0 * s, PANEL);
-        let title = if terrain { "Terrain editor 0.7.23-pre" } else if spline { "Spline editor 0.7.23-pre" } else { "Object editor 0.7.23-pre" };
+        let title = if terrain { "Terrain editor 0.8.0-pre" } else if spline { "Spline editor 0.8.0-pre" } else { "Object editor 0.8.0-pre" };
         self.put(r, scene, title, ((13.0 * s) as u32).max(1) | BOLD,
             MUTED, layout.panel[0] + 10.0 * s, layout.panel[1] + 12.0 * s);
         self.editor_surface(r, scene, layout.selection, 3.0 * s, PANEL_ALT);

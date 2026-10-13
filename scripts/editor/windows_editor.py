@@ -8,8 +8,8 @@ import shutil
 import subprocess
 import sys
 
-BASE = '0506141a494ee94a965a1e00843db80a6e265eae'
-VERSION = '0.7.23-pre'
+BASE = '3323229cbe592f5e6d9c271abd5863dc38ab80a1'
+VERSION = '0.8.0-pre'
 BUNDLE = Path(__file__).resolve().parent
 
 
@@ -70,7 +70,7 @@ try {
 } finally { Pop-Location }
 ''', encoding='utf-8')
     (editor / 'start-editor.cmd').write_text('@echo off\r\npowershell.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0start-editor.ps1" %*\r\n', encoding='ascii')
-    marker.write_text(f'openOMSI Spline-Editor {VERSION} / base 0.2.27\nContent: {game}\nStart: start-editor.cmd\n', encoding='utf-8')
+    marker.write_text(f'openOMSI Spline-Editor {VERSION} / base 0.2.38\nContent: {game}\nStart: start-editor.cmd\n', encoding='utf-8')
     print('Installed:', editor, '\nStart:', editor / 'start-editor.cmd')
 
 
@@ -82,13 +82,13 @@ def build(source, game=None, editor=None):
         if shutil.which(program) is None:
             raise ValueError(f'{program} is missing from PATH.')
     if not (source / 'Cargo.toml').is_file():
-        raise ValueError('Pass --source pointing to the complete 0.7.12 editor checkout.')
+        raise ValueError('Pass --source pointing to the complete 0.8.0-pre editor checkout.')
     if not git_ok(source, 'merge-base', '--is-ancestor', BASE, 'HEAD'):
-        raise ValueError('Source does not contain the required openOMSI 0.2.27 base.')
+        raise ValueError('Source does not contain the required openOMSI 0.2.38 base.')
     ui = source / 'crates/omsi-app/src/ui.rs'
     if not ui.is_file() or f'Object editor {VERSION}' not in ui.read_text(encoding='utf-8'):
         raise ValueError('Source does not contain the expected editor version.')
-    env = dict(os.environ, OPENOMSI_VERSION='0.2.27-editor-' + VERSION)
+    env = dict(os.environ, OPENOMSI_VERSION='0.2.38-editor-' + VERSION)
     run('cargo', 'test', '--workspace', '--locked', '--features', 'omsi-app/standalone-editor', cwd=source, env=env)
     run('cargo', 'build', '--release', '--locked', '--target', 'x86_64-pc-windows-msvc',
         '-p', 'omsi-app', '--features', 'standalone-editor', cwd=source, env=env)

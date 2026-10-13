@@ -774,9 +774,13 @@ pub fn missing_vehicle_pack(path: &Path) -> Option<String> {
     (!installed).then_some(pack)
 }
 
-/// Every content root's version of a folder given relative to a root (existing ones only),
-/// highest priority first - for listing maps, vehicles, weathers across the installation
-/// and the installed mods.
+/// Resolve a path in exactly one content root, preserving case-insensitive and VFS lookup.
+/// Directory scans must not redirect to a higher-priority root and hide base-only assets.
+pub fn resolve_in_content_root(root: &Path, rel: &str) -> Option<PathBuf> {
+    resolve_existing(root, &windows_components(rel))
+}
+
+/// Existing copies of a folder across content roots, highest priority first.
 pub fn content_dirs(rel: &str) -> Vec<PathBuf> {
     let rel = windows_components(rel);
     content_roots().iter().filter_map(|r| resolve_existing(r, &rel)).filter(|p| vfs::is_dir(p)).collect()

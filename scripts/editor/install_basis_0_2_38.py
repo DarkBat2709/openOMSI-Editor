@@ -10,7 +10,7 @@ import subprocess
 import sys
 import tempfile
 
-VERSION = '0.7.23-pre-port-fix5'
+VERSION = '0.8.0-pre'
 ROOT = Path(__file__).resolve().parents[2]
 
 
@@ -40,7 +40,7 @@ def install(source, destination):
     if not binary.is_file() or not steam.is_file():
         raise ValueError('Build-Ausgabe oder Steam-Laufzeit fehlt.')
     destination.parent.mkdir(parents=True, exist_ok=True)
-    with tempfile.TemporaryDirectory(prefix='.editor-0.7.23-', dir=destination.parent) as folder:
+    with tempfile.TemporaryDirectory(prefix='.editor-0.8.0-', dir=destination.parent) as folder:
         staging = Path(folder) / 'editor'
         staging.mkdir()
         for item in [binary, steam]:
@@ -73,7 +73,7 @@ exec bash "$editor_dir/start-editor.sh" "$@"
         (staging / 'VERSION-EDITOR.txt').write_text(
             f'Editor {VERSION}\nopenOMSI-Basis 0.2.38\nQuellpaket SHA256: '
             + hashlib.sha256((source / 'SOURCE-SHA256.json').read_bytes()).hexdigest()
-            + '\nInteraktiver Kartentest noch erforderlich.\n', encoding='utf-8')
+            + '\nLinux-Vorabversion; frische VM-Installation noch nicht geprüft.\n', encoding='utf-8')
         if destination.exists():
             raise ValueError('Zielordner wurde inzwischen angelegt.')
         staging.rename(destination)
@@ -109,5 +109,5 @@ if __name__ == '__main__':
     try:
         main()
     except (ValueError, OSError, subprocess.CalledProcessError) as exc:
-        print(f'\nAbgebrochen: {exc}\nBitte update-0.7.23-pre.log schicken.', file=sys.stderr)
+        print(f'\nAbgebrochen: {exc}\nBitte update-0.8.0-pre.log schicken.', file=sys.stderr)
         sys.exit(1)
