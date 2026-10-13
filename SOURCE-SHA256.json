@@ -1349,7 +1349,7 @@
     "tools/omsi-check/src/fleet.rs": "58cf793089b1bc20e17107d3200df77e657eff2b5b30dad1ddb14e3b6515d6cd",
     "tools/omsi-check/src/main.rs": "3fdfcb2bf870e4c25bb5ed8890fdee08b7aecc14f37f20fe91a189ea7004a548",
     "tools/test-support/original_root.rs": "6ef641f2504bcecfc0e120c6700fdb9413dfde550b53f2acf95e287f54111241",
-    "scripts/editor/package_windows.py": "27c8e5ff7ccbeb14b18c926864f7a41a092e3d01d698f5c3d1755b5a4cf69505",
+    "scripts/editor/package_windows.py": "2068aa697d571f08dadc1a9e2820b62b3609cb38441906c3d0b0611492625b60",
     "scripts/editor/test_windows_package.py": "e5ba4f356fc5786ebf12c279d2395a8d6d515e63869587e6c2033792b594b392"
   }
 }
