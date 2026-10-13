@@ -10,7 +10,7 @@ import subprocess
 import sys
 import tempfile
 
-VERSION = '0.8.0-pre'
+VERSION = '0.8.1-pre'
 ROOT = Path(__file__).resolve().parents[2]
 
 
@@ -40,7 +40,7 @@ def install(source, destination):
     if not binary.is_file() or not steam.is_file():
         raise ValueError('Build-Ausgabe oder Steam-Laufzeit fehlt.')
     destination.parent.mkdir(parents=True, exist_ok=True)
-    with tempfile.TemporaryDirectory(prefix='.editor-0.8.0-', dir=destination.parent) as folder:
+    with tempfile.TemporaryDirectory(prefix='.editor-0.8.1-', dir=destination.parent) as folder:
         staging = Path(folder) / 'editor'
         staging.mkdir()
         for item in [binary, steam]:
@@ -109,5 +109,5 @@ if __name__ == '__main__':
     try:
         main()
     except (ValueError, OSError, subprocess.CalledProcessError) as exc:
-        print(f'\nAbgebrochen: {exc}\nBitte update-0.8.0-pre.log schicken.', file=sys.stderr)
+        print(f'\nAbgebrochen: {exc}\nBitte update-0.8.1-pre.log schicken.', file=sys.stderr)
         sys.exit(1)

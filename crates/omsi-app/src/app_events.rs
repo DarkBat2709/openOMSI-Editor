@@ -314,14 +314,16 @@ impl ApplicationHandler for App {
                 self.wheel(amount);
             }
             WindowEvent::CursorMoved { position, .. } => {
-                if self.menus.editor.as_ref().is_some_and(|ed| ed.catalog.is_some() || ed.tile_window.is_some() || ed.text_window.is_some() || ed.junction_window.is_some()) {
-                    self.input.cursor = (position.x as f32, position.y as f32); return;
-                }
                 let cursor = (position.x as f32, position.y as f32);
                 if self.menus.editor.is_some() && self.menus.game_menu.is_none()
                     && self.ui.as_mut().is_some_and(|ui| ui.editor_dock_move(cursor)) {
                     self.input.cursor = cursor;
                     return;
+                }
+                // Modal editor dialogs block world input, but their title bars must
+                // receive an active drag before that input is consumed.
+                if self.menus.editor.as_ref().is_some_and(|ed| ed.catalog.is_some() || ed.tile_window.is_some() || ed.text_window.is_some() || ed.junction_window.is_some()) {
+                    self.input.cursor = (position.x as f32, position.y as f32); return;
                 }
                 if self.xr.vr_nav_edit.is_some() { return; }
                 // (both physical pixels)

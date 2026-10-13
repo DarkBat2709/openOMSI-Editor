@@ -108,6 +108,9 @@ impl App {
     /// Mouse buttons and keys run the same editor action and validation.
     pub(crate) fn editor_action(&mut self, action: crate::editor::Action) -> bool {
         if self.menus.editor.is_none() { return false; }
+        if let crate::editor::Action::Workspace(mode) = action {
+            self.editor_workspace(mode); return true;
+        }
         if matches!(action,crate::editor::Action::ConstructionWindow){self.editor_open_construction();return true;}
         if matches!(action,crate::editor::Action::TrafficManage){self.editor_open_path_manager();return true;}
         if matches!(action,crate::editor::Action::AuditSplines){self.editor_open_audit();return true;}
@@ -123,7 +126,7 @@ impl App {
             |crate::editor::Action::Paste|crate::editor::Action::RepeatObject) {
             self.editor_terrain_finish();
         }
-        if matches!(action, crate::editor::Action::FitTerrain | crate::editor::Action::SmoothRoad(_)) { self.menus.editor_drag = false; }
+        if matches!(action, crate::editor::Action::TerrainToRoad | crate::editor::Action::FitTerrain | crate::editor::Action::SmoothRoad(_)) { self.menus.editor_drag = false; }
         if self.menus.editor.as_ref().is_some_and(|ed| ed.spline_mode && ed.splines.connection_active())
             && !matches!(&action, crate::editor::Action::Connect | crate::editor::Action::ReplaceConnection | crate::editor::Action::Generate
                 | crate::editor::Action::SnapEnd | crate::editor::Action::Pick | crate::editor::Action::NextPick
@@ -134,6 +137,7 @@ impl App {
             return true;
         }
         let msg = match action {
+            crate::editor::Action::Workspace(_) => unreachable!(),
             crate::editor::Action::ObjectText => {
                 if self.net.lan.is_some() { "Object text editing is currently available in single-player".into() }
                 else {
@@ -159,10 +163,7 @@ impl App {
                 match stamp {Some(stamp)=>{self.menus.editor_drag=false;ed.start_object(stamp);"Click target · Repeat placement for more copies · Esc to finish".into()},None=>"No object stored for placement yet".into()}
             }
             crate::editor::Action::TerrainMode=>{self.editor_open_terrain();return true;}
-            crate::editor::Action::TrafficOverlay=>{if let Some(ed)=self.menus.editor.as_mut(){ed.show_traffic_paths=!ed.show_traffic_paths;ed.traffic_overlay.invalidate();
-                self.service_msg=Some((if ed.show_traffic_paths {"KI-Pfade sichtbar (blau/orange)"} else {"KI-Pfade ausgeblendet"}.into(),5.0));}return true;}
             crate::editor::Action::TrafficManage=>{self.editor_open_path_manager();return true;}
-            crate::editor::Action::TrafficPaths=>{self.editor_open_traffic_paths();return true;}
             crate::editor::Action::SidewalkWindow=>{self.editor_open_sidewalk();return true;}
             crate::editor::Action::RoadsideWindow=>{self.editor_open_roadside();return true;}
             crate::editor::Action::RoundaboutWindow=>{self.editor_open_roundabout();return true;}
@@ -204,13 +205,14 @@ impl App {
                 if ed.spline_mode { ed.splines.replace_connection(&world) }
                 else { "T for splines, then G to connect".into() }
             }
-            a @ (crate::editor::Action::FitTerrain | crate::editor::Action::SmoothRoad(_) | crate::editor::Action::Branch(_) | crate::editor::Action::SnapEnd | crate::editor::Action::SplineUndo | crate::editor::Action::Split) => {
+            a @ (crate::editor::Action::TerrainToRoad | crate::editor::Action::FitTerrain | crate::editor::Action::SmoothRoad(_) | crate::editor::Action::Branch(_) | crate::editor::Action::SnapEnd | crate::editor::Action::SplineUndo | crate::editor::Action::Split) => {
                 let at = crate::editor::Editor::aim(&world, eye, fwd);
                 let ed = self.menus.editor.as_mut().unwrap();
                 if !ed.spline_mode { "This function requires spline mode (T)".into() }
                 else {
                     ed.splines.finish_drag();
                     match a {
+                        crate::editor::Action::TerrainToRoad => ed.splines.terrain_to_road(&world),
                         crate::editor::Action::FitTerrain => ed.splines.fit_terrain(&world),
                         crate::editor::Action::SmoothRoad(wide) => ed.splines.smooth_road(&world, wide),
                         crate::editor::Action::Branch(side) => ed.splines.branch(&world, at, side),
@@ -753,6 +755,10 @@ impl App {
         }
         if !pressed && self.ui.as_mut().is_some_and(|ui|ui.end_editor_dock_drag()) {return true;}
         if pressed && self.ui.as_mut().is_some_and(|ui|ui.editor_window_drag_press(self.input.cursor)) {return true;}
+        if pressed {
+            let mode = self.ui.as_ref().and_then(|ui| ui.editor_mode_hit(self.input.cursor));
+            if let Some(mode) = mode { self.editor_action(crate::editor::Action::Workspace(mode)); return true; }
+        }
         if let Some(window) = self.menus.editor.as_ref().and_then(|ed| ed.text_window.as_ref()) {
             let command = if pressed { window.hit(self.input.cursor) } else { None };
             if let Some(command) = command { self.editor_text_command(command); }

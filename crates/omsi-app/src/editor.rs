@@ -178,10 +178,16 @@ pub(crate) fn toggle_session(active: &mut Option<Editor>, paused: &mut Option<Ed
     }
 }
 
+/// The three mutually exclusive tool workspaces.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Workspace { Objects, Splines, AiPaths }
+
 /// What a key does in the editor.
 #[derive(Clone, Copy)]
 pub enum Action {
     SplineMode,
+    Workspace(Workspace),
+    TerrainToRoad,
     Generate,
     Connect,
     ReplaceConnection,
@@ -201,9 +207,7 @@ pub enum Action {
     RoadsideWindow,
     SidewalkWindow,
     ConstructionWindow,
-    TrafficPaths,
     TrafficManage,
-    TrafficOverlay,
     Length(f64),
     Curvature(f64),
     Straight,
@@ -1360,6 +1364,7 @@ pub fn action_for(code: winit::keyboard::KeyCode, shift: bool, ctrl: bool, yaw: 
         K::KeyG if !ctrl && shift => Action::Generate,
         K::KeyG if ctrl && !shift => Action::ReplaceConnection,
         K::KeyG if !ctrl => Action::Connect,
+        K::F6 if !ctrl && shift => Action::TerrainToRoad,
         K::F6 if !ctrl => Action::FitTerrain,
         K::F8 if !ctrl => Action::SmoothRoad(shift),
         K::KeyR if !ctrl => Action::Branch(if shift { -1.0 } else { 1.0 }),
@@ -1388,7 +1393,7 @@ pub fn action_for(code: winit::keyboard::KeyCode, shift: bool, ctrl: bool, yaw: 
 /// letters that no longer belong to an editor operation.
 pub(crate) fn one_shot_key(code: winit::keyboard::KeyCode, shift: bool, ctrl: bool) -> bool {
     action_for(code, shift, ctrl, 0.0).is_some_and(|action| matches!(action,
-        Action::TrafficManage | Action::FitTerrain | Action::SmoothRoad(_) | Action::Catalog | Action::PlaceObject
+        Action::TrafficManage | Action::TerrainToRoad | Action::FitTerrain | Action::SmoothRoad(_) | Action::Catalog | Action::PlaceObject
         | Action::Generate | Action::Connect | Action::ReplaceConnection | Action::Copy
         | Action::ClipboardCopy | Action::Paste | Action::RepeatObject | Action::PlacementRepeat | Action::CancelPlacement
         | Action::Branch(_) | Action::Split | Action::Save | Action::SplineMode
@@ -1524,6 +1529,8 @@ mod tests {
     fn terrain_fit_and_split_use_function_keys_and_camera_release_is_respected() {
         use winit::keyboard::KeyCode as K;
         assert!(matches!(action_for(K::F6, false, false, 0.0), Some(Action::FitTerrain)));
+        assert!(matches!(action_for(K::F6, true, false, 0.0), Some(Action::TerrainToRoad)));
+        assert!(one_shot_key(K::F6, true, false));
         assert!(matches!(action_for(K::F7, false, false, 0.0), Some(Action::Split)));
         assert!(one_shot_key(K::F6, false, false));
         assert!(one_shot_key(K::F7, false, false));

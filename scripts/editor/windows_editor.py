@@ -9,7 +9,7 @@ import subprocess
 import sys
 
 BASE = '3323229cbe592f5e6d9c271abd5863dc38ab80a1'
-VERSION = '0.8.0-pre'
+VERSION = '0.8.1-pre'
 BUNDLE = Path(__file__).resolve().parent
 
 
@@ -82,7 +82,7 @@ def build(source, game=None, editor=None):
         if shutil.which(program) is None:
             raise ValueError(f'{program} is missing from PATH.')
     if not (source / 'Cargo.toml').is_file():
-        raise ValueError('Pass --source pointing to the complete 0.8.0-pre editor checkout.')
+        raise ValueError('Pass --source pointing to the complete 0.8.1-pre editor checkout.')
     if not git_ok(source, 'merge-base', '--is-ancestor', BASE, 'HEAD'):
         raise ValueError('Source does not contain the required openOMSI 0.2.38 base.')
     ui = source / 'crates/omsi-app/src/ui.rs'

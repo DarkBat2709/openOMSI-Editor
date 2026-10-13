@@ -1,6 +1,29 @@
 use crate::{app::App,traffic_editor::{Command,Window}};
 use winit::keyboard::KeyCode;
 impl App {
+    pub(crate) fn editor_workspace(&mut self, mode: crate::editor::Workspace) {
+        use crate::editor::Workspace;
+        if self.menus.editor.as_ref().and_then(|e| e.traffic_window.as_ref()).is_some_and(connection_preview_pending) {
+            self.service_msg=Some(("Connection is still a preview: add it, or press Ctrl+S to add and save. F9 keeps the curve.".into(),10.0));return;
+        }
+        if mode == Workspace::AiPaths { self.editor_open_path_manager(); return; }
+        if mode == Workspace::Splines && self.net.lan.is_some() {
+            self.service_msg=Some(("Spline editing is available in single-player only".into(),5.0));return;
+        }
+        self.editor_terrain_finish();
+        self.editor_finish_path_drag();
+        let Some(ed)=self.menus.editor.as_mut() else { return; };
+        ed.splines.finish_drag();ed.splines.cancel_connection();ed.splines.cancel_generation();ed.end_object_drag();
+        ed.catalog=None;ed.tile_window=None;ed.text_window=None;ed.junction_window=None;
+        ed.roadside_window=None;ed.sidewalk_window=None;ed.construction_window=None;ed.traffic_window=None;
+        ed.texture_target=None;ed.placing_asset=None;ed.object_stamp=None;ed.terrain.active=false;
+        ed.spline_mode=mode==Workspace::Splines;
+        if ed.spline_mode { if let Some(world)=self.world.as_ref(){world.collect_editor_splines();} }
+        self.menus.editor_drag=false;self.input.dragging=false;self.input.keys.clear();
+        self.input.mouse_look=false;self.input.mmb_held=false;self.input.buttons_held=(false,false);
+        if let Some(ui)=self.ui.as_mut(){ui.end_editor_dock_drag();}
+    }
+
     pub(crate) fn editor_open_path_manager(&mut self) {
         if self.menus.editor.as_ref().and_then(|e|e.traffic_window.as_ref()).is_some_and(connection_preview_pending) {
             self.service_msg=Some(("Connection is still a preview: add it, or press Ctrl+S to add and save. F9 keeps the curve.".into(),10.0));return;
@@ -57,6 +80,9 @@ impl App {
             self.editor_open_traffic_paths();return;
         }
         let Some(w)=ed.traffic_window.as_mut()else{return;};
+        if matches!(command,Command::Connector) && w.manager.is_some() {
+            let start=w.start;*w=Window::new(start);w.connector=Some(Default::default());w.refresh(&world);return;
+        }
         if let Some(m)=w.manager.as_mut() {
             if matches!(command,Command::PathDelete|Command::PathEdit|Command::PathReset){if let Some(l)=m.selected.as_ref(){if let Some(k)=l.key {if let Err(e)=world.editor_lane_editable(k,l.source){w.error=Some(e);return;}}}}
             w.error=None;

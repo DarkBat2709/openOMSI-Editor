@@ -390,6 +390,7 @@ pub struct Ui {
     editor_dock_rect: Option<[f32; 4]>,
     editor_dock_header: Option<[f32; 4]>,
     editor_window_kind: Option<&'static str>,
+    editor_mode_rects: Vec<([f32; 4], crate::editor::Workspace)>,
     editor_window_positions: hashbrown::HashMap<&'static str, [f32; 2]>,
     editor_dock_reset: Option<[f32; 4]>,
     pub editor_reload_rect: Option<[f32; 4]>,
@@ -497,7 +498,7 @@ fn editor_shortcuts(spline: bool, expanded: bool) -> Vec<(&'static str, &'static
     if spline {
         if expanded {
             keys.extend([
-                ("F6", "Fit to ground"), ("F8", "Smooth shoulder"),
+                ("F6", "Fit to ground"), ("Shift+F6", "Terrain to road"), ("F8", "Smooth shoulder"),
                 ("Tab", "Next hit"), ("Shift", "Fine movement"),
                 ("+ / -", "Length"), (", / .", "Curve"), ("Home / End", "Gradient"),
                 ("B", "Straight / Cancel"), ("Shift+F8", "Smooth wider"),
@@ -542,6 +543,7 @@ struct EditorDockLayout {
     panel: [f32; 4],
     bounds: [f32; 4],
     header: [f32; 4],
+    modes: [f32; 4],
     catalog: [f32; 4],
     builders: [f32; 4],
     tiles: [f32; 4],
@@ -559,11 +561,12 @@ struct EditorDockLayout {
 /// The footer and catalogue stay visible; only the key list scrolls. A normalized
 /// position keeps a moved panel reachable when the window or UI scale changes.
 fn editor_dock_layout(viewport: [f32; 4], s: f32, hud_bottom: f32,
-    count: usize, footer: f32, position: Option<[f32; 2]>) -> EditorDockLayout {
+    count: usize, footer: f32, position: Option<[f32; 2]>, spline: bool) -> EditorDockLayout {
     let min_x = viewport[0] + 12.0 * s;
     let min_y = hud_bottom + 10.0 * s;
     let available = viewport[1] + viewport[3] - min_y - 12.0 * s;
-    let fixed = (232.0 + if footer > 0.0 { 8.0 + footer } else { 0.0 }) * s;
+    let compact = if spline { 0.0 } else { 32.0 };
+    let fixed = (232.0 - compact + if footer > 0.0 { 8.0 + footer } else { 0.0 }) * s;
     let rows = (((available - fixed) / (24.0 * s)).floor().max(1.0) as usize).min(count);
     let height = fixed + rows as f32 * 24.0 * s;
     let width = 304.0 * s;
@@ -573,19 +576,20 @@ fn editor_dock_layout(viewport: [f32; 4], s: f32, hud_bottom: f32,
     let x = min_x + position[0].clamp(0.0, 1.0) * (max_x - min_x);
     let y = min_y + position[1].clamp(0.0, 1.0) * (max_y - min_y);
     let right = x + width;
-    let hint_top = y + 222.0 * s;
+    let hint_top = y + (222.0 - compact) * s;
     EditorDockLayout {
         panel: [x, y, right, y + height],
         bounds: [min_x, min_y, max_x, max_y],
         header: [x, y, right, y + 28.0 * s],
-        catalog: [x + 10.0 * s, y + 32.0 * s, right - 10.0 * s, y + 58.0 * s],
-        builders: [x + 10.0 * s, y + 64.0 * s, right - 10.0 * s, y + 90.0 * s],
+        modes: [x + 10.0 * s, y + 32.0 * s, right - 10.0 * s, y + 58.0 * s],
+        catalog: [x + 10.0 * s, y + 64.0 * s, right - 10.0 * s, y + 90.0 * s],
+        builders: [x + 10.0 * s, y + 96.0 * s, right - 10.0 * s, y + 122.0 * s],
         tiles: [x + 10.0 * s, y + 96.0 * s, x + 145.0 * s, y + 122.0 * s],
         terrain: [x + 151.0 * s, y + 96.0 * s, right - 10.0 * s, y + 122.0 * s],
         reload: [x + 10.0 * s, y + 128.0 * s, right - 10.0 * s, y + 154.0 * s],
         audit: [x + 10.0 * s, y + 160.0 * s, right - 10.0 * s, y + 186.0 * s],
-        toggle: [x + 10.0 * s, y + 192.0 * s, right - 62.0 * s, y + 214.0 * s],
-        reset: [right - 56.0 * s, y + 192.0 * s, right - 10.0 * s, y + 214.0 * s],
+        toggle: [x + 10.0 * s, y + (192.0 - compact) * s, right - 62.0 * s, y + (214.0 - compact) * s],
+        reset: [right - 56.0 * s, y + (192.0 - compact) * s, right - 10.0 * s, y + (214.0 - compact) * s],
         hints: [x + 10.0 * s, hint_top, right - 10.0 * s, hint_top + rows as f32 * 24.0 * s],
         rows,
         max_scroll: count.saturating_sub(rows),
@@ -683,7 +687,7 @@ impl Ui {
         self.chat.rect[2] += x;
     }
     pub fn new() -> Option<Ui> {
-        Some(Ui { catalog_images:Default::default(), catalog_open_rect:None, spline_tool_rects:Vec::new(), origin_x: 0.0, editor_hud_rect: None, editor_help_rect: None, editor_help_expanded: false, editor_help_scroll: 0, editor_help_scroll_max: 0, editor_hint_mode: None, editor_dock_rect: None, editor_dock_header: None, editor_window_kind: None, editor_window_positions: Default::default(), editor_dock_reset: None, editor_reload_rect: None, editor_audit_rect: None, tile_open_rect: None, terrain_open_rect: None, junction_open_rect:None, roundabout_open_rect:None, junction_image:None, terrain_tool_rects: Vec::new(), editor_hint_rect: None, editor_dock_position: None, editor_dock_drag: None, editor_dock_bounds: [0.0; 4], editor_notes_top: 0.0, notes_bottom: 0.0, editor_tools_rect: None, editor_connection_rect: None, spline_connect_rect: None, spline_transition_rect: None, spline_cancel_rect: None, text: TextCache::new()?, chat: ChatWidget::default(), menu_rects: Vec::new(), menu_arrows: Vec::new(), menu_scroll_thumb: None, menu_scroll_track: None, menu_ctl: Vec::new(), dd_rects: Vec::new(), dd_top: 0, dd_rows: 8, dd_scroll: None, menu_side: Vec::new(), menu_pane: Vec::new(), menu_pane_start: 0, menu_pane_go: None, menu_pane_box: None, menu_pane_scroll: None, menu_time: Vec::new(), anim: Default::default(), anim_dt: 0.0, menu_overlay_range: 0..0, vr_cursor_overlay: None, vr_tooltip_overlay: None, menu_start: 0, menu_rows: 0, menu_row_h: 1.0, images: Default::default(), info_rect: None, perf: Default::default() })
+        Some(Ui { catalog_images:Default::default(), catalog_open_rect:None, spline_tool_rects:Vec::new(), origin_x: 0.0, editor_hud_rect: None, editor_help_rect: None, editor_help_expanded: false, editor_help_scroll: 0, editor_help_scroll_max: 0, editor_hint_mode: None, editor_dock_rect: None, editor_dock_header: None, editor_window_kind: None, editor_mode_rects: Vec::new(), editor_window_positions: Default::default(), editor_dock_reset: None, editor_reload_rect: None, editor_audit_rect: None, tile_open_rect: None, terrain_open_rect: None, junction_open_rect:None, roundabout_open_rect:None, junction_image:None, terrain_tool_rects: Vec::new(), editor_hint_rect: None, editor_dock_position: None, editor_dock_drag: None, editor_dock_bounds: [0.0; 4], editor_notes_top: 0.0, notes_bottom: 0.0, editor_tools_rect: None, editor_connection_rect: None, spline_connect_rect: None, spline_transition_rect: None, spline_cancel_rect: None, text: TextCache::new()?, chat: ChatWidget::default(), menu_rects: Vec::new(), menu_arrows: Vec::new(), menu_scroll_thumb: None, menu_scroll_track: None, menu_ctl: Vec::new(), dd_rects: Vec::new(), dd_top: 0, dd_rows: 8, dd_scroll: None, menu_side: Vec::new(), menu_pane: Vec::new(), menu_pane_start: 0, menu_pane_go: None, menu_pane_box: None, menu_pane_scroll: None, menu_time: Vec::new(), anim: Default::default(), anim_dt: 0.0, menu_overlay_range: 0..0, vr_cursor_overlay: None, vr_tooltip_overlay: None, menu_start: 0, menu_rows: 0, menu_row_h: 1.0, images: Default::default(), info_rect: None, perf: Default::default() })
     }
 
     fn catalog_text(&mut self, r: &Renderer, scene: &mut Scene, text: &str, at: (f32, f32), width: f32, size: f32, color: [u8; 4]) {
@@ -718,6 +722,7 @@ impl Ui {
     /// Only selection data stays at the top; keyboard hints live in the movable dock.
     pub fn draw_editor_hud(&mut self, r: &Renderer, scene: &mut Scene,
         editor: Option<(bool, bool, &str, bool)>, scale: f32, viewport: [f32; 4], _cursor: (f32, f32)) {
+        self.editor_mode_rects.clear();
         self.editor_window_kind = None;
         self.editor_dock_header = None;
         self.editor_hud_rect = None;
@@ -732,7 +737,7 @@ impl Ui {
         let flat = self.text.flat;
         self.text.flat = true;
         self.editor_surface(r, scene, layout.panel, 5.0 * s, PANEL);
-        let title = if terrain { "Terrain editor 0.8.0-pre" } else if spline { "Spline editor 0.8.0-pre" } else { "Object editor 0.8.0-pre" };
+        let title = if terrain { "Terrain editor 0.8.1-pre" } else if spline { "Spline editor 0.8.1-pre" } else { "Object editor 0.8.1-pre" };
         self.put(r, scene, title, ((13.0 * s) as u32).max(1) | BOLD,
             MUTED, layout.panel[0] + 10.0 * s, layout.panel[1] + 12.0 * s);
         self.editor_surface(r, scene, layout.selection, 3.0 * s, PANEL_ALT);
@@ -798,9 +803,8 @@ impl Ui {
         self.text.flat=flat;
     }
 
-    pub fn draw_editor_dock(&mut self, r: &Renderer, scene: &mut Scene,
-        editor: Option<(bool, bool)>, tools: Option<bool>, connection: Option<&(String, bool)>,
-        replace: bool, transition: bool, objects:Option<(bool,bool,bool,bool,bool)>,terrain: Option<&crate::terrain_editor::TerrainEditor>, scale: f32, viewport: [f32; 4], cursor: (f32, f32)) {
+    /// Clear last frame's hit targets without cancelling a dialog's active drag.
+    fn clear_editor_dock_targets(&mut self) {
         self.editor_window_kind = None;
         self.editor_dock_rect = None;
         self.editor_dock_header = None;
@@ -819,8 +823,15 @@ impl Ui {
         self.spline_tool_rects.clear();
         self.spline_connect_rect = None; self.spline_transition_rect = None;
         self.spline_cancel_rect = None;
+    }
+
+    pub fn draw_editor_dock(&mut self, r: &Renderer, scene: &mut Scene,
+        editor: Option<(bool, bool)>, tools: Option<bool>, connection: Option<&(String, bool)>,
+        replace: bool, transition: bool, objects:Option<(bool,bool,bool,bool,bool)>,terrain: Option<&crate::terrain_editor::TerrainEditor>, scale: f32, viewport: [f32; 4], cursor: (f32, f32)) {
+        self.clear_editor_dock_targets();
         let Some((spline, expanded_allowed)) = editor else {
-            self.editor_dock_drag = None;
+            // A modal dialog replaces the dock and registers its own title bar
+            // later in this frame. Keep its drag until mouse release or focus loss.
             return;
         };
         if let Some(terrain)=terrain {
@@ -833,22 +844,28 @@ impl Ui {
             self.editor_hint_mode = Some((spline, expanded));
         }
         let shortcuts = editor_shortcuts(spline, expanded);
-        let footer = if connection.is_some() { 198.0 } else if tools.is_some() { 320.0 } else if objects.is_some() {256.0} else { 0.0 };
+        let footer = if connection.is_some() { 198.0 } else if tools.is_some() { 256.0 } else if objects.is_some() {192.0} else { 0.0 };
         let hud_bottom = self.editor_hud_rect.map_or(viewport[1], |rect| rect[3]);
-        let layout = editor_dock_layout(viewport, s, hud_bottom, shortcuts.len(), footer, self.editor_dock_position);
+        let layout = editor_dock_layout(viewport, s, hud_bottom, shortcuts.len(), footer, self.editor_dock_position, spline);
         self.editor_help_scroll_max = layout.max_scroll;
         self.editor_help_scroll = self.editor_help_scroll.min(layout.max_scroll);
         let flat = self.text.flat;
         self.text.flat = true;
         self.editor_surface(r, scene, layout.panel, 5.0 * s, PANEL);
         self.editor_surface(r, scene, layout.header, 5.0 * s, PANEL_ALT);
-        self.put(r, scene, "Tools · drag here", ((13.0 * s) as u32).max(1) | BOLD,
+        self.put(r, scene, if spline {"Spline editing · drag here"} else {"Object editing · drag here"}, ((13.0 * s) as u32).max(1) | BOLD,
             SOFT, layout.header[0] + 10.0 * s, layout.header[1] + 14.0 * s);
         let catalog=layout.catalog;
         let mut junction=layout.builders;junction[2]=junction[0]+135.0*s;
         let roundabout=[junction[2]+8.0*s,junction[1],layout.builders[2],junction[3]];
-        for (rect, title) in [(catalog, "Catalogue (P)"),(junction,"Build junction"),(roundabout,"Build roundabout"), (layout.tiles, "New tile"), (layout.terrain, "Edit terrain"),
-            (layout.reload, "Reload map …"), (layout.audit,"Check spline connections …"), (layout.toggle, if expanded { "Fewer commands" } else { "All commands" }), (layout.reset, "Left")] {
+        self.draw_editor_modes(r,scene,layout.modes,
+            if spline {crate::editor::Workspace::Splines}else{crate::editor::Workspace::Objects},s,cursor);
+        let mut buttons=vec![(catalog,if spline {"Spline catalogue (P)"}else{"Object catalogue (P)"}),
+            (layout.reload,"Reload map …"),
+            (layout.toggle,if expanded {"Fewer commands"} else {"All commands"}),(layout.reset,"Left")];
+        if spline {buttons.extend([(junction,"Build junction"),(roundabout,"Build roundabout"),(layout.audit,"Check spline connections …")]);}
+        else {buttons.extend([(layout.tiles,"New tile"),(layout.terrain,"Edit terrain")]);}
+        for (rect, title) in buttons {
             let enabled = rect != layout.toggle || expanded_allowed;
             self.editor_surface(r, scene, rect, 3.0 * s, if !enabled { PANEL_ALT }
                 else if editor_contains(rect, cursor) { LIT } else { CHIP });
@@ -881,15 +898,32 @@ impl Ui {
         self.editor_dock_header = Some(layout.header);
         self.editor_dock_reset = Some(layout.reset);
         self.editor_reload_rect = Some(layout.reload);
-        self.editor_audit_rect = Some(layout.audit);
+        self.editor_audit_rect = spline.then_some(layout.audit);
         self.editor_help_rect = expanded_allowed.then_some(layout.toggle);
         self.editor_hint_rect = Some(layout.hints);
         self.catalog_open_rect = Some(catalog);
-        self.junction_open_rect = Some(junction);
-        self.roundabout_open_rect = Some(roundabout);
-        self.tile_open_rect = Some(layout.tiles);
-        self.terrain_open_rect = Some(layout.terrain);
+        self.junction_open_rect = spline.then_some(junction);
+        self.roundabout_open_rect = spline.then_some(roundabout);
+        self.tile_open_rect = (!spline).then_some(layout.tiles);
+        self.terrain_open_rect = (!spline).then_some(layout.terrain);
         self.editor_dock_bounds = layout.bounds;
+    }
+
+    fn draw_editor_modes(&mut self,r:&Renderer,scene:&mut Scene,area:[f32;4],active:crate::editor::Workspace,s:f32,cursor:(f32,f32)) {
+        use crate::editor::Workspace;
+        self.editor_mode_rects.clear();
+        let width=(area[2]-area[0]-8.0*s)/3.0;
+        for (i,(mode,title)) in [(Workspace::Objects,"Objects"),(Workspace::Splines,"Splines"),(Workspace::AiPaths,"AI paths")].into_iter().enumerate() {
+            let x=area[0]+i as f32*(width+4.0*s);
+            let rect=[x,area[1],x+width,area[3]];
+            self.editor_surface(r,scene,rect,3.0*s,if mode==active {SELECTED}else if editor_contains(rect,cursor){LIT}else{CHIP});
+            self.catalog_text(r,scene,title,(x+5.0*s,area[1]+7.0*s),width-10.0*s,11.0*s,WHITE);
+            if mode != active { self.editor_mode_rects.push((rect,mode)); }
+        }
+    }
+
+    pub fn editor_mode_hit(&self,cursor:(f32,f32))->Option<crate::editor::Workspace> {
+        self.editor_mode_rects.iter().find(|(rect,_)|editor_contains(*rect,cursor)).map(|(_,mode)|*mode)
     }
 
     /// Place a dialog and register only its title area as a drag handle.
@@ -964,6 +998,9 @@ impl Ui {
         }
         for (rect, _) in &mut self.spline_tool_rects {
             rect[0] += dx; rect[2] += dx; rect[1] += dy; rect[3] += dy;
+        }
+        for (rect,_) in &mut self.editor_mode_rects {
+            rect[0]+=dx;rect[2]+=dx;rect[1]+=dy;rect[3]+=dy;
         }
         for (rect,_) in &mut self.terrain_tool_rects {
             rect[0]+=dx;rect[2]+=dx;rect[1]+=dy;rect[3]+=dy;
@@ -1086,7 +1123,7 @@ impl Ui {
     fn draw_object_tools(&mut self,r:&Renderer,scene:&mut Scene,state:Option<(bool,bool,bool,bool,bool)>,s:f32,origin:[f32;2],cursor:(f32,f32)) {
         use crate::editor::Action;
         let Some((copy,paste,last,repeat,placing))=state else {return;};let [x,y]=origin;
-        self.editor_surface(r,scene,[x,y,x+284.0*s,y+256.0*s],3.0*s,PANEL);
+        self.editor_surface(r,scene,[x,y,x+284.0*s,y+192.0*s],3.0*s,PANEL);
         self.catalog_text(r,scene,"Copy / place objects",(x+8.0*s,y+5.0*s),268.0*s,13.0*s,MUTED);
         for (a,b,w,title,action,enabled) in [
             (6.0,26.0,132.0,"Copy (Ctrl+C)",Action::ClipboardCopy,copy),
@@ -1095,8 +1132,6 @@ impl Ui {
             (6.0,90.0,272.0,if repeat {"Repeat placement: ON"} else {"Repeat placement: OFF"},Action::PlacementRepeat,true),
             (6.0,122.0,272.0,"Finish placement (Esc)",Action::CancelPlacement,placing),
             (6.0,154.0,272.0,"Edit text …",Action::ObjectText,copy),
-            (6.0,186.0,272.0,"Select / edit AI paths",Action::TrafficManage,true),
-            (6.0,218.0,272.0,"Bridge / tunnel / underground …",Action::ConstructionWindow,true),
         ] {
             let rect=[x+a*s,y+b*s,x+(a+w)*s,y+(b+26.0)*s];
             self.editor_surface(r,scene,rect,3.0*s,if !enabled {PANEL_ALT} else if editor_contains(rect,cursor) {LIT} else {CHIP});
@@ -1111,7 +1146,7 @@ impl Ui {
         use crate::editor::Action;
         let Some(enabled) = enabled else { return; };
         let [x, y] = origin;
-        let panel = [x, y, x + 284.0 * s, y + 320.0 * s];
+        let panel = [x, y, x + 284.0 * s, y + 256.0 * s];
         self.editor_tools_rect = Some(panel);
         self.editor_surface(r, scene, panel, 3.0 * s, PANEL);
         self.catalog_text(r, scene, if enabled { "Road shoulders / terrain" } else { "Select a road first" },
@@ -1119,15 +1154,13 @@ impl Ui {
         for (row, (action, title)) in [
             (Action::SmoothRoad(false), "Smooth shoulder (F8)"),
             (Action::SmoothRoad(true), "Smooth wider (Shift+F8)"),
-            (Action::FitTerrain, "Fit to ground (F6)"),
+            (Action::FitTerrain, "Road to terrain (F6)"),
+            (Action::TerrainToRoad, "Terrain to road (Shift+F6)"),
             (Action::RoadsideWindow, "Objects along the road"),
             (Action::SidewalkWindow, "Sidewalk along the road"),
-            (Action::TrafficManage, "Select / edit AI paths"),
-            (Action::TrafficPaths, "AI paths along the road"),
-            (Action::TrafficOverlay, "Show / hide AI paths"),
             (Action::ConstructionWindow, "Bridge / tunnel / underground …"),
         ].into_iter().enumerate() {
-            let enabled=enabled||matches!(action,Action::TrafficManage|Action::TrafficOverlay|Action::ConstructionWindow);
+            let enabled=enabled||matches!(action,Action::ConstructionWindow);
             let top = y + (27.0 + row as f32 * 32.0) * s;
             let rect = [x + 6.0 * s, top, x + 278.0 * s, top + 27.0 * s];
             let color = if !enabled { PANEL_ALT }
@@ -1135,7 +1168,7 @@ impl Ui {
             self.editor_surface(r, scene, rect, 3.0 * s, color);
             self.put(r, scene, title, ((12.0 * s) as u32).max(1), WHITE,
                 rect[0] + 8.0 * s, top + 13.5 * s);
-            self.spline_tool_rects.push((rect, action));
+            if enabled { self.spline_tool_rects.push((rect, action)); }
         }
     }
 
@@ -1221,18 +1254,23 @@ impl Ui {
         use crate::traffic_editor::Command;
         let Some(w)=window else{return;};w.rects.clear();
         let top=self.editor_hud_rect.map_or(viewport[1],|r|r[3])+10.0;
-        let height=if w.manager.is_some(){480.0}else{786.0};
+        let height=if w.manager.is_some(){584.0}else{850.0};
         let s=scale.max(0.5).min((viewport[2]/440.0).max(0.1)).min(((viewport[1]+viewport[3]-top-12.0)/height).max(0.1));
         let kind=if w.manager.is_some(){"path-manager"}else if w.connector.is_some(){"path-connector"}else{"paths"};
-        let (x,y)=self.editor_window_origin(kind,viewport,[410.0*s,height*s],[viewport[0]+12.0*s,top],[410.0*s,32.0*s]);
+        let (x,top_y)=self.editor_window_origin(kind,viewport,[410.0*s,height*s],[viewport[0]+12.0*s,top],[410.0*s,32.0*s]);
+        let y=top_y+64.0*s;
         let rect=|a:f32,b:f32,ww:f32,h:f32|[x+a*s,y+b*s,x+(a+ww)*s,y+(b+h)*s];
-        w.rect=Some(rect(0.0,0.0,410.0,height));self.editor_dock_rect=w.rect;
+        w.rect=Some([x,top_y,x+410.0*s,top_y+height*s]);self.editor_dock_rect=w.rect;
         self.editor_help_rect=None;self.editor_tools_rect=None;
         self.editor_connection_rect=None;self.spline_tool_rects.clear();self.terrain_tool_rects.clear();
         self.catalog_open_rect=None;self.tile_open_rect=None;self.terrain_open_rect=None;
         self.junction_open_rect=None;self.roundabout_open_rect=None;
         let flat=self.text.flat;self.text.flat=true;
         self.editor_surface(r,scene,w.rect.unwrap(),5.0*s,PANEL);
+        self.catalog_text(r,scene,"AI editing · drag here",(x+10.0*s,top_y+5.0*s),390.0*s,12.0*s,SOFT);
+        // The first 24 pixels remain the drag handle; tabs are below it.
+        self.editor_dock_header=Some([x,top_y,x+410.0*s,top_y+24.0*s]);
+        self.draw_editor_modes(r,scene,[x+10.0*s,top_y+25.0*s,x+400.0*s,top_y+51.0*s],crate::editor::Workspace::AiPaths,s,cursor);
         if w.manager.is_some(){self.draw_path_manager(r,scene,w,s,x,y,cursor);self.text.flat=flat;return;}
         if let Some(c)=w.connector.as_ref() {
             self.put(r,scene,"Additional AI connection",((15.0*s)as u32).max(1)|BOLD,WHITE,x+12.0*s,y+18.0*s);
@@ -2809,7 +2847,7 @@ mod tests {
     #[test]
     fn reload_button_fits_between_tools_and_help(){
         for (width,height) in [(1280.0,720.0),(1920.0,1080.0)] {
-            let l=editor_dock_layout([0.0,0.0,width,height],1.0,80.0,20,192.0,None);
+            let l=editor_dock_layout([0.0,0.0,width,height],1.0,80.0,20,192.0,None,true);
             assert!(l.reload[1]>=l.tiles[3]);assert!(l.reload[3]<=l.toggle[1]);
             assert!(l.reload[0]>=l.panel[0]&&l.reload[2]<=l.panel[2]);
             assert!(l.hints[1]>=l.toggle[3]);
@@ -2830,14 +2868,14 @@ mod tests {
                         let count = editor_shortcuts(spline, expanded).len();
                         for footer in [0.0, 128.0, 160.0, 164.0, 192.0, 198.0, 224.0, 256.0, 288.0, 320.0] {
                             for position in [None, Some([1.0, 1.0]), Some([-5.0, 8.0])] {
-                                let dock = editor_dock_layout(viewport, s, hud.panel[3], count, footer, position);
+                                let dock = editor_dock_layout(viewport, s, hud.panel[3], count, footer, position, spline);
                                 assert!(dock.panel[0] >= viewport[0]);
                                 assert!(dock.panel[1] > hud.panel[3]);
                                 assert!(dock.panel[2] <= viewport[0] + viewport[2]);
                                 assert!(dock.panel[3] <= viewport[1] + viewport[3]);
                                 assert!(dock.catalog[3] < dock.hints[1]);
                                 assert!(dock.builders[1]>dock.catalog[3]);
-                                assert!(dock.builders[3]<dock.tiles[1]);
+                                assert_eq!(dock.builders[1],dock.tiles[1]); // mutually exclusive mode controls
                                 assert!(dock.tiles[1] > dock.catalog[3]);
                                 assert!(dock.tiles[3] < dock.toggle[1]);
                                 assert!(dock.hints[3] <= dock.panel[3]);
@@ -2850,6 +2888,47 @@ mod tests {
                     }
                 }
             }
+        }
+    }
+
+    #[test]
+    fn workspace_tabs_remain_clickable_after_drag_without_covering_catalogue() {
+        let mut ui=Ui::new().unwrap();
+        let layout=editor_dock_layout([0.0,0.0,1920.0,1080.0],1.0,80.0,7,256.0,None,true);
+        assert!(layout.modes[1]>layout.header[3]);
+        assert!(layout.modes[3]<layout.catalog[1]);
+        ui.editor_dock_rect=Some(layout.panel);ui.editor_dock_header=Some(layout.header);ui.editor_dock_bounds=layout.bounds;
+        ui.editor_mode_rects.push((layout.modes,crate::editor::Workspace::AiPaths));
+        let p=(layout.modes[0]+4.0,layout.modes[1]+4.0);
+        assert_eq!(ui.editor_mode_hit(p),Some(crate::editor::Workspace::AiPaths));
+        assert!(!ui.editor_window_drag_press(p));
+        assert!(ui.editor_window_drag_press((layout.header[0]+5.0,layout.header[1]+5.0)));
+        assert!(ui.editor_dock_move((layout.header[0]+105.0,layout.header[1]+45.0)));
+        assert_eq!(ui.editor_mode_hit((p.0+100.0,p.1+40.0)),Some(crate::editor::Workspace::AiPaths));
+        assert_eq!(ui.editor_mode_hit(p),None);
+    }
+
+    #[test]
+    fn modal_editor_drag_survives_hidden_dock_redraws() {
+        let mut ui = Ui::new().unwrap();
+        let viewport = [0.0, 0.0, 1920.0, 1080.0];
+        for kind in ["junction", "roundabout", "catalog", "tiles", "object-text"] {
+            let (x, y) = ui.editor_window_origin(kind, viewport,
+                [1020.0, 740.0], [300.0, 100.0], [896.0, 52.0]);
+            assert!(ui.editor_window_drag_press((x + 20.0, y + 20.0)));
+            for step in 1..=3 {
+                // Each frame hides the normal dock before drawing the modal dialog.
+                ui.clear_editor_dock_targets();
+                ui.editor_window_origin(kind, viewport,
+                    [1020.0, 740.0], [300.0, 100.0], [896.0, 52.0]);
+                let delta = step as f32 * 30.0;
+                assert!(ui.editor_dock_move((x + 20.0 + delta, y + 20.0 + delta)));
+                let panel = ui.editor_dock_rect.unwrap();
+                assert!((panel[0] - x - delta).abs() < 0.001);
+                assert!((panel[1] - y - delta).abs() < 0.001);
+            }
+            assert!(ui.end_editor_dock_drag());
+            assert!(!ui.editor_dock_move((100.0, 100.0)));
         }
     }
 
@@ -2882,7 +2961,7 @@ mod tests {
     fn moving_editor_dock_moves_click_targets_and_clamps_without_moving_selection() {
         let mut ui = Ui::new().unwrap();
         let hud = editor_hud_layout([1920.0, 0.0, 872.0, 558.0], 1.0);
-        let dock = editor_dock_layout([1920.0, 0.0, 872.0, 558.0], 1.0, hud.panel[3], 7, 128.0, None);
+        let dock = editor_dock_layout([1920.0, 0.0, 872.0, 558.0], 1.0, hud.panel[3], 7, 128.0, None, true);
         ui.editor_hud_rect = Some(hud.panel);
         ui.editor_dock_rect = Some(dock.panel);
         ui.editor_dock_header = Some(dock.header);
@@ -2900,7 +2979,7 @@ mod tests {
         let moved = ui.editor_dock_rect.unwrap();
         let tile = ui.tile_open_rect.unwrap();
         let roundabout=ui.roundabout_open_rect.unwrap();
-        assert!((roundabout[1]-moved[1]-64.0).abs()<0.01);
+        assert!((roundabout[1]-moved[1]-96.0).abs()<0.01);
         assert!((tile[0] - moved[0] - 10.0).abs() < 0.01);
         assert!((tile[1] - moved[1] - 96.0).abs() < 0.01);
         assert_eq!((moved[0], moved[1]), (dock.bounds[2], dock.bounds[1]));
@@ -3267,14 +3346,16 @@ impl Ui {
             (rect(10.0,236.0,190.0,30.0),"Undo (Ctrl+Z)",Command::PathUndo,m.can_undo),
             (rect(210.0,236.0,190.0,30.0),"Redo (Ctrl+Y)",Command::PathRedo,m.can_redo),
             (rect(10.0,274.0,390.0,32.0),"Save map (Ctrl+S)",Command::PathSave,true),
-            (rect(10.0,314.0,390.0,30.0),"AI paths along the selected road",Command::Generate,m.selected.as_ref().is_some_and(|l|l.source==1)),
-            (rect(10.0,352.0,390.0,30.0),"Close (Esc)",Command::Close,true),
+            (rect(10.0,314.0,390.0,30.0),"AI paths along the selected road",Command::Generate,w.start.1!=0||m.selected.as_ref().is_some_and(|l|l.source==1)),
+            (rect(10.0,352.0,190.0,30.0),"Create additional AI connection",Command::Connector,true),
+            (rect(210.0,352.0,190.0,30.0),"Close (Esc)",Command::Close,true),
+            (rect(10.0,390.0,390.0,30.0),"Show / hide AI paths",Command::Overlay,true),
         ] {
             self.editor_surface(r,scene,area,3.0*s,if !enabled{PANEL_ALT}else if editor_contains(area,cursor){LIT}else{CHIP});
             self.catalog_text(r,scene,title,(area[0]+6.0*s,area[1]+8.0*s),area[2]-area[0]-12.0*s,12.0*s,WHITE);
             if enabled{w.rects.push((area,cmd));}
         }
-        self.catalog_text(r,scene,"Save, then reload the map to update AI traffic.",(x+12.0*s,y+402.0*s),386.0*s,12.0*s,MUTED);
-        if let Some(error)=w.error.as_ref(){self.catalog_text(r,scene,error,(x+12.0*s,y+440.0*s),386.0*s,12.0*s,[255,102,76,0]);}
+        self.catalog_text(r,scene,"Save, then reload the map to update AI traffic.",(x+12.0*s,y+434.0*s),386.0*s,12.0*s,MUTED);
+        if let Some(error)=w.error.as_ref(){self.catalog_text(r,scene,error,(x+12.0*s,y+476.0*s),386.0*s,12.0*s,[255,102,76,0]);}
     }
 }

@@ -610,6 +610,21 @@ impl SplineEditor {
         format!("Road shoulder smoothed: {} section(s), {shoulder:.0} m blend, {count} tile(s) · Ctrl+Z to undo · Ctrl+S to save", roads.len())
     }
 
+    /// Adjust only height samples inside the selected spline surface. No shoulder
+    /// expansion or triangle clearance pass may modify samples outside that footprint.
+    pub fn terrain_to_road(&mut self, world: &World) -> String {
+        let Some(key) = self.selected else { return "Select a road first".into(); };
+        let Some(road) = world.spline_edits.lock().current(key).filter(|s| !s.deleted)
+            else { return "Select an existing road first".into(); };
+        let plan = match self.prepare_terrain(world, &[(key.0, road)], 0.0) {
+            Ok(plan) => plan, Err(error) => return error,
+        };
+        if plan.after.is_empty() { return "No terrain samples need changing under this road".into(); }
+        self.remember_with_terrain(Vec::new(), plan.before);
+        self.commit_terrain(world, plan.after);
+        "Terrain fitted under selected road only · Ctrl+Z to undo · Ctrl+S to save".into()
+    }
+
     fn prepare_terrain(&self, world: &World, roads: &[((i32, i32), MapSpline)], shoulder: f64) -> Result<TerrainPlan, String> {
         let mut bed = Roadbed::default();
         for (tile, road) in roads {
@@ -620,8 +635,9 @@ impl SplineEditor {
         }
         if bed.faces.is_empty() { return Err("Road profile has no surface to smooth".into()); }
         let loaded: HashMap<_, _> = world.loaded_tiles().into_iter().filter_map(|key| world.editor_terrain_tile(key).map(|t| (key, t))).collect();
-        let guard = loaded.values().map(|t| omsi_map::tile_size() / t.cells.max(1) as f64).fold(0.0f64, f64::max) * std::f64::consts::SQRT_2;
-        let reach = guard + shoulder;
+        let guard = if shoulder == 0.0 { 0.0 } else { loaded.values().map(|t| omsi_map::tile_size() / t.cells.max(1) as f64).fold(0.0f64, f64::max) * std::f64::consts::SQRT_2 };
+        // Include duplicate boundary samples on both neighbouring tiles.
+        let reach = (guard + shoulder).max(1e-6);
         let bounds = bed.bounds();
         let size = omsi_map::tile_size();
         let mut terrain = HashMap::new();
@@ -1015,13 +1031,13 @@ fn terrain_plan(bed: &Roadbed, before: &HashMap<(i32, i32), omsi_map::Terrain>, 
             for ix in 0..n {
                 let p = o + DVec2::new(ix as f64 * cell, iy as f64 * cell);
                 let Some((d2, road_height)) = bed.nearest(p, guard + shoulder) else { continue };
-                let fade = ((d2.sqrt() - guard) / shoulder).clamp(0.0, 1.0);
+                let fade = if shoulder == 0.0 { 0.0 } else { ((d2.sqrt() - guard) / shoulder).clamp(0.0, 1.0) };
                 let weight = 1.0 - fade * fade * (3.0 - 2.0 * fade);
                 let h = &mut t.heights[iy * n + ix];
                 *h = (*h as f64 + (road_height - ROAD_CLEARANCE - *h as f64) * weight) as f32;
             }
         }
-        lower_under_road(t, *key, bed);
+        if guard > 0.0 || shoulder > 0.0 { lower_under_road(t, *key, bed); }
     }
     match_terrain_edges(&mut after, before);
     let mut changed: Vec<_> = after.into_iter().filter(|(key, t)| before.get(key) != Some(t)).collect();
@@ -1944,6 +1960,39 @@ mod tests {
             indices: vec![0, 1, 2, 0, 2, 3], ..Default::default()
         };
         let mut bed = Roadbed::default(); bed.add_mesh(&mesh, DVec3::ZERO); bed
+    }
+
+    #[test]
+    fn terrain_to_road_only_changes_samples_inside_surface_and_preserves_undo() {
+        let bed = road_patch(142.0, 150.0, 50.0, 90.0, 3.0, 0.04, -0.02);
+        for initial in [-5.0, 12.0] {
+            let mut terrain = omsi_map::Terrain::flat(); terrain.heights.fill(initial);
+            let original = HashMap::from([((0,0), terrain.clone())]);
+            let plan = terrain_plan(&bed, &original, 0.0, 0.0);
+            assert_eq!(plan.before, vec![((0,0), terrain.clone())]);
+            let result = &plan.after[0].1;
+            let cell = omsi_map::tile_size() / terrain.cells as f64;
+            let mut changed = 0;
+            for y in 0..terrain.samples() { for x in 0..terrain.samples() {
+                let index = y * terrain.samples() + x;
+                let p = DVec2::new(x as f64 * cell, y as f64 * cell);
+                if let Some((_, height)) = bed.nearest(p, 0.0) {
+                    assert!((result.heights[index] as f64 - (height - ROAD_CLEARANCE)).abs() < 1e-5);
+                    changed += 1;
+                } else { assert_eq!(result.heights[index], terrain.heights[index]); }
+                assert!(result.heights[index].is_finite());
+            }}
+            assert!(changed > 0);
+            assert!(terrain_plan(&bed,&HashMap::from([((0,0), result.clone())]),0.0,0.0).after.is_empty());
+        }
+    }
+
+    #[test]
+    fn narrow_road_without_grid_samples_does_not_modify_surrounding_terrain() {
+        let bed=road_patch(147.0,147.1,51.0,89.0,0.2,0.0,0.0);
+        let mut terrain=omsi_map::Terrain::flat();terrain.heights.fill(8.0);
+        let plan=terrain_plan(&bed,&HashMap::from([((0,0),terrain)]),0.0,0.0);
+        assert!(plan.after.is_empty());
     }
 
     #[test]
