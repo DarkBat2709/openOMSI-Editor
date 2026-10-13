@@ -1,6 +1,6 @@
 # openOMSI Editor — 0.8.0-pre
 
-Kostenloser, experimenteller Karteneditor von DarkBat2709 auf Basis von **openOMSI 0.2.38**.
+Kostenloser, experimenteller Karteneditor auf Basis von **openOMSI 0.2.38**.
 Free experimental map editor based on **openOMSI 0.2.38**.
 
 ## Download und Bedienung / Download and usage
