@@ -64,7 +64,7 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'Extracted Windows editor version check failed' }
       - name: Upload Windows preview package
         if: runner.os == 'Windows'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7.0.2
         with:
           name: openOMSI-Editor-0.8.0-pre-windows-x64-candidate
           path: out/editor-windows/*
