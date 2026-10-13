@@ -13,7 +13,7 @@
     ".github/scripts/issue_triage.py": "49d44411481d0a3498b7a23190fdf7e863978acb9db7d4087c8a1257c9f6fe4c",
     ".github/workflows/apple.yml": "010993cd71827866b2a768b1d520b2f951e4eda93951de923b16ef120816838a",
     ".github/workflows/close_invalid_prs.yml": "c93b1205db33cd66e1dbfb0cb3c37455d84598e606a1f6d9999ae1b648256e8a",
-    ".github/workflows/editor-preview.yml": "5bbb2084fe2bca6d461546eaab91b7239bcdc3d2262d76836e4c1efb16028893",
+    ".github/workflows/editor-preview.yml": "7a9bcde41c9e8293483d27d5f9998655e5450a8bc211704594dcba452c709b29",
     ".github/workflows/issue_language.yml": "9b7902757ff4f68510a1cbc7eead57bc10ee7001781a882c20cbce43e6b80fa0",
     ".github/workflows/issue_triage.yml": "80f9f30a0ef0a2725b634a0495da01556f9da03818c6ee4f364fb6918cba7a75",
     ".github/workflows/pages.yml": "90ac29d7d761e3d19075fa72a1f10008fe6bd837ce73b98bb6a0e9838cc796b7",
@@ -1348,6 +1348,8 @@
     "tools/omsi-check/src/dump.rs": "096875f93b0882a4fb21154d104ef63d934220ac090f0b50a09b6f2b5c2ecf10",
     "tools/omsi-check/src/fleet.rs": "58cf793089b1bc20e17107d3200df77e657eff2b5b30dad1ddb14e3b6515d6cd",
     "tools/omsi-check/src/main.rs": "3fdfcb2bf870e4c25bb5ed8890fdee08b7aecc14f37f20fe91a189ea7004a548",
-    "tools/test-support/original_root.rs": "6ef641f2504bcecfc0e120c6700fdb9413dfde550b53f2acf95e287f54111241"
+    "tools/test-support/original_root.rs": "6ef641f2504bcecfc0e120c6700fdb9413dfde550b53f2acf95e287f54111241",
+    "scripts/editor/package_windows.py": "27c8e5ff7ccbeb14b18c926864f7a41a092e3d01d698f5c3d1755b5a4cf69505",
+    "scripts/editor/test_windows_package.py": "e5ba4f356fc5786ebf12c279d2395a8d6d515e63869587e6c2033792b594b392"
   }
 }

@@ -40,3 +40,33 @@ jobs:
         run: cargo test --workspace --locked --no-fail-fast --features omsi-app/standalone-editor
       - name: Standalone release build
         run: cargo build --release --locked -p omsi-app --features standalone-editor
+      - name: Portable Windows package contracts
+        run: python scripts/editor/test_windows_package.py
+      - name: Package Windows editor
+        timeout-minutes: 5
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $vs = & "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe" -latest -products * -property installationPath
+          $crt = Get-ChildItem "$vs\VC\Redist\MSVC\*\x64\Microsoft.VC*.CRT" -Directory -ErrorAction Stop | Sort-Object FullName | Select-Object -Last 1
+          if (-not $crt) { throw 'Visual C++ x64 redistributable runtime is missing' }
+          python scripts/editor/package_windows.py --source . --binary target/release/openomsi.exe --runtime $crt.FullName --output out/editor-windows --revision $env:GITHUB_SHA
+          if ($LASTEXITCODE -ne 0) { throw 'Windows packaging failed' }
+          $zip = Get-Item out/editor-windows/*.zip
+          Expand-Archive -LiteralPath $zip.FullName -DestinationPath "${env:RUNNER_TEMP}\Editor clean extraction"
+          $package = Get-ChildItem "${env:RUNNER_TEMP}\Editor clean extraction" -Directory | Select-Object -First 1
+          & (Join-Path $package.FullName 'openomsi.exe') --self-test
+          if ($LASTEXITCODE -ne 0) { throw 'Extracted Windows editor self-test failed' }
+          & cmd.exe /d /c "`"$(Join-Path $package.FullName 'start-editor.cmd')`" --self-test"
+          if ($LASTEXITCODE -ne 0) { throw 'Windows double-click starter self-test failed' }
+          if (-not (Test-Path (Join-Path $package.FullName 'Content'))) { throw 'Starter did not create its content folder' }
+          & (Join-Path $package.FullName 'openomsi.exe') --version
+          if ($LASTEXITCODE -ne 0) { throw 'Extracted Windows editor version check failed' }
+      - name: Upload Windows preview package
+        if: runner.os == 'Windows'
+        uses: actions/upload-artifact@v4
+        with:
+          name: openOMSI-Editor-0.8.0-pre-windows-x64-candidate
+          path: out/editor-windows/*
+          if-no-files-found: error
+          retention-days: 30
