@@ -659,6 +659,7 @@ mod tests {
     fn release(version: &str, prerelease: bool) -> serde_json::Value {
         json!({"tag_name":format!("v{version}"),"prerelease":prerelease,"draft":false,"assets":[{"name":format!("openOMSI-Editor-{version}-linux-x64.tar.gz"),"browser_download_url":"https://github.com/test/archive.tar.gz","size":123,"digest":format!("sha256:{}","a".repeat(64))}]})
     }
+    #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
     #[test]
     fn editor_prereleases_are_separate_and_never_downgrade_local_work() {
         let published = json!([release("0.7.22-pre", true), release("0.7.23-pre", true)]);
@@ -677,13 +678,23 @@ mod tests {
                 .version,
             "0.7.25-pre"
         );
-        assert!(release_newer("1.0.0", "1.0.0-pre"));
-        assert!(!release_newer("1.0.0-pre", "1.0.0"));
         let mut draft = release("8.0.0-pre", true);
         draft["draft"] = json!(true);
         assert!(editor_release(&json!([draft]), "0.7.23-pre")
             .unwrap()
             .is_none());
+    }
+    #[test]
+    fn stable_release_supersedes_its_prerelease() {
+        assert!(release_newer("1.0.0", "1.0.0-pre"));
+        assert!(!release_newer("1.0.0-pre", "1.0.0"));
+    }
+    #[cfg(not(all(target_os = "linux", target_arch = "x86_64")))]
+    #[test]
+    fn unsupported_platform_cannot_offer_a_linux_editor_package() {
+        let published = json!([release("0.8.0-pre", true)]);
+        let error = editor_release(&published, "0.7.23-pre").unwrap_err();
+        assert_eq!(error.to_string(), "No automatic editor update package for this platform.");
     }
     #[test]
     fn official_channel_uses_the_separate_game_version() {
@@ -705,7 +716,13 @@ mod tests {
         std::fs::write(editor.dir.join("VERSION-EDITOR.txt"), "Editor 0.7.23-pre\n").unwrap();
         assert!(validate_target(Channel::Game, &editor, &editor.exe).is_err());
         assert!(validate_target(Channel::Game, &game, &editor.exe).is_ok());
-        assert!(validate_target(Channel::Editor, &editor, &editor.exe).is_ok());
+        let editor_target = validate_target(Channel::Editor, &editor, &editor.exe);
+        if cfg!(all(target_os = "linux", target_arch = "x86_64")) {
+            assert!(editor_target.is_ok());
+        } else {
+            assert_eq!(editor_target.unwrap_err().to_string(),
+                "Automatic editor updates require the Linux x64 editor package with VERSION-EDITOR.txt.");
+        }
         assert!(validate_target(Channel::Editor, &game, &editor.exe).is_err());
         assert_eq!(
             installed_version(Channel::Editor, &editor.exe).unwrap(),

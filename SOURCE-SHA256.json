@@ -696,7 +696,7 @@
     "crates/omsi-platform/Cargo.toml": "e50eb40740da2ec58941b88d7b8906d5778d0f08d6b93304d54db7a1992bc991",
     "crates/omsi-platform/build.rs": "2e0de8c9eafd23fde674b66c66e5775fb221649267fce7239c9b1c0a969d0f38",
     "crates/omsi-platform/src/discord.rs": "f9c2c550561a8ef6ef31ddae690efc880ede2198ab474d404ebe17d108cabc50",
-    "crates/omsi-platform/src/editor_updates.rs": "56d45ac73a115607f91c1d88ea78d691c63dad7f9868d48bda1caf3591847c7e",
+    "crates/omsi-platform/src/editor_updates.rs": "e4932a7ab8ccc8768ec0df5b59ca2dc1d7ee57f23e074927d033647cf384631f",
     "crates/omsi-platform/src/lib.rs": "3f31882473341c4db21246b4d2e4b703854314e1fec45cbffaca52f1a3d631c1",
     "crates/omsi-platform/src/presence.rs": "54efed7db1ec0ca9b904a12abe9183f39860144c605dc975a3153ac9ca8284d2",
     "crates/omsi-platform/src/recovery.rs": "404eff0576a7bc95df53bf77fcf220f2e9275119abea65ed8046d60cbc6fb930",
