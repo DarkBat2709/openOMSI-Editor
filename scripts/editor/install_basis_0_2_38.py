@@ -48,6 +48,10 @@ def install(source, destination):
         (staging / 'openomsi').chmod(0o755)
         for name in ['assets', 'docs']:
             shutil.copytree(source / name, staging / name)
+        # Existing editor updaters accept documents only below docs/.
+        # Keep the archive root compatible with already installed releases.
+        for name in ['LICENSE', 'README.md']:
+            shutil.copy2(source / name, staging / 'docs' / name)
         (staging / 'start-editor.sh').write_text('''#!/usr/bin/env bash
 set -euo pipefail
 editor_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"

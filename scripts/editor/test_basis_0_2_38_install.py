@@ -7,9 +7,13 @@ with tempfile.TemporaryDirectory(prefix='Editor Port Test ') as tmp:
  for x in [src/'assets',src/'docs',target/'release']:x.mkdir(parents=True)
  (target/'release/openomsi').write_text('#!/bin/sh\nprintf "%s\\n" "$OMSI_CONTENT" "$OMSI_NO_UPDATE" "$PWD" "$1"\n')
  (target/'release/libsteam_api.so').write_bytes(b'runtime');(src/'assets/test').write_bytes(b'asset');(src/'docs/test.pdf').write_bytes(b'pdf')
+ (src/'LICENSE').write_bytes(b'license');(src/'README.md').write_bytes(b'readme')
  (src/'SOURCE-SHA256.json').write_text(json.dumps({'version':m.VERSION,'files':{'assets/test':hashlib.sha256(b'asset').hexdigest()}}))
  m.verify_package(src);os.environ['CARGO_TARGET_DIR']=str(target);m.install(src,dest)
  assert 'openOMSI-Basis 0.2.38' in (dest/'VERSION-EDITOR.txt').read_text()
+ assert (dest/'docs/LICENSE').read_bytes()==b'license'
+ assert (dest/'docs/README.md').read_bytes()==b'readme'
+ assert not (dest/'LICENSE').exists() and not (dest/'README.md').exists()
  game=d/'Inhalte & Karten';game.mkdir()
  result=subprocess.check_output(['bash',str(dest/'start-editor.sh'),str(game),'argument mit leerzeichen'],text=True).splitlines()
  assert result==[str(game),'1',str(game),'argument mit leerzeichen'],result

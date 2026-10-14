@@ -783,10 +783,31 @@ mod tests {
         for extra in [
             ("assets/link", tar::EntryType::Symlink),
             ("maps/global.cfg", tar::EntryType::Regular),
+            ("LICENSE", tar::EntryType::Regular),
+            ("README.md", tar::EntryType::Regular),
         ] {
             let a = f.archive("0.7.24-pre", Some(extra));
             assert!(install_editor_archive(&a, &editor, "0.7.24-pre").is_err());
             assert_eq!(std::fs::read(&editor.exe).unwrap(), b"old-program");
+        }
+    }
+    /// Run against the exact release artifact, not a synthetic fixture.
+    #[cfg(target_os = "linux")]
+    #[test]
+    #[ignore = "set EDITOR_RELEASE_ARCHIVE and EDITOR_RELEASE_VERSION to validate a built release"]
+    fn built_release_installs_with_existing_updater() {
+        let archive = std::path::PathBuf::from(std::env::var("EDITOR_RELEASE_ARCHIVE").unwrap());
+        let version = std::env::var("EDITOR_RELEASE_VERSION").unwrap();
+        let f = Fixture::new();
+        let editor = f.place("editor");
+        std::fs::create_dir_all(editor.dir.join("maps")).unwrap();
+        std::fs::write(editor.dir.join("maps/user-map.cfg"), b"keep-user-map").unwrap();
+        backup_program(&archive, &editor, Channel::Editor, "0.8.0-pre", &version).unwrap();
+        install_editor_archive(&archive, &editor, &version).unwrap();
+        assert_eq!(installed_version(Channel::Editor, &editor.exe).unwrap(), version);
+        assert_eq!(std::fs::read(editor.dir.join("maps/user-map.cfg")).unwrap(), b"keep-user-map");
+        for name in ["LICENSE", "README.md", "openOMSI-Editor-Kurzanleitung.pdf", "openOMSI-Editor-Quick-Guide-EN.pdf"] {
+            assert!(editor.dir.join("docs").join(name).is_file(), "missing {name}");
         }
     }
     #[test]

@@ -696,7 +696,7 @@
     "crates/omsi-platform/Cargo.toml": "e50eb40740da2ec58941b88d7b8906d5778d0f08d6b93304d54db7a1992bc991",
     "crates/omsi-platform/build.rs": "2e0de8c9eafd23fde674b66c66e5775fb221649267fce7239c9b1c0a969d0f38",
     "crates/omsi-platform/src/discord.rs": "f9c2c550561a8ef6ef31ddae690efc880ede2198ab474d404ebe17d108cabc50",
-    "crates/omsi-platform/src/editor_updates.rs": "e4932a7ab8ccc8768ec0df5b59ca2dc1d7ee57f23e074927d033647cf384631f",
+    "crates/omsi-platform/src/editor_updates.rs": "e20a345a5f5ebaacd39e23df96d62910edad3a1231040d61d410d11947e08e35",
     "crates/omsi-platform/src/lib.rs": "3f31882473341c4db21246b4d2e4b703854314e1fec45cbffaca52f1a3d631c1",
     "crates/omsi-platform/src/presence.rs": "54efed7db1ec0ca9b904a12abe9183f39860144c605dc975a3153ac9ca8284d2",
     "crates/omsi-platform/src/recovery.rs": "404eff0576a7bc95df53bf77fcf220f2e9275119abea65ed8046d60cbc6fb930",
@@ -1303,8 +1303,8 @@
     "scripts/editor/install_0_7_21.py": "0d31fb8a67dbd82e4f7eb7b38872257ebfe200ad1b3e2e443a0256f953d7ae07",
     "scripts/editor/install_0_7_22.py": "e0e3689420718a71de11136a85275538c21389ba8cefa24948db8fbdfbe6ef92",
     "scripts/editor/install_0_7_23.py": "14447d5c1f8a13705024b76cec02343651c72ea0d708c78abc53b103064b068f",
-    "scripts/editor/install_basis_0_2_38.py": "de34fcb07d25da9d64718be6bd73cb92069dd91c64f5ee54607a0c843059b8dc",
-    "scripts/editor/test_basis_0_2_38_install.py": "a1a915320b211407715e9e27c96cdbe69c65dbd8e0f2eefcf6aaee96fc4bf6df",
+    "scripts/editor/install_basis_0_2_38.py": "f5086b60fce89fd4b8eaebb274bffcd247cbe8efe2dbeee2e890dce2a9bb37eb",
+    "scripts/editor/test_basis_0_2_38_install.py": "a985e6a09721334a38c918b62fdc9dadd221534446b8ad03e748ae16774ea94c",
     "scripts/editor/test_candidate_install.py": "9f00c67b100d084d40b3cb2124a4ba83d30b95af0195ba32d4d88e9222584479",
     "scripts/editor/test_editor_i18n.py": "5093ec820caaac256687638e240bdc826fac7ce6a8676113ac336b2be0f97f47",
     "scripts/editor/test_windows_install.py": "7ecf1be05a8ecf01c592908d263cddda2032577b32dbb82f363aa3ef2bd61077",
@@ -1351,6 +1351,6 @@
     "tools/test-support/original_root.rs": "6ef641f2504bcecfc0e120c6700fdb9413dfde550b53f2acf95e287f54111241",
     "scripts/editor/package_windows.py": "073e3f11566bbd022fd8bd6551e0cc339b714614b23ae90ea0da5c58aef2798c",
     "scripts/editor/test_windows_package.py": "e5ba4f356fc5786ebf12c279d2395a8d6d515e63869587e6c2033792b594b392",
-    "docs/UPDATE_0.8.1.md": "81a77d4a0b26ff236daf69f468569f528b9d24632414306006265b9bb1390666"
+    "docs/UPDATE_0.8.1.md": "8614ce309a21a69f20813ba7e1f2e53501714a280f6800f8c25b51baff3bb11a"
   }
 }

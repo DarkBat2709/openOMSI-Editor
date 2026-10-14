@@ -21,3 +21,9 @@ Back up maps, close the editor, extract the new package into a new folder and us
 - Deutsche und englische Bedienungsanleitung mit jeweils 34 Seiten, passenden Bildern und ohne Ausblick aktualisiert.
 
 Karten sichern, Editor schließen, das neue Paket in einen neuen Ordner entpacken und dessen Startdatei benutzen. Windows: start-editor.cmd. Linux: bash start-editor.sh "/Pfad/zum/Inhaltsordner" --launcher. Benötigte Inhalte separat weiterverwenden oder übernehmen. Originale OMSI-2-Inhalte werden benötigt und sind nicht enthalten. Linux benötigt glibc 2.39 oder neuer. Frische Linux- und Windows-VM-Tests stehen weiterhin aus.
+
+## Linux package correction - 14 October 2026
+
+The Linux archive was repacked without changing the editor binary or manuals. LICENSE and README.md now reside in docs/, matching the root layout accepted by existing editor updaters. Users seeing "Unexpected editor package file: LICENSE" can check for editor updates again and retry. The archive SHA-256 changed; the Windows package is unchanged.
+
+Release packaging verification: set EDITOR_RELEASE_ARCHIVE to the absolute tar.gz path and EDITOR_RELEASE_VERSION to 0.8.1-pre, then run `cargo test --release -p omsi-platform built_release_installs_with_existing_updater -- --ignored`. This invokes the actual backup and installation routines in a temporary installation, including the executable self-test and preservation of a user map.
