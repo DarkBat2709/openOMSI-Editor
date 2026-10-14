@@ -320,7 +320,11 @@ fn station_points(route: &[Segment], settings: &Settings, file: &str, chain_offs
 pub fn plan(world: &World, start: Key, settings: &Settings, file: &str, excluded: &HashSet<i64>) -> Result<Plan, String> {
     initialize(world)?;
     let tiles = current_tiles(world); let roads = road_segments(world, &tiles);
-    let route = route(start, settings.connected, &roads)?;
+    plan_with_sources(world, start, settings, file, excluded, &tiles, &roads)
+}
+fn plan_with_sources(world: &World, start: Key, settings: &Settings, file: &str, excluded: &HashSet<i64>,
+    tiles: &HashMap<TileKey, Source>, roads: &HashMap<Key, Segment>) -> Result<Plan, String> {
+    let route = route(start, settings.connected, roads)?;
     let index = world.index();
     let offsets = route.iter().map(|s| (s.key, crate::tiles::attachment_chain_offset(&index, &s.spline))).collect();
     let mut plan = station_points(&route, settings, file, &offsets)?;
@@ -400,10 +404,15 @@ pub fn refresh(world: &World) -> Result<(), String> {
     let _diagnostic=crate::editor_diagnostics::Span::new("object_rows_refresh", "");
     if !world.roadside_edits.lock().initialized { return Ok(()); }
     let mut groups = world.roadside_edits.lock().groups.clone();
+    if groups.is_empty() { return Ok(()); }
+    // Every recipe is validated against the same pre-install snapshot. Build its
+    // map and road lookup once; installing starts only after all plans succeeded.
+    let tiles = current_tiles(world);
+    let roads = road_segments(world, &tiles);
     let mut plans = Vec::new();
     for group in &groups {
         let excluded = group.rows.iter().map(|r| r.id).collect();
-        let next = match plan(world, group.start, &group.settings, &group.file, &excluded) {
+        let next = match plan_with_sources(world, group.start, &group.settings, &group.file, &excluded, &tiles, &roads) {
             Ok(plan) => plan,
             Err(_) if deleted_road(world, group.start) => Plan::default(),
             Err(error) => return Err(error),
@@ -833,6 +842,58 @@ mod tests {
         overlay.invalidate();overlay.wait_for_test(&reopened,DVec3::ZERO);assert!(overlay.lanes.is_empty());
         gone.deleted=false;reopened.spline_edits.lock().changed.insert(generated,gone);
         overlay.invalidate();overlay.wait_for_test(&reopened,DVec3::ZERO);assert_eq!(overlay.lanes.len(),2);
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+    #[test]
+    fn batched_refresh_matches_independent_plans_for_multiple_moved_roads() {
+        let stamp = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos();
+        let dir = std::env::temp_dir().join(format!("omsi-row-batch-{stamp}"));
+        let map = dir.join("maps/Test");
+        std::fs::create_dir_all(&map).unwrap();
+        std::fs::create_dir_all(dir.join("Splines")).unwrap();
+        std::fs::create_dir_all(dir.join("Sceneryobjects/ADDON_gcW")).unwrap();
+        std::fs::write(dir.join("Splines/synthetic-row.sli"), "[path]\n0\n0\n0\n7\n2\n").unwrap();
+        std::fs::write(dir.join("Sceneryobjects/ADDON_gcW/leitpfosten.sco"), "[friendlyname]\nSynthetic post\n").unwrap();
+        std::fs::write(map.join("global.cfg"), "[map]\n0\n0\ntile_0_0.map\n").unwrap();
+        let first = segment(((0,0),1), 20.0, 100.0);
+        let mut second = segment(((0,0),2), 20.0, 100.0);
+        second.spline.pos[0] += 200.0;
+        std::fs::write(map.join("tile_0_0.map"), format!("[version]\n14\n{}{}", spline_record(&first.spline), spline_record(&second.spline))).unwrap();
+        let world = World::open(&dir, &map.join("global.cfg"), 20000101).unwrap();
+        for road in [&first, &second] {
+            apply(&world, road.key, Settings::default(), DEFAULT_OBJECT.into()).unwrap();
+            let mut moved = road.spline.clone(); moved.pos[0] += 10.0;
+            world.spline_edits.lock().changed.insert(road.key, moved);
+        }
+        let groups = world.roadside_edits.lock().groups.clone();
+        assert_eq!(groups.len(), 2);
+        let expected: Vec<_> = groups.iter().map(|g| plan(&world, g.start, &g.settings, &g.file,
+            &g.rows.iter().map(|r| r.id).collect()).unwrap()).collect();
+        refresh(&world).unwrap();
+        let rows = world.roadside_edits.lock();
+        for ((before, after), expected) in groups.iter().zip(&rows.groups).zip(expected) {
+            assert!(before.rows == after.rows, "moving a road preserves attachment IDs");
+            assert_eq!(after.rows.len(), expected.points.len());
+            for (row, mut point) in after.rows.iter().zip(expected.points) {
+                point.row.id = row.id;
+                assert!(rows.changes[&row.tile][&row.id].as_ref().is_some_and(|edit|
+                    edit.spline == point.key.1 && edit.row == point.row));
+            }
+        }
+        drop(rows);
+        // Cached collection still resolves unsaved edits, and a content reload
+        // discovers newly added disk splines without losing those edits.
+        world.tile_state.lock().insert((0,0), Default::default());
+        world.collect_editor_splines();
+        assert!(world.spline_edits.lock().originals.contains_key(&first.key));
+        world.collect_editor_splines();
+        assert_eq!(world.spline_edits.lock().current(first.key).unwrap().pos[0], first.spline.pos[0] + 10.0);
+        let third = segment(((0,0),3), 220.0, 100.0);
+        std::fs::write(map.join("tile_0_0.map"), format!("[version]\n14\n{}{}{}", spline_record(&first.spline), spline_record(&second.spline), spline_record(&third.spline))).unwrap();
+        omsi_cfg::content_changed();
+        world.collect_editor_splines();
+        assert!(world.spline_edits.lock().originals.contains_key(&third.key));
+        assert_eq!(world.spline_edits.lock().current(first.key).unwrap().pos[0], first.spline.pos[0] + 10.0);
         std::fs::remove_dir_all(dir).unwrap();
     }
     #[test]

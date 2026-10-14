@@ -350,16 +350,21 @@ impl World {
     /// a Chrono addition into the base tile would make it appear on the wrong date.
     pub fn collect_editor_splines(&self) {
         if omsi_map::world_coordinates() { return; }
-        for tile in self.loaded_tiles() {
+        let loaded = self.loaded_tiles();
+        let chrono = self.chrono_dirs.read().clone();
+        self.spline_edits.lock().collected.prepare(omsi_cfg::content_generation(), &chrono, &loaded);
+        for tile in loaded {
+            if self.spline_edits.lock().collected.contains(tile) { continue; }
             let Some(path) = self.tile_source(tile.0, tile.1) else { continue };
             let Ok(base) = omsi_map::Tile::load(&path) else { continue };
             if base.version != 0 && base.version < 14 { continue; }
-            let Some(active) = omsi_world::map_index::read_tile(&path, &self.chrono_dirs.read()) else { continue };
+            let Some(active) = omsi_world::map_index::read_tile(&path, &chrono) else { continue };
             // Index by ID, but retain full equality and all duplicate-ID candidates:
             // a Chrono replacement must never become editable as a base spline.
             let mut active_by_id: std::collections::HashMap<i64, Vec<_>> = std::collections::HashMap::new();
             for spline in &active.splines { active_by_id.entry(spline.id).or_default().push(spline); }
             let mut edits = self.spline_edits.lock();
+            edits.collected.insert(tile);
             for s in &base.splines {
                 if !s.deleted && active_by_id.get(&s.id).is_some_and(|items| items.iter().any(|a| *a == s)) {
                     edits.originals.entry((tile, s.id)).or_insert_with(|| s.clone());

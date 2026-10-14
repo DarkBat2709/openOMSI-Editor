@@ -3,6 +3,7 @@ use omsi_map::{MapSpline, Tile};
 pub type Key = ((i32,i32), i64);
 #[derive(Clone, Default)]
 pub struct Edits {
+    pub collected: CollectionCache,
     pub originals: HashMap<Key, MapSpline>,
     pub changed: HashMap<Key, MapSpline>,
     pub added: HashMap<Key, MapSpline>,
@@ -36,3 +37,45 @@ impl Edits {
     }
 }
 
+
+/// Only successful base/Chrono reads are memoized. Edits themselves remain live.
+#[derive(Clone, Default)]
+pub struct CollectionCache {
+    epoch: Option<(u64, Vec<std::path::PathBuf>)>,
+    tiles: HashSet<(i32, i32)>,
+}
+impl CollectionCache {
+    pub fn prepare(&mut self, generation: u64, chrono: &[std::path::PathBuf], loaded: &[(i32, i32)]) {
+        if self.epoch.as_ref().is_none_or(|(g, c)| *g != generation || c != chrono) {
+            self.tiles.clear();
+            self.epoch = Some((generation, chrono.to_vec()));
+        }
+        let loaded: HashSet<_> = loaded.iter().copied().collect();
+        self.tiles.retain(|key| loaded.contains(key));
+    }
+    pub fn contains(&self, tile: (i32, i32)) -> bool { self.tiles.contains(&tile) }
+    pub fn insert(&mut self, tile: (i32, i32)) { self.tiles.insert(tile); }
+}
+#[cfg(test)]
+mod collection_tests {
+    use super::*;
+    #[test]
+    fn collection_reuses_success_but_invalidates_content_chrono_and_unloaded_tiles() {
+        let mut cache = CollectionCache::default();
+        cache.prepare(1, &[], &[(0,0), (1,0)]);
+        assert!(!cache.contains((0,0)));
+        cache.insert((0,0));
+        cache.prepare(1, &[], &[(0,0), (1,0)]);
+        assert!(cache.contains((0,0)));
+        assert!(!cache.contains((1,0)), "failed or unread tiles must retry");
+        cache.prepare(2, &[], &[(0,0)]);
+        assert!(!cache.contains((0,0)));
+        cache.insert((0,0));
+        cache.prepare(2, &["Chrono/event".into()], &[(0,0)]);
+        assert!(!cache.contains((0,0)));
+        cache.insert((0,0));
+        cache.prepare(2, &["Chrono/event".into()], &[]);
+        cache.prepare(2, &["Chrono/event".into()], &[(0,0)]);
+        assert!(!cache.contains((0,0)));
+    }
+}

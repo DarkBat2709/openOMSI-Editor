@@ -54,3 +54,13 @@ Das gesicherte Log der Sitzung 09:42–09:46 UTC betrifft Lemmental_Krefrath_Mer
 - Beim Einsammeln wird der Vergleich mit aktiven Chrono-Splines nach ID vorgruppiert, statt jeden Basisspline mit allen aktiven Splines zu vergleichen. Vollständige Datensatzgleichheit und Kandidaten mit doppelter ID bleiben berücksichtigt. Geladene Kacheln werden bei der Auswahl über eine Hash-Menge geprüft.
 - Beim Verschieben wurden object_rows_refresh-Spitzen bis rund 93 ms gemessen. Dieser zweite Engpass ist noch offen.
 - Die tatsächliche Zeitersparnis der Änderungen muss im nächsten praktischen Durchgang gemessen werden; kein FPS-Versprechen.
+
+## Zweiter Merge-Durchgang und nächste Testfassung
+
+Gemessene, nach Aufrufzahlen gewichtete Mittelwerte: Alle Splines 101,060 → 47,434 ms (7/14 Aufrufe), Straßen 90,994 → 45,118 ms (7/21). Unterschiedliche Klicks/Standorte, kein kontrollierter Benchmark. Markierungen wurden im passenden Filter erfolgreich ausgewählt. Einsammeln der Daten: 46,927 ms bei 55 Aufrufen; Strahlprüfung: 0,529 ms. Objektgruppen: 88,193 ms im Mittel, 159,694 ms Maximum bei 66 Aktualisierungen.
+
+Nächste lokale Optimierung:
+- Erfolgreich eingelesene Spline-Kacheln werden innerhalb derselben Inhaltsgeneration und Chrono-Auswahl wiederverwendet. Nicht gelesene/fehlgeschlagene Kacheln werden erneut versucht. Ausgeladene Kacheln werden beim Abgleich aus dem Cache entfernt. Neue World-Instanzen starten leer; Kartenneuladen/Inhaltsänderungen und andere Chrono-Verzeichnisse verwerfen den Lesestatus. Änderungen und Rückgängig bleiben in den bestehenden Live-Overlays.
+- Objektgruppen teilen pro Aktualisierung einen gemeinsamen aktuellen Kachel- und Straßenstand. Planung aller Gruppen bleibt vor Installation ihrer Ergebnisse; Fehlerbehandlung und stabile Objekt-IDs bleiben erhalten. Es gibt noch kein Überspringen vermeintlich unbetroffener Gruppen.
+- Regression: mehrere verschobene Straßen/Objektgruppen gegen unabhängige Planung, unveränderte IDs, neu eingelesene Disk-Splines nach Inhaltswechsel und Erhalt ungespeicherter Änderungen. Separater Cache-Test für Inhaltsgeneration, Chrono-Wechsel, ausgeladene Kacheln und Wiederholung nicht erfolgreicher Lesevorgänge.
+- Praktische Zeitersparnis dieser zweiten Optimierung noch offen. Nächster Durchgang: erster Klick nach Laden getrennt von wiederholten Klicks, Verschieben/Rückgängig, Speichern/Neuladen und Auswahl danach.
