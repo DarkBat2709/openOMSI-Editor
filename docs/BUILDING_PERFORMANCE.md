@@ -44,3 +44,13 @@ Danach die EDITOR-PERF-Abschnitte vergleichen und den größten reproduzierbaren
 - Gruppenbearbeitung zusammengehörender Objekte mit gemeinsamem Rückgängig.
 - Katalogfavoriten und zuletzt verwendete Bauteile.
 - Vollständige VM-Neuinstallations- und Spieltests bleiben für v0.9 vorgesehen.
+
+## Erster Merge-Durchgang und Korrektur (14.10.2026)
+
+Das gesicherte Log der Sitzung 09:42–09:46 UTC betrifft Lemmental_Krefrath_Merge_Test. Die Auswahl funktioniert dort grundsätzlich. Für die fehlende Auswahl auf der Vorführkarte enthält dieses Log keinen Nachweis.
+
+- Fehler behoben: BS_StrMarkierung_WeissGestrichelt_M/S und BS_StrMarkierung_Weiss_S wurden als Sonstige eingestuft. Der Dateinamenfilter erkennt jetzt auch das Wort StrMarkierung; Fahrzeug-/Fußgängerpfade haben weiterhin Vorrang. Regressionstest mit den tatsächlich ausgewählten Assetnamen.
+- Gemessene Auswahlvorgänge vor der Korrektur: ungefähr 80–108 ms. Neue Teilmessungen für Einsammeln, Kandidaten, Filter, Randpunkte und Strahlprüfung grenzen den Engpass beim nächsten Durchgang ein.
+- Beim Einsammeln wird der Vergleich mit aktiven Chrono-Splines nach ID vorgruppiert, statt jeden Basisspline mit allen aktiven Splines zu vergleichen. Vollständige Datensatzgleichheit und Kandidaten mit doppelter ID bleiben berücksichtigt. Geladene Kacheln werden bei der Auswahl über eine Hash-Menge geprüft.
+- Beim Verschieben wurden object_rows_refresh-Spitzen bis rund 93 ms gemessen. Dieser zweite Engpass ist noch offen.
+- Die tatsächliche Zeitersparnis der Änderungen muss im nächsten praktischen Durchgang gemessen werden; kein FPS-Versprechen.

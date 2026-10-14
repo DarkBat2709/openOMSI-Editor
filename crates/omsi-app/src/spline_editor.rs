@@ -34,7 +34,7 @@ fn selection_category(file: &str, def: Option<&omsi_scenery::Spline>) -> Selecti
     } else { return SelectionFilter::Other; }
     let name = file.rsplit(['/', '\\']).next().unwrap_or(file).to_lowercase();
     if name.split(|c: char| !c.is_alphanumeric()).any(|w|
-        ["markierung", "markierungen", "marking", "markings", "roadmarking", "leitlinie", "sperrlinie"].contains(&w)) {
+        ["markierung", "markierungen", "marking", "markings", "roadmarking", "roadmarkings", "strmarkierung", "strmarkierungen", "straßenmarkierung", "strassenmarkierung", "leitlinie", "sperrlinie"].contains(&w)) {
         SelectionFilter::Markings
     } else { SelectionFilter::Other }
 }
@@ -123,24 +123,35 @@ impl SplineEditor {
             SelectionFilter::Other => "spline_pick_other",
         };
         let _diagnostic = crate::editor_diagnostics::Span::new(label, "");
-        world.collect_editor_splines();
+        {
+            let _phase = crate::editor_diagnostics::Span::new("spline_pick_collect", "");
+            world.collect_editor_splines();
+        }
         let loaded = world.loaded_tiles();
         let connecting = self.connection_active();
         if connecting { log::info!("spline connection: selecting the target"); }
         // The picking helper owns and releases the cache guard. Preview generation
         // must run after it returns: refresh_connection reads the same mutex.
+        let loaded_set: HashSet<_> = loaded.iter().copied().collect();
         let roads: Vec<_> = {
+            let _phase = crate::editor_diagnostics::Span::new("spline_pick_candidates", "");
             let edits = world.spline_edits.lock();
-            edits.originals.keys().filter(|k| loaded.contains(&k.0))
+            edits.originals.keys().filter(|k| loaded_set.contains(&k.0))
                 .filter_map(|k| edits.current(*k).filter(|s| !s.deleted).map(|s| (*k, s))).collect()
         };
+        let filter_phase = crate::editor_diagnostics::Span::new("spline_pick_filter", "");
         let roads: Vec<_> = roads.into_iter().filter(|(_, s)| {
             if self.selection_filter == SelectionFilter::All { return true; }
             let ty = world.spline_type(&s.file);
             self.selection_filter.accepts(selection_category(&s.file, ty.as_ref().map(|t| &t.def)))
         }).collect();
+        drop(filter_phase);
+        let edge_phase = crate::editor_diagnostics::Span::new("spline_pick_edges", "");
         let edges: HashMap<_, _> = roads.iter().map(|(k, s)| (*k, edge_markers(world, k.0, s, 8))).collect();
+        drop(edge_phase);
+        let ray_phase = crate::editor_diagnostics::Span::new("spline_pick_ray", "");
         let picked = self.pick_loaded(&world.spline_edits, &loaded, eye, forward, &edges);
+        drop(ray_phase);
         if connecting { log::info!("spline connection: selection {:?}; pick lock released", self.selected); }
         self.refresh_connection(world);
         if connecting { log::info!("spline connection: preview ready={}", self.connection_status().is_some_and(|(_, ready)| ready)); }
@@ -149,6 +160,7 @@ impl SplineEditor {
 
     fn pick_loaded(&mut self, cache: &parking_lot::Mutex<Edits>, loaded: &[(i32, i32)], eye: DVec3, forward: Vec3, edges: &HashMap<Key, Vec<DVec3>>) -> Option<i64> {
         let edits = cache.lock();
+        let loaded: HashSet<_> = loaded.iter().copied().collect();
         let f = forward.as_dvec3().normalize_or_zero();
         let mut scores = Vec::new();
         for key in edits.originals.keys() {
@@ -1767,6 +1779,10 @@ mod tests {
         assert_eq!(selection_category("Splines/Markierungen/road.sli", Some(&def)), SelectionFilter::Other);
         assert_eq!(selection_category("Splines/markierung_weiss.sli", Some(&def)), SelectionFilter::Markings);
         assert_eq!(selection_category("Splines/Marktplatz.sli", Some(&def)), SelectionFilter::Other);
+        for name in ["BS_StrMarkierung_WeissGestrichelt_M.sli", "BS_StrMarkierung_Weiss_S.sli", "BS_StrMarkierung_WeissGestrichelt_S.sli"] {
+            assert_eq!(selection_category(name, Some(&def)), SelectionFilter::Markings);
+        }
+        assert_eq!(selection_category("Splines/StrMarkierung/terrain.sli", Some(&def)), SelectionFilter::Other);
         def.paths.push(omsi_scenery::PathDef { kind: 1, ..Default::default() });
         assert_eq!(selection_category("road.sli", Some(&def)), SelectionFilter::Sidewalks);
         def.paths.push(omsi_scenery::PathDef { kind: 0, ..Default::default() });
