@@ -277,6 +277,12 @@ impl Streamer {
         self.editor_batch || !self.reload_pending.is_empty() || self.editor_visible.keys().any(|k| !self.failed.contains(k))
     }
 
+    pub fn editor_ready_tiles(&self) -> Option<Vec<(i32,i32)>> {
+        (!self.editor_gesture_active && !self.editor_rebuilding()
+            && self.editor_last_edit.is_some_and(|t| t.elapsed() >= std::time::Duration::from_millis(250)))
+            .then(|| self.editor_queued.iter().copied().collect())
+    }
+
     /// (uploaded, total) of the first area while it is still loading.
     pub fn initial_progress(&self) -> Option<(usize, usize)> {
         self.initial.as_ref().filter(|(set, done)| *done < set.len()).map(|(set, done)| (*done, set.len()))

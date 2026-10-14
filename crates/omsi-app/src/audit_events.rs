@@ -42,7 +42,7 @@ fn ports(path:&Path,at:DVec3,heading:f64,tilt:[f64;2])->Option<Vec<DVec3>>{
 fn collect(world:Arc<crate::scene::World>,edits:crate::spline_editor::Edits,object_edits:hashbrown::HashMap<i64,crate::scene::ObjectEdit>,added:Vec<AddedObject>,saved:hashbrown::HashMap<(i32,i32),Vec<u8>>)->Report{
     let mut tiles:BTreeMap<_,_>=world.global.tiles.iter().map(|t|((t.x,t.y),omsi_cfg::resolve_path(&world.map_dir,&t.file))).collect();
     for(_,x,y,path)in world.map_tiles(){tiles.insert((x,y),path);}
-    let chrono=world.chrono_dirs.read().clone();let size=omsi_map::tile_size();
+    let chrono=world.chrono_dirs();let size=omsi_map::tile_size();
     let mut roads=Vec::new();let mut records=Vec::new();let mut unread=Vec::new();let mut seen=HashSet::new();
     for(key,path)in tiles {
         let Some(mut tile)=crate::tiles::read_tile(&path,&chrono)else{unread.push(key);continue;};

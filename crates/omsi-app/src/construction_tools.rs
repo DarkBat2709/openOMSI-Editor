@@ -441,7 +441,7 @@ mod tests {
         std::fs::create_dir_all(&dir).unwrap();
         std::fs::write(dir.join("global.cfg"),"[name]\nPlane test\n").unwrap();
         let world=World::open(&dir,&dir.join("global.cfg"),20261012).unwrap();
-        world.terrains.write().insert((0,0),std::sync::Arc::new(omsi_map::Terrain::flat()));
+        world.data.update(|d| { std::sync::Arc::make_mut(&mut d.ground).terrains.insert((0,0),std::sync::Arc::new(omsi_map::Terrain::flat())); });
         let at=DVec3::new(10.0,20.0,-5.0);
         let mut ed=crate::spline_editor::SplineEditor::default();ed.choose_file("example.sli".into());
         ed.generate_on_plane(&world,Some(at));

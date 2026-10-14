@@ -178,7 +178,6 @@ impl ManagedUpdate {
         // Preserve content root, launch arguments and working directory of start-editor.sh.
         std::process::Command::new(p.exe)
             .args(std::env::args_os().skip(1))
-            .env_remove("OMSI_LAUNCHER_INPUT")
             .spawn()?;
         Ok(())
     }
@@ -187,7 +186,11 @@ impl ManagedUpdate {
 fn locate(channel: Channel) -> anyhow::Result<Installation> {
     let own = std::env::current_exe()?.canonicalize()?;
     let exe = match channel {
-        Channel::Editor => own.clone(),
+        Channel::Editor => {
+            if own.file_stem().is_some_and(|n| n == "openomsi-launcher-app") {
+                own.with_file_name(if cfg!(windows) { "openomsi.exe" } else { "openomsi" })
+            } else { own.clone() }
+        },
         Channel::Game => {
             let content = omsi_launcher_lib::content_dir()
                 .context("No openOMSI content folder configured")?;
@@ -394,6 +397,7 @@ fn editor_zip(archive: &Path, output: &Path, version: &str) -> anyhow::Result<()
             .context("Invalid archive filename")?;
         if ![
             "openomsi",
+            "openomsi-launcher-app",
             "libsteam_api.so",
             "start-editor.sh",
             "start-editor-diagnose.sh",
@@ -455,8 +459,15 @@ fn verify_checksum(file: &Path, r: &Release) -> anyhow::Result<()> {
         .as_deref()
         .context("This update has no SHA-256 checksum")?;
     let mut hash = sha2::Sha256::new();
-    std::io::copy(&mut std::fs::File::open(file)?, &mut hash)?;
-    let actual = format!("{:x}", hash.finalize());
+    use std::io::Read;
+    let mut input = std::fs::File::open(file)?;
+    let mut buffer = [0u8; 64 * 1024];
+    loop {
+        let n = input.read(&mut buffer)?;
+        if n == 0 { break; }
+        hash.update(&buffer[..n]);
+    }
+    let actual: String = hash.finalize().iter().map(|b| format!("{b:02x}")).collect();
     if !actual.eq_ignore_ascii_case(expected) {
         bail!("Update checksum mismatch; nothing has been installed.");
     }
@@ -638,6 +649,7 @@ mod tests {
                     .unwrap();
             };
             append("openomsi", b"#!/bin/sh\necho 'openomsi editor self-test ok'\n", tar::EntryType::Regular);
+            append("openomsi-launcher-app", b"test-launcher", tar::EntryType::Regular);
             append(
                 "VERSION-EDITOR.txt",
                 format!("Editor {version}\nopenOMSI-Basis 0.2.27\n").as_bytes(),
@@ -823,7 +835,7 @@ mod tests {
             asset_name: "archive".into(),
             asset_url: String::new(),
             size: 13,
-            sha256: Some(format!("{:x}", sha2::Sha256::digest(b"verified-data"))),
+            sha256: Some(sha2::Sha256::digest(b"verified-data").iter().map(|b|format!("{b:02x}")).collect()),
         };
         verify_checksum(&file, &r).unwrap();
         std::fs::write(&file, b"modified-data").unwrap();

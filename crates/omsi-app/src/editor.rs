@@ -625,7 +625,7 @@ impl Editor {
         let edit=world.object_edits.lock().get(&id).copied().unwrap_or_default();
         if edit.deleted {return Err("Restore the deleted object first".into());}
         let src=world.tile_source(object.tile.0,object.tile.1).ok_or("Tile file missing")?;
-        let tile=crate::tiles::read_tile(&src,&world.chrono_dirs.read()).ok_or("Cannot read tile")?;
+        let tile=crate::tiles::read_tile(&src,&world.chrono_dirs()).ok_or("Cannot read tile")?;
         let record=tile.objects.iter().find(|o|o.id==id).ok_or("Not a standalone map object")?;
         let at=object.pos+edit.moved;let ground=world.ground_terrain(at.x,at.y).unwrap_or(at.z);
         let ot=world.editor_object_type(&object.sco.to_string_lossy())?;
@@ -1630,7 +1630,7 @@ mod tests {
         std::fs::write(map.join("tile_1_0.map"),"[version]\n14\n[terrain]\n").unwrap();
         let world=World::open(&original,&map.join("global.cfg"),20000101).unwrap();
         let mut terrain=omsi_map::Terrain::flat();terrain.heights.fill(40.0);
-        for key in [(0,0),(1,0)] {world.terrains.write().insert(key,std::sync::Arc::new(terrain.clone()));}
+        for key in [(0,0),(1,0)] {world.data.update(|d| { std::sync::Arc::make_mut(&mut d.ground).terrains.insert(key,std::sync::Arc::new(terrain.clone())); });}
         let strings=vec!["leaf2.png".into(),"8".into(),"0.4".into()];
         world.edit_objects.lock().insert(7,crate::scene::EditObject {tile:(0,0),pos:DVec3::new(20.0,40.0,41.25),
             xf:Mat4::from_rotation_z(-15.0_f32.to_radians()),key:7,instances:Vec::new(),sco:scenery.join("tree.sco"),strings});

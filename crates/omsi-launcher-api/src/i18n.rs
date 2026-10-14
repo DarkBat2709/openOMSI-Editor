@@ -12,7 +12,13 @@ type Tables = HashMap<String, HashMap<String, String>>;
 
 fn tables() -> &'static Tables {
     static T: OnceLock<Tables> = OnceLock::new();
-    T.get_or_init(|| parse(TABLES))
+    T.get_or_init(|| {
+        let mut tables = parse(TABLES);
+        for (lang, entries) in parse(include_str!("../../omsi-app/locales/editor.yml")) {
+            tables.entry(lang).or_default().extend(entries);
+        }
+        tables
+    })
 }
 
 /// A double-quoted YAML scalar's text (the file uses nothing else).
@@ -76,6 +82,10 @@ pub fn table(lang: &str) -> HashMap<String, String> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn editor_page_uses_the_same_german_table_as_the_game() {
+        assert_eq!(super::table("de").get("Open in editor").map(String::as_str), Some("Im Editor öffnen"));
+    }
     #[test]
     fn the_tables_parse() {
         let t = super::parse("_version: 2\n\n\"Current time\":\n  de: \"Aktuelle Uhrzeit\"\n  ru: \"Текущее \\\"время\\\"\"\n");

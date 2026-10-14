@@ -38,8 +38,13 @@ pub(crate) fn open_world(args: &Args) -> Result<(World, Camera, DVec3)> {
         None => World::open(&args.root, &map_cfg, date)?,
     };
     *world.start_clock.lock() = start_clock(args);
+    // the session's settings the world's loading reads, and whether its weather lies as snow
+    // (the panes of the vehicles that go onto the GPU wear it)
+    args.session_settings.apply_to(&world);
     {
-        let (kind, folder) = season_folder(args, &world.global);
+        let weather = load_weather(args);
+        world.settings.set_snow(weather.snow);
+        let (kind, folder) = season_folder_on(args, &world.global, start_clock(args).day_of_year, weather.snow, weather.snow_on_road);
         log::info!(
             "season: day {} -> kind {kind} (texture folder {:?})",
             start_clock(args).day_of_year,
@@ -236,7 +241,7 @@ fn editor_start_above_ground(world: &World, camera: &mut Camera, remembered: boo
             camera.position.y = (t.y as f64 + 0.5) * size;
         }
         let path = omsi_cfg::resolve_path(world.global.dir(), &t.file);
-        let parsed = crate::tiles::read_tile(&path, &world.chrono_dirs.read());
+        let parsed = crate::tiles::read_tile(&path, &world.chrono_dirs());
         let terrain_path = parsed.as_ref().map(|t| crate::tiles::terrain_file(t, &path))
             .unwrap_or_else(|| crate::scene::tile_companion(&path, ".terrain"));
         let terrain = omsi_map::Terrain::load(&terrain_path).ok()?;

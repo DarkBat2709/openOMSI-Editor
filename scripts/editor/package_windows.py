@@ -6,7 +6,7 @@ import shutil
 import tempfile
 import zipfile
 
-VERSION = '0.8.2-pre'
+VERSION = '0.8.3-pre'
 NAME = f'openOMSI-Editor-{VERSION}-windows-x64'
 RUNTIME = ('vcruntime140.dll', 'vcruntime140_1.dll', 'msvcp140.dll')
 GUIDES = ('openOMSI-Editor-Kurzanleitung.pdf', 'openOMSI-Editor-Quick-Guide-EN.pdf')
@@ -28,13 +28,14 @@ if errorlevel 1 (
   exit /b 1
 )
 '''
-HELP = '''openOMSI Editor 0.8.2-pre - Windows x64 preview
+HELP = '''openOMSI Editor - 0.8.3-pre - Windows x64
 
 ENGLISH
 1. Right-click the downloaded ZIP and choose Extract All. Do not run inside the ZIP.
 2. Choose a new writable folder, for example Documents\\openOMSI-Editor.
    Do not extract into OMSI 2, another openOMSI installation or Program Files.
-3. Double-click start-editor.cmd. No Python, Rust or administrator rights are needed.
+3. Double-click start-editor.cmd. Microsoft Edge WebView2 Runtime is required for the launcher.
+   Windows 10/11 usually include it. Python and Rust are not required.
 4. In the launcher setup, select your original OMSI 2 installation.
    Original OMSI 2 content is required and is not included in this download.
 5. Read docs\\openOMSI-Editor-Quick-Guide-EN.pdf before editing; back up maps.
@@ -56,8 +57,8 @@ DEUTSCH
 1. Rechtsklick auf die ZIP-Datei, dann Alle extrahieren. Nicht direkt im ZIP starten.
 2. Einen neuen beschreibbaren Ordner verwenden, z.B. Dokumente\\openOMSI-Editor.
    Nicht in OMSI 2, eine andere openOMSI-Installation oder Programme entpacken.
-3. start-editor.cmd doppelt anklicken. Python, Rust und Administratorrechte sind
-   nicht erforderlich.
+3. start-editor.cmd doppelt anklicken. Der Launcher benoetigt Microsoft Edge WebView2
+   Runtime (meist in Windows 10/11 enthalten). Python und Rust sind nicht erforderlich.
 4. Im Launcher unter Einrichtung die originale OMSI-2-Installation auswaehlen.
    Deren Spielinhalte werden benoetigt und sind nicht im Download enthalten.
 5. docs\\openOMSI-Editor-Kurzanleitung.pdf lesen und Karten vor Aenderungen sichern.
@@ -79,7 +80,8 @@ Ein vollstaendiger Spieltest in einer frischen Windows-VM steht noch aus.
 
 def package(source, binary, runtime, output, revision):
     source, binary, runtime, output = map(Path, (source, binary, runtime, output))
-    required = [binary, source/'LICENSE', source/'assets/steam_redist/steam_api64.dll']
+    launcher = binary.with_name('openomsi-launcher-app.exe')
+    required = [binary, launcher, source/'LICENSE', source/'assets/steam_redist/steam_api64.dll']
     required += [runtime/name for name in RUNTIME]
     required += [source/'docs'/name for name in GUIDES]
     for path in required:
@@ -94,6 +96,7 @@ def package(source, binary, runtime, output, revision):
         root = Path(temp)/NAME
         root.mkdir()
         shutil.copy2(binary, root/'openomsi.exe')
+        shutil.copy2(launcher, root/launcher.name)
         for name in RUNTIME:
             shutil.copy2(runtime/name, root/name)
         shutil.copy2(source/'assets/steam_redist/steam_api64.dll', root/'steam_api64.dll')
@@ -105,7 +108,7 @@ def package(source, binary, runtime, output, revision):
         (root/'start-editor.cmd').write_bytes(START.replace('\n', '\r\n').encode('ascii'))
         (root/'START-HERE.txt').write_bytes(HELP.replace('\n', '\r\n').encode('ascii'))
         (root/'VERSION-EDITOR.txt').write_text(
-            f'Editor {VERSION}\nopenOMSI-Basis 0.2.38\nQuellstand: {revision}\nWindows x64 portable preview\n', encoding='utf-8')
+            f'Editor {VERSION}\nopenOMSI-Basis 0.2.50\nQuellstand: {revision}\nWindows x64 portable preview\n', encoding='utf-8')
         with zipfile.ZipFile(archive, 'x', zipfile.ZIP_DEFLATED) as zipout:
             for p in sorted(root.rglob('*')):
                 if p.is_file():

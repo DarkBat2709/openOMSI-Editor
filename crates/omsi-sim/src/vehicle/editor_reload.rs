@@ -9,7 +9,7 @@ impl VehicleInstance {
             || self.ty.program.str_var_names!=old.ty.program.str_var_names {return false;}
         // Engine-added variables are absent from an ordinary situation record. Rebind
         // them by name, because their slot order can differ in the fresh instance.
-        for (name,id) in &old.var_index {
+        for (name,id) in old.var_index.iter() {
             self.set_engine_var(name,old.state.vars[*id as usize]);
         }
         self.state.str_vars=old.state.str_vars;

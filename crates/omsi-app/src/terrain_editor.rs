@@ -98,8 +98,8 @@ fn tile_at(p: DVec3) -> Key {
 fn read_terrain(world: &World, key: Key) -> Result<Terrain,String> {
     let src=world.tile_source(key.0,key.1).ok_or("Tile lies outside the map")?;
     // This also applies to a whole-tile change with neighbour blending disabled.
-    if !world.chrono_dirs.read().is_empty()
-        && crate::tiles::read_tile(&src,&world.chrono_dirs.read()).is_some_and(|t|t.terrain_from.is_some()) {
+    if !world.chrono_dirs().is_empty()
+        && crate::tiles::read_tile(&src,&world.chrono_dirs()).is_some_and(|t|t.terrain_from.is_some()) {
         return Err("Terrain with an active Chrono change cannot be edited here".into());
     }
     if let Some(t)=world.editor_terrain_tile(key) { return valid(t,key); }

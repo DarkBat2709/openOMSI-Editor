@@ -7,7 +7,7 @@ use std::path::{Component,Path,PathBuf};
 /// Object-only chrono events do not replace the ground. Check affected terrain and masks,
 /// once per tile/stroke, rather than reparsing large chrono tiles on every mouse frame.
 fn validate_chrono(world:&World,src:&Path,key:(i32,i32))->Result<(),String> {
-    let chrono=world.chrono_dirs.read();if chrono.is_empty() {return Ok(());}
+    let chrono=world.chrono_dirs();if chrono.is_empty() {return Ok(());}
     let tile=crate::tiles::read_tile(src,&chrono).ok_or("Cannot read tile with Chrono data")?;
     if tile.terrain_from.is_some() {
         return Err(format!("Tile ({},{}): Chrono replaces the terrain; choose a time without this event for this area",key.0,key.1));
@@ -188,7 +188,7 @@ mod tests {
         let world=World::open(&original,&map.join("global.cfg"),20000101).unwrap();
         let chrono=map.join("Chrono/Haltestellentausch");std::fs::create_dir_all(&chrono).unwrap();
         let object_patch="[version]\n14\n";std::fs::write(chrono.join("tile_0_0.map"),object_patch).unwrap();
-        world.chrono_dirs.write().push(chrono.clone());omsi_cfg::content_changed();
+        world.data.update(|d| std::sync::Arc::make_mut(&mut d.map).chrono_dirs.push(chrono.clone()));omsi_cfg::content_changed();
         let mut terrain=crate::terrain_editor::TerrainEditor::default();terrain.mode=crate::terrain_editor::Mode::Textures;
         terrain.radius=20.0;terrain.strength=10.0;
         terrain.choose_layer(&world,1);terrain.begin(&world,DVec3::new(300.0,150.0,40.0));

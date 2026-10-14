@@ -21,7 +21,7 @@ impl App {
     /// The object editor on or off; on, it starts with the free camera where the view is.
     pub(crate) fn toggle_editor(&mut self) {
         if self.photo_on() {
-            self.exit_photo();
+            self.photo_request(crate::photo::Request::Exit);
         }
         self.remember_editor_camera();
         self.editor_terrain_finish();
@@ -573,7 +573,7 @@ impl App {
             Some(KeyCode::Delete) => window.erase(true),
             Some(KeyCode::KeyA) if ctrl => window.replace = true,
             Some(KeyCode::KeyV) if ctrl => {
-                #[cfg(not(target_os = "android"))]
+                #[cfg(not(any(target_os = "android", target_os = "ios")))]
                 if let Ok(mut clipboard) = arboard::Clipboard::new() { if let Ok(text) = clipboard.get_text() { window.type_text(&text); } }
             }
             _ if !ctrl => { if let Some(text) = text { window.type_text(text); } }
