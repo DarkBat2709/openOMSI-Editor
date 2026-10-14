@@ -44480,133 +44480,119 @@ _version: 2
   tl: "Nagpapahinga ang launcher habang nagmamaneho ka para buong magamit ng laro ang graphics card. Babalik ito pagkatapos ng laro."
   sv: "Startprogrammet vilar medan du kör, så att spelet får grafikkortet för sig själv. Det är tillbaka så snart spelet är slut."
 
-PLAYERS:
-  ca: JUGADORS
-  ru: ИГРОКИ
-  de: SPIELER
-  fr: JOUEURS
-  uk: ГРАВЦІ
-  be: ГУЛЬЦЫ
-  kk: ОЙЫНШЫЛАР
-  pl: GRACZE
-  cs: HRÁČI
-  hu: JÁTÉKOSOK
-  es: JUGADORES
-  pt: JOGADORES
-  pt-pt: JOGADORES
-  it: GIOCATORI
-  nl: SPELERS
-  tr: OYUNCULAR
-  ja: プレイヤー
-  zh: 玩家
-  hi: खिलाड़ी
-  zh-tw: 玩家
-  ko: 플레이어
-  th: ผู้เล่น
-  vi: NGƯỜI CHƠI
-  id: PEMAIN
-  ms: PEMAIN
-  tl: PLAYERS
+"PLAYERS":
+  ca: "JUGADORS"
+  ru: "ИГРОКИ"
+  de: "SPIELER"
+  fr: "JOUEURS"
+  uk: "ГРАВЦІ"
+  be: "ГУЛЬЦЫ"
+  kk: "ОЙЫНШЫЛАР"
+  pl: "GRACZE"
+  cs: "HRÁČI"
+  hu: "JÁTÉKOSOK"
+  es: "JUGADORES"
+  pt: "JOGADORES"
+  pt-pt: "JOGADORES"
+  it: "GIOCATORI"
+  nl: "SPELERS"
+  tr: "OYUNCULAR"
+  ja: "プレイヤー"
+  zh: "玩家"
+  hi: "खिलाड़ी"
+  zh-tw: "玩家"
+  ko: "플레이어"
+  th: "ผู้เล่น"
+  vi: "NGƯỜI CHƠI"
+  id: "PEMAIN"
+  ms: "PEMAIN"
+  tl: "PLAYERS"
 
-connecting...:
-  ca: connectant...
-  ru: подключение...
-  de: verbinde...
-  fr: connexion...
-  uk: з'єднання...
-  be: злучэнне...
-  kk: қосылуда...
-  pl: łączenie...
-  cs: připojování...
-  hu: csatlakozás...
-  es: conectando...
-  pt: conectando...
-  pt-pt: conectando...
-  it: connessione...
-  nl: verbinden...
-  tr: bağlanılıyor...
-  ja: 接続中...
-  zh: 连接中...
-  hi: जुड़ रहा है...
-  zh-tw: 連線中...
+"connecting...":
+  ca: "connectant..."
+  ru: "подключение..."
+  de: "verbinde..."
+  fr: "connexion..."
+  uk: "з'єднання..."
+  be: "злучэнне..."
+  kk: "қосылуда..."
+  pl: "łączenie..."
+  cs: "připojování..."
+  hu: "csatlakozás..."
+  es: "conectando..."
+  pt: "conectando..."
+  pt-pt: "conectando..."
+  it: "connessione..."
+  nl: "verbinden..."
+  tr: "bağlanılıyor..."
+  ja: "接続中..."
+  zh: "连接中..."
+  hi: "जुड़ रहा है..."
+  zh-tw: "連線中..."
 
-The new version is put in place; the launcher starts again in a moment.:
-  ca: La versió nova ja està instal|lada; el launcher es reiniciarà d'aquí a un moment.
-  ru: Новая версия установлена; лаунчер сейчас запустится снова.
-  de: Die neue Version ist installiert; der Launcher startet gleich neu.
-  fr: La nouvelle version est installée, le lanceur redémarre dans un instant...
-  uk: Нову версію встановлено; за мить лаунчер запуститься знову.
-  be: Новая версія ўсталявана; праз момант лаўнчар запусціцца зноў.
-  kk: Жаңа нұсқа орнына қойылды; лаунчер бір сәтте қайта іске қосылады.
-  pl: Nowa wersja została wgrana; launcher uruchomi się ponownie za chwilę.
-  cs: Nová verze je nainstalována; launcher se za okamžik znovu spustí.
-  hu: Az új verzió a helyére került; az indító egy pillanat múlva újraindul.
-  es: La nueva versión está en su sitio; el lanzador se reiniciará en un momento.
-  pt: A nova versão está no lugar; o launcher reiniciará em instantes.
-  pt-pt: A nova versão está no lugar; o launcher reiniciará em instantes.
-  it: La nuova versione è installata; il launcher riparte tra un attimo.
-  nl: De nieuwe versie is geplaatst; de launcher start zo weer op.
-  tr: Yeni sürüm yerine konuldu; başlatıcı birazdan yeniden başlar.
-  ja: 新しいバージョンを配置しました。ランチャーがまもなく再起動します。
-  zh: 新版本已就位;启动器稍后会重新启动。
-  hi: नया वर्ज़न लगा दिया गया है; लॉन्चर कुछ ही क्षण में फिर शुरू होगा।
-  zh-tw: 新版本已安裝完成；啟動器即將重新啟動。
+"The new version is put in place; the launcher starts again in a moment.":
+  ca: "La versió nova ja està instal|lada; el launcher es reiniciarà d'aquí a un moment."
+  ru: "Новая версия установлена; лаунчер сейчас запустится снова."
+  de: "Die neue Version ist installiert; der Launcher startet gleich neu."
+  fr: "La nouvelle version est installée, le lanceur redémarre dans un instant..."
+  uk: "Нову версію встановлено; за мить лаунчер запуститься знову."
+  be: "Новая версія ўсталявана; праз момант лаўнчар запусціцца зноў."
+  kk: "Жаңа нұсқа орнына қойылды; лаунчер бір сәтте қайта іске қосылады."
+  pl: "Nowa wersja została wgrana; launcher uruchomi się ponownie za chwilę."
+  cs: "Nová verze je nainstalována; launcher se za okamžik znovu spustí."
+  hu: "Az új verzió a helyére került; az indító egy pillanat múlva újraindul."
+  es: "La nueva versión está en su sitio; el lanzador se reiniciará en un momento."
+  pt: "A nova versão está no lugar; o launcher reiniciará em instantes."
+  pt-pt: "A nova versão está no lugar; o launcher reiniciará em instantes."
+  it: "La nuova versione è installata; il launcher riparte tra un attimo."
+  nl: "De nieuwe versie is geplaatst; de launcher start zo weer op."
+  tr: "Yeni sürüm yerine konuldu; başlatıcı birazdan yeniden başlar."
+  ja: "新しいバージョンを配置しました。ランチャーがまもなく再起動します。"
+  zh: "新版本已就位;启动器稍后会重新启动。"
+  hi: "नया वर्ज़न लगा दिया गया है; लॉन्चर कुछ ही क्षण में फिर शुरू होगा।"
+  zh-tw: "新版本已安裝完成；啟動器即將重新啟動。"
 
-? The graphics driver stopped the game. Updating the graphics driver usually helps; Settings → Graphics API can switch to OpenGL.
-: ca: El controlador gràfic ha aturat el joc. Actualitzar-lo sol ajudar; a Configuració → API gràfica pots canviar a OpenGL.
-  ru: Графический драйвер остановил игру. Обычно помогает обновление драйвера; в «Настройки → Графический API» можно переключиться на OpenGL.
-  de: Der Grafiktreiber hat das Spiel gestoppt. Ein Update des Grafiktreibers hilft meist; unter Einstellungen → Grafik-API kann auf OpenGL umgestellt werden.
-  fr: Le pilote graphique a arrêté le jeu. Mettre à jour le pilote aide généralement ; Réglages → API graphique permet de passer à OpenGL.
-  uk: Графічний драйвер зупинив гру. Зазвичай допомагає оновлення графічного драйвера; у «Налаштування» → «Графічний API» можна перемкнутися на OpenGL.
-  be: Графічны драйвер спыніў гульню. Звычайна дапамагае абнаўленне графічнага драйвера; у «Налады» → «Графічны API» можна пераключыцца на OpenGL.
-  kk: Графика драйвері ойынды тоқтатты. Графика драйверін жаңарту әдетте көмектеседі; Баптаулар → Графика API арқылы OpenGL-ге ауыстыруға болады.
-  pl: Sterownik grafiki zatrzymał grę. Zwykle pomaga aktualizacja sterownika grafiki; w Ustawienia → API grafiki można przełączyć na OpenGL.
-  cs: Grafický ovladač zastavil hru. Obvykle pomůže aktualizace grafického ovladače; v Nastavení → Grafické API lze přepnout na OpenGL.
-  hu: A videokártya-illesztőprogram leállította a játékot. Általában segít az illesztőprogram frissítése; a Beállítások → Grafikai API OpenGL-re válthat.
-  es: El controlador gráfico detuvo el juego. Suele ayudar actualizar el controlador gráfico; en Ajustes → API gráfica puedes cambiar a OpenGL.
-  pt: O driver gráfico interrompeu o jogo. Atualizar o driver gráfico costuma ajudar; em Configurações → API gráfica você pode mudar para OpenGL.
-  pt-pt: O driver gráfico interrompeu o jogo. Atualizar o driver gráfico costuma ajudar; em Definições → API gráfica você pode mudar para OpenGL.
-  it: Il driver grafico ha fermato il gioco. Di solito aiuta aggiornare il driver grafico; Impostazioni → API grafica può passare a OpenGL.
-  nl: Het grafische stuurprogramma heeft het spel gestopt. Het bijwerken van het grafische stuurprogramma helpt meestal; Instellingen → Grafische API kan overschakelen naar OpenGL.
-  tr: Grafik sürücüsü oyunu durdurdu. Grafik sürücüsünü güncellemek genelde işe yarar; Ayarlar → Grafik API'si ile OpenGL'e geçilebilir.
-  ja: グラフィックスドライバーによりゲームが停止しました。グラフィックスドライバーの更新で改善することが多いです。設定 → グラフィックスAPI でOpenGLに切り替えることもできます。
-  zh: 图形驱动导致游戏停止。更新图形驱动通常有帮助;也可以在 设置 → 图形API 中切换到OpenGL。
-  hi: ग्राफ़िक्स ड्राइवर ने गेम रोक दिया। ग्राफ़िक्स ड्राइवर अपडेट करना आमतौर पर मदद करता है; सेटिंग्स → ग्राफ़िक्स API से OpenGL पर स्विच किया जा सकता है।
-  zh-tw: 顯示卡驅動程式導致遊戲終止。通常更新驅動程式可解決問題；亦可在「設定 → 圖形 API」中切換為 OpenGL。
+"The graphics driver stopped the game. Updating the graphics driver usually helps; Settings → Graphics API can switch to OpenGL.":
+  ca: "El controlador gràfic ha aturat el joc. Actualitzar-lo sol ajudar; a Configuració → API gràfica pots canviar a OpenGL."
+  ru: "Графический драйвер остановил игру. Обычно помогает обновление драйвера; в «Настройки → Графический API» можно переключиться на OpenGL."
+  de: "Der Grafiktreiber hat das Spiel gestoppt. Ein Update des Grafiktreibers hilft meist; unter Einstellungen → Grafik-API kann auf OpenGL umgestellt werden."
+  fr: "Le pilote graphique a arrêté le jeu. Mettre à jour le pilote aide généralement ; Réglages → API graphique permet de passer à OpenGL."
+  uk: "Графічний драйвер зупинив гру. Зазвичай допомагає оновлення графічного драйвера; у «Налаштування» → «Графічний API» можна перемкнутися на OpenGL."
+  be: "Графічны драйвер спыніў гульню. Звычайна дапамагае абнаўленне графічнага драйвера; у «Налады» → «Графічны API» можна пераключыцца на OpenGL."
+  kk: "Графика драйвері ойынды тоқтатты. Графика драйверін жаңарту әдетте көмектеседі; Баптаулар → Графика API арқылы OpenGL-ге ауыстыруға болады."
+  pl: "Sterownik grafiki zatrzymał grę. Zwykle pomaga aktualizacja sterownika grafiki; w Ustawienia → API grafiki można przełączyć na OpenGL."
+  cs: "Grafický ovladač zastavil hru. Obvykle pomůže aktualizace grafického ovladače; v Nastavení → Grafické API lze přepnout na OpenGL."
+  hu: "A videokártya-illesztőprogram leállította a játékot. Általában segít az illesztőprogram frissítése; a Beállítások → Grafikai API OpenGL-re válthat."
+  es: "El controlador gráfico detuvo el juego. Suele ayudar actualizar el controlador gráfico; en Ajustes → API gráfica puedes cambiar a OpenGL."
+  pt: "O driver gráfico interrompeu o jogo. Atualizar o driver gráfico costuma ajudar; em Configurações → API gráfica você pode mudar para OpenGL."
+  pt-pt: "O driver gráfico interrompeu o jogo. Atualizar o driver gráfico costuma ajudar; em Definições → API gráfica você pode mudar para OpenGL."
+  it: "Il driver grafico ha fermato il gioco. Di solito aiuta aggiornare il driver grafico; Impostazioni → API grafica può passare a OpenGL."
+  nl: "Het grafische stuurprogramma heeft het spel gestopt. Het bijwerken van het grafische stuurprogramma helpt meestal; Instellingen → Grafische API kan overschakelen naar OpenGL."
+  tr: "Grafik sürücüsü oyunu durdurdu. Grafik sürücüsünü güncellemek genelde işe yarar; Ayarlar → Grafik API'si ile OpenGL'e geçilebilir."
+  ja: "グラフィックスドライバーによりゲームが停止しました。グラフィックスドライバーの更新で改善することが多いです。設定 → グラフィックスAPI でOpenGLに切り替えることもできます。"
+  zh: "图形驱动导致游戏停止。更新图形驱动通常有帮助;也可以在 设置 → 图形API 中切换到OpenGL。"
+  hi: "ग्राफ़िक्स ड्राइवर ने गेम रोक दिया। ग्राफ़िक्स ड्राइवर अपडेट करना आमतौर पर मदद करता है; सेटिंग्स → ग्राफ़िक्स API से OpenGL पर स्विच किया जा सकता है।"
+  zh-tw: "顯示卡驅動程式導致遊戲終止。通常更新驅動程式可解決問題；亦可在「設定 → 圖形 API」中切換為 OpenGL。"
 
-? The graphics driver stopped the game. Updating the graphics driver usually helps; you can also let the game draw with DirectX 12 instead of Vulkan (the button below, or Settings →
-  Graphics API).
-: ca: El controlador gràfic ha aturat el joc. Actualitzar-lo sol ajudar; també pots fer servir DirectX 12 en lloc de Vulkan (amb el botó de sota o a Configuració → API gràfica).
-  ru: Графический драйвер остановил игру. Обычно помогает обновление драйвера; также можно включить DirectX 12 вместо Vulkan (кнопка ниже или «Настройки → Графический API»).
-  de: Der Grafiktreiber hat das Spiel gestoppt. Ein Update des Grafiktreibers hilft meist; du kannst das Spiel auch mit DirectX 12 statt Vulkan rendern lassen (die Schaltfläche unten
-    oder Einstellungen → Grafik-API).
-  fr: Le pilote graphique a arrêté le jeu. Mettre à jour le pilote aide généralement ; vous pouvez aussi faire utiliser DirectX 12 au lieu de Vulkan (le bouton ci-dessous, ou Réglages
-    → API graphique).
-  uk: Графічний драйвер зупинив гру. Зазвичай допомагає оновлення графічного драйвера; також можна дозволити грі малювати через DirectX 12 замість Vulkan (кнопка нижче або «Налаштування»
-    → «Графічний API»).
-  be: Графічны драйвер спыніў гульню. Звычайна дапамагае абнаўленне графічнага драйвера; таксама можна дазволіць гульні маляваць праз DirectX 12 замест Vulkan (кнопка ніжэй або «Налады»
-    → «Графічны API»).
-  kk: Графика драйвері ойынды тоқтатты. Графика драйверін жаңарту әдетте көмектеседі; сондай-ақ ойынға Vulkan орнына DirectX 12 қолдануға болады (төмендегі түйме немесе Баптаулар → Графика
-    API).
-  pl: Sterownik grafiki zatrzymał grę. Zwykle pomaga aktualizacja sterownika grafiki; możesz też ustawić grze DirectX 12 zamiast Vulkan (przycisk poniżej lub Ustawienia → API grafiki).
-  cs: Grafický ovladač zastavil hru. Obvykle pomůže aktualizace grafického ovladače; hru můžete také nechat vykreslovat přes DirectX 12 místo Vulkanu (tlačítko níže nebo Nastavení →
-    Grafické API).
-  hu: A videokártya-illesztőprogram leállította a játékot. Általában segít az illesztőprogram frissítése; a játékot Vulkan helyett DirectX 12-vel is rajzoltathatod (lent a gomb, vagy
-    Beállítások → Grafikai API).
-  es: El controlador gráfico detuvo el juego. Suele ayudar actualizar el controlador gráfico; también puedes hacer que el juego dibuje con DirectX 12 en lugar de Vulkan (el botón de
-    abajo, o Ajustes → API gráfica).
-  pt: O driver gráfico interrompeu o jogo. Atualizar o driver gráfico costuma ajudar; você também pode fazer o jogo renderizar com DirectX 12 em vez de Vulkan (o botão abaixo, ou Configurações
-    → API gráfica).
-  pt-pt: O driver gráfico interrompeu o jogo. Atualizar o driver gráfico costuma ajudar; você também pode fazer o jogo renderizar com DirectX 12 em vez de Vulkan (o botão abaixo, ou
-    Definições → API gráfica).
-  it: Il driver grafico ha fermato il gioco. Di solito aiuta aggiornare il driver grafico; puoi anche far disegnare il gioco con DirectX 12 invece di Vulkan (il pulsante qui sotto, o
-    Impostazioni → API grafica).
-  nl: Het grafische stuurprogramma heeft het spel gestopt. Het bijwerken van het grafische stuurprogramma helpt meestal; je kunt het spel ook met DirectX 12 in plaats van Vulkan laten
-    tekenen (de knop hieronder, of Instellingen → Grafische API).
-  tr: Grafik sürücüsü oyunu durdurdu. Grafik sürücüsünü güncellemek genelde işe yarar; ayrıca oyunun Vulkan yerine DirectX 12 ile çizmesini sağlayabilirsiniz (aşağıdaki düğme veya Ayarlar
-    → Grafik API'si).
-  ja: グラフィックスドライバーによりゲームが停止しました。グラフィックスドライバーの更新で改善することが多いです。Vulkanの代わりにDirectX 12で描画させることもできます(下のボタン、または 設定 → グラフィックスAPI)。
-  zh: 图形驱动导致游戏停止。更新图形驱动通常有帮助;你也可以让游戏改用DirectX 12代替Vulkan绘制(下方按钮,或 设置 → 图形API)。
-  hi: ग्राफ़िक्स ड्राइवर ने गेम रोक दिया। ग्राफ़िक्स ड्राइवर अपडेट करना आमतौर पर मदद करता है; आप गेम को Vulkan की जगह DirectX 12 से भी ड्रा करवा सकते हैं (नीचे का बटन, या सेटिंग्स →
-    ग्राफ़िक्स API)।
-  zh-tw: 顯示卡驅動程式導致遊戲終止。通常更新驅動程式可解決問題；你也可以改用 DirectX 12 取代 Vulkan 渲染（下方按鈕，或「設定 → 圖形 API」）。
+"The graphics driver stopped the game. Updating the graphics driver usually helps; you can also let the game draw with DirectX 12 instead of Vulkan (the button below, or Settings → Graphics API).":
+  ca: "El controlador gràfic ha aturat el joc. Actualitzar-lo sol ajudar; també pots fer servir DirectX 12 en lloc de Vulkan (amb el botó de sota o a Configuració → API gràfica)."
+  ru: "Графический драйвер остановил игру. Обычно помогает обновление драйвера; также можно включить DirectX 12 вместо Vulkan (кнопка ниже или «Настройки → Графический API»)."
+  de: "Der Grafiktreiber hat das Spiel gestoppt. Ein Update des Grafiktreibers hilft meist; du kannst das Spiel auch mit DirectX 12 statt Vulkan rendern lassen (die Schaltfläche unten oder Einstellungen → Grafik-API)."
+  fr: "Le pilote graphique a arrêté le jeu. Mettre à jour le pilote aide généralement ; vous pouvez aussi faire utiliser DirectX 12 au lieu de Vulkan (le bouton ci-dessous, ou Réglages → API graphique)."
+  uk: "Графічний драйвер зупинив гру. Зазвичай допомагає оновлення графічного драйвера; також можна дозволити грі малювати через DirectX 12 замість Vulkan (кнопка нижче або «Налаштування» → «Графічний API»)."
+  be: "Графічны драйвер спыніў гульню. Звычайна дапамагае абнаўленне графічнага драйвера; таксама можна дазволіць гульні маляваць праз DirectX 12 замест Vulkan (кнопка ніжэй або «Налады» → «Графічны API»)."
+  kk: "Графика драйвері ойынды тоқтатты. Графика драйверін жаңарту әдетте көмектеседі; сондай-ақ ойынға Vulkan орнына DirectX 12 қолдануға болады (төмендегі түйме немесе Баптаулар → Графика API)."
+  pl: "Sterownik grafiki zatrzymał grę. Zwykle pomaga aktualizacja sterownika grafiki; możesz też ustawić grze DirectX 12 zamiast Vulkan (przycisk poniżej lub Ustawienia → API grafiki)."
+  cs: "Grafický ovladač zastavil hru. Obvykle pomůže aktualizace grafického ovladače; hru můžete také nechat vykreslovat přes DirectX 12 místo Vulkanu (tlačítko níže nebo Nastavení → Grafické API)."
+  hu: "A videokártya-illesztőprogram leállította a játékot. Általában segít az illesztőprogram frissítése; a játékot Vulkan helyett DirectX 12-vel is rajzoltathatod (lent a gomb, vagy Beállítások → Grafikai API)."
+  es: "El controlador gráfico detuvo el juego. Suele ayudar actualizar el controlador gráfico; también puedes hacer que el juego dibuje con DirectX 12 en lugar de Vulkan (el botón de abajo, o Ajustes → API gráfica)."
+  pt: "O driver gráfico interrompeu o jogo. Atualizar o driver gráfico costuma ajudar; você também pode fazer o jogo renderizar com DirectX 12 em vez de Vulkan (o botão abaixo, ou Configurações → API gráfica)."
+  pt-pt: "O driver gráfico interrompeu o jogo. Atualizar o driver gráfico costuma ajudar; você também pode fazer o jogo renderizar com DirectX 12 em vez de Vulkan (o botão abaixo, ou Definições → API gráfica)."
+  it: "Il driver grafico ha fermato il gioco. Di solito aiuta aggiornare il driver grafico; puoi anche far disegnare il gioco con DirectX 12 invece di Vulkan (il pulsante qui sotto, o Impostazioni → API grafica)."
+  nl: "Het grafische stuurprogramma heeft het spel gestopt. Het bijwerken van het grafische stuurprogramma helpt meestal; je kunt het spel ook met DirectX 12 in plaats van Vulkan laten tekenen (de knop hieronder, of Instellingen → Grafische API)."
+  tr: "Grafik sürücüsü oyunu durdurdu. Grafik sürücüsünü güncellemek genelde işe yarar; ayrıca oyunun Vulkan yerine DirectX 12 ile çizmesini sağlayabilirsiniz (aşağıdaki düğme veya Ayarlar → Grafik API'si)."
+  ja: "グラフィックスドライバーによりゲームが停止しました。グラフィックスドライバーの更新で改善することが多いです。Vulkanの代わりにDirectX 12で描画させることもできます(下のボタン、または 設定 → グラフィックスAPI)。"
+  zh: "图形驱动导致游戏停止。更新图形驱动通常有帮助;你也可以让游戏改用DirectX 12代替Vulkan绘制(下方按钮,或 设置 → 图形API)。"
+  hi: "ग्राफ़िक्स ड्राइवर ने गेम रोक दिया। ग्राफ़िक्स ड्राइवर अपडेट करना आमतौर पर मदद करता है; आप गेम को Vulkan की जगह DirectX 12 से भी ड्रा करवा सकते हैं (नीचे का बटन, या सेटिंग्स → ग्राफ़िक्स API)।"
+  zh-tw: "顯示卡驅動程式導致遊戲終止。通常更新驅動程式可解決問題；你也可以改用 DirectX 12 取代 Vulkan 渲染（下方按鈕，或「設定 → 圖形 API」）。"
+
