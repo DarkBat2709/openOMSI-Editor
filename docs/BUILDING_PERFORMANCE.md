@@ -1,7 +1,7 @@
 # Baukomfort und Performance - lokale Testfassung
 
 Stand: 14.10.2026. Entwicklungszweig codex/editor-building-performance.
-Noch kein neues öffentliches Release. Die veröffentlichte Version bleibt 0.8.1-pre.
+Update 0.8.2-pre nach bestandenen praktischen Tests am 14.10.2026 von Chris beauftragt. Historische Einträge unten dokumentieren den jeweiligen damaligen Freigabestand.
 
 ## Umgesetzt
 
@@ -101,3 +101,29 @@ Ergänzende Nutzerbestätigung vom 14.10.2026: Nach dem Neuladen und Weiterfahre
 ## Test 4: Gelände-Undo auf QWERTZ korrigiert
 
 Chris meldete nach Anheben und Texturieren „Keine Geländeänderung verfügbar“ bei Strg+Z. Ursache im Eingabepfad: Die bisherige logische Z/Y-Zuordnung galt nur für Splines. Im Gelände-Modus führte die physische KeyY-Position der beschrifteten Z-Taste zu Redo auf leerem Wiederholen-Verlauf. Korrektur erweitert die logische Verarbeitung auf aktives Gelände, weiterhin nach modalen Eingabefeldern und ohne zusätzliche gehaltene Tasten. Strg+Z=Undo, Strg+Y bzw. Strg+Umschalt+Z=Redo. Gemeinsame Terrain-Kürzelfunktion mit Regressionstest ergänzt; vorhandene Tests für Höhen- und Textur-Undo bleiben relevant. Praktischer Test 4 ist bis zum erneuten Nutzer-Test noch offen. Keine Veröffentlichung.
+
+## Test 4: Video-Nachprüfung vom 14.10.2026, 13:24 Uhr
+
+Aufnahme cinnamon-2026-10-14T132455+0200.webm und Log der Testfassung 6380b627 geprüft. Textur-Undo visuell bestätigt: aufgetragene Betonplatten verschwinden, Meldung „Geländeänderung rückgängig“, Verlauf schließlich 0 Rückgängig / 6 Wiederholen. Höhen-Undo und Redo werden damit noch nicht separat als bestanden gewertet. Log gesichert unter tmp/editor-performance/terrain-test-4-video.log.
+
+Zum Ende um 13:27:22 Uhr Meldung „Section leaves its tile; create shorter sections first“. Diese stammt aus fit_terrain (Straße an Gelände/F6), nicht aus terrain_to_road (Gelände an Straße/Umschalt+F6). Ausgewählt waren ein Gehweg-Spline und anschließend 10mTerrain_Spline.sli. Gelände an Straße mit anschließendem Spline-Undo bleibt praktisch offen; dafür einen tatsächlichen Straßenspline wählen. Keine Veröffentlichung.
+
+## Test 4: Gelände an Straße und Undo praktisch bestätigt
+
+14.10.2026, Aufnahme cinnamon-2026-10-14T133429+0200.webm: Am Ende ist die Anpassung unter dem einzeln gewählten Seeburger-Straßenspline sichtbar. Log um 13:37:12 Uhr: „Terrain fitted under selected road only“. Um 13:37:29 Uhr bestätigt Spline-Undo die Wiederherstellung von 0 Splines und 1 Geländekachel. Damit Gelände an Straße und zugehöriges Undo für diesen Fall praktisch bestätigt. Vorherige Gruppenversuche wurden mit Einzelauswahl-Hinweis abgewiesen. Textur-Undo bereits im vorherigen Durchgang bestätigt; separater Höhenpinsel-Undo/Redo und gemischter längerer Bautest bleiben offen. Log: tmp/editor-performance/terrain-to-road-video-confirmed.log. Keine Veröffentlichung.
+
+## Test 4 abgeschlossen: Höhenpinsel mit Verlauf
+
+14.10.2026: Chris bestätigt den angeforderten Höhen-Test als erfolgreich. Aufnahme cinnamon-2026-10-14T134029+0200.webm zeigt „Berg heben“ und wechselnde Rückgängig-/Wiederholen-Zähler bei der Geländebearbeitung. Zusammen mit der Nutzerbestätigung sind Höhenbearbeitung und Verlauf für diesen praktischen Durchgang bestätigt. Textur-Undo und Gelände an Straße samt Undo wurden zuvor geprüft. Test 4 damit praktisch abgeschlossen; als nächster Schritt bleibt der gemischte Bautest über 20–30 Minuten mit Speichern/Neuladen und anschließender Weiterfahrt. Log gesichert unter tmp/editor-performance/terrain-height-confirmed.log. Keine Veröffentlichung autorisiert.
+
+## Gemischter Bautest: Logprüfung, 14.10.2026 13:43–14:08
+
+25 Minuten Laufzeit, Build 6380b627, reguläres Ende, keine ERROR-/Panikzeilen. Texturierung, Objektplatzierung/-bearbeitung und Straßenbau protokolliert; Straße an Gelände erzeugt 16 Abschnitte. Speichern um 14:02:02 (15 Dateien) und 14:05:28 (19 Dateien). Reload 14:07:36–14:07:44: bus=true, duty=false, passengers=0, waiting=41, protokollierte Busvariablen unverändert. Dieser Lauf enthält keine gefahrene Strecke/bediente Haltestelle; KI-Pfad-Bearbeitung und Gruppen-Undo nicht aus dem Log bestätigt. Frühere separate Tests bleiben gültig. Visueller Erhalt der Bauänderungen nach Reload und subjektive Bedienflüssigkeit noch von Chris zu bestätigen.
+
+Gewichtete Messwerte: Spline-Auswahl 11,939 ms (4 Aufrufe), Objektgruppenaktualisierung 52,623 ms (30 Aufrufe), Maximum 110,610 ms. Frame-Mittel einschließlich Laden 7,069 ms; größte Pausen beim Start (7,348 s) und Reload (6,095 s), größte übrige erfasste Frame-Spitze 115,474 ms. Einmalige Hintergrundinitialisierung 1,547 s. Keine pauschale Ruckelfreiheit daraus ableiten. Inhaltshinweise: sechs fehlende Texturen, Windows-BBS-Plugin unter Linux nicht geladen. Log: tmp/editor-performance/mixed-building-25min.log. Keine Veröffentlichung.
+
+## Gemischter Bautest abschließend bestätigt
+
+14.10.2026: Chris bestätigt ausdrücklich, dass nach dem Neuladen alle gewünschten Bauänderungen vorhanden waren und die Bedienung während des Durchgangs flüssig blieb. Damit ist der gemischte 25-Minuten-Bautest für den geprüften Umfang bestanden. Zusammen mit den vorherigen Einzeltests sind die geplanten praktischen Bau-/Performance-Prüfungen 1–5 abgeschlossen. Dies ist keine allgemeine Fehlerfreiheit oder Windows-/VM-Freigabe; diese Plattformprüfungen bleiben wie vereinbart für v0.9 vorgesehen. Veröffentlichung weiterhin nur nach ausdrücklicher Freigabe, kein Upload/Push durch diese Testbestätigung.
+
+Veröffentlichungsvorbereitung für 0.8.2-pre von Chris nach Abschluss der Tests ausdrücklich beauftragt (14.10.2026).
