@@ -1335,6 +1335,15 @@ pub fn action_for_mode(code:winit::keyboard::KeyCode,shift:bool,ctrl:bool,yaw:f6
     action_for(code,shift,ctrl,yaw)
 }
 
+/// History shortcuts follow the printed letter, not the US physical Y/Z positions.
+pub(crate) fn history_shortcut(key: &winit::keyboard::Key, ctrl: bool) -> Option<winit::keyboard::KeyCode> {
+    if !ctrl { return None; }
+    let winit::keyboard::Key::Character(letter) = key else { return None; };
+    if letter.eq_ignore_ascii_case("z") { Some(winit::keyboard::KeyCode::KeyZ) }
+    else if letter.eq_ignore_ascii_case("y") { Some(winit::keyboard::KeyCode::KeyY) }
+    else { None }
+}
+
 /// Resolve the original spline and general editor shortcuts.
 pub fn action_for(code: winit::keyboard::KeyCode, shift: bool, ctrl: bool, yaw: f64) -> Option<Action> {
     use winit::keyboard::KeyCode as K;
@@ -1908,5 +1917,22 @@ mod geometry_gesture_tests {
         assert!(geometry_gesture_active(true,&keys));
         assert!(!geometry_gesture_active(false,&keys));
         keys.insert(K::Home); assert!(geometry_gesture_active(false,&keys));
+    }
+}
+
+#[cfg(test)]
+mod history_layout_tests {
+    use super::*;
+    use winit::keyboard::{Key, KeyCode};
+    #[test]
+    fn printed_z_undoes_on_qwertz_and_qwerty_without_treating_y_as_undo() {
+        for (_physical, logical) in [(KeyCode::KeyY, "z"), (KeyCode::KeyZ, "z"), (KeyCode::KeyY,"Z")] {
+            let code=history_shortcut(&Key::Character(logical.into()),true).unwrap();
+            assert!(matches!(action_for_mode(code,false,true,0.0,true),Some(Action::SplineUndo)));
+            assert!(one_shot_key(code,false,true));
+        }
+        let code=history_shortcut(&Key::Character("y".into()),true).unwrap();
+        assert!(!matches!(action_for_mode(code,false,true,0.0,true),Some(Action::SplineUndo)));
+        assert!(history_shortcut(&Key::Character("z".into()),false).is_none());
     }
 }

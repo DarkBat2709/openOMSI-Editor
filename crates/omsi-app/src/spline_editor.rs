@@ -558,6 +558,7 @@ impl SplineEditor {
             }
         }
         let Some(before) = self.undo.pop() else { return "No action to undo".into() };
+        log::info!("Spline undo: restoring {} spline(s), {} terrain tile(s)", before.splines.len(), before.terrain.len());
         let selection = before.splines.first().map(|(key, _)| *key).or(self.selected);
         self.finish_drag();
         let terrain_keys: Vec<_> = before.terrain.iter().map(|(key, _)| *key).collect();

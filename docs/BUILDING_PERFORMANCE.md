@@ -77,3 +77,7 @@ Lokale nächste Testfassung:
 - Tests: Gruppenauswahl, Entnahme und Leerklick; gemeinsame Verschiebung/Höhe; abgelehnte Grenzüberschreitung ohne Teiländerung; mehrere Mausbewegungen mit einem Undo; Speichern auf zwei Kacheln bei unveränderten Originaldateien; asynchrone Vorbereitung bei erhaltener Dirty-Warteschlange. DE/EN-Bedienhinweise ergänzt.
 
 Veröffentlichung ausdrücklich erst nach praktischen Tests und Freigabe von Chris. Nur lokale Bautest-Installation aktualisieren, kein Push und kein Release-Upload.
+
+## Korrektur Strg+Z im Spline-Modus
+
+Der praktische Test meldete nicht funktionierendes Strg+Z. Der bisherige Eingabepfad wertete physische US-Tastenpositionen aus; auf QWERTZ entspricht die beschriftete Z-Taste physisch KeyY. Der Spline-Arbeitsbereich verarbeitet seine Z/Y-Verlaufskürzel jetzt anhand des logischen Buchstabens nach den modalen Eingabefeldern. Strg+Y wird nicht versehentlich als Undo behandelt. Wiederholungen werden unterdrückt; es wird keine umbelegte gehaltene Taste in den Eingabestatus eingefügt. Andere Editorbereiche bleiben in dieser Korrektur unverändert. Ein erfolgreicher Spline-Undo protokolliert die Anzahl zurückgesetzter Splines und Geländekacheln. Layout-Test für QWERTZ/QWERTY ergänzt; praktischen Gruppentest nach Neustart wiederholen.

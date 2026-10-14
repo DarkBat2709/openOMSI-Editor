@@ -194,6 +194,19 @@ impl ApplicationHandler for App {
                 if self.editor_terrain_input(catalog_code, event.text.as_deref(), event.state == ElementState::Pressed) { return; }
                 if self.editor_tile_input(catalog_code, event.text.as_deref(), event.state == ElementState::Pressed) { return; }
                 if self.editor_catalog_input(catalog_code, event.text.as_deref(), event.state == ElementState::Pressed) { return; }
+                // Modal editors above own their input. In the spline workspace,
+                // consume logical history chords without adding a remapped held key:
+                // releasing Ctrl before Z must not leave a phantom key pressed.
+                if self.menus.editor.as_ref().is_some_and(|ed| ed.spline_mode && !ed.terrain.active)
+                    && self.menus.game_menu.is_none() {
+                    let ctrl = self.input.keys.contains(&KeyCode::ControlLeft) || self.input.keys.contains(&KeyCode::ControlRight);
+                    if let Some(code) = crate::editor::history_shortcut(&event.logical_key, ctrl) {
+                        if event.state == ElementState::Pressed {
+                            if !event.repeat { self.editor_key(code); }
+                            return;
+                        }
+                    }
+                }
                 if event.state == ElementState::Pressed && self.menus.menu_edit_icao {
                     if let Some(text)=event.text.as_deref(){ self.icao_edit_text(text); }
                 }
