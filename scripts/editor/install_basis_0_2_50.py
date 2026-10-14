@@ -62,6 +62,8 @@ if [[ $# -lt 1 ]]; then
 fi
 content_dir="$(cd -- "$1" && pwd)"
 shift
+# Older desktop shortcuts explicitly requested the launcher. A bare start now opens it.
+if [[ "${1:-}" == "--launcher" ]]; then shift; fi
 export OMSI_CONTENT="$content_dir"
 export OMSI_NO_UPDATE=1
 export OPENOMSI_BIN="$editor_dir/openomsi"

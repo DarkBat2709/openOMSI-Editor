@@ -18,6 +18,10 @@ with tempfile.TemporaryDirectory(prefix='Editor Port Test ') as tmp:
  game=d/'Inhalte & Karten';game.mkdir()
  result=subprocess.check_output(['bash',str(dest/'start-editor.sh'),str(game),'argument mit leerzeichen'],text=True).splitlines()
  assert result==[str(game),'1',str(game),'argument mit leerzeichen'],result
+ # A bare invocation and an old shortcut must both reach the engine without arguments.
+ for extra in ([],['--launcher']):
+  result=subprocess.check_output(['bash',str(dest/'start-editor.sh'),str(game),*extra],text=True).splitlines()
+  assert result==[str(game),'1',str(game),''],result
  try:m.install(src,dest)
  except ValueError:pass
  else:raise AssertionError('existing installation overwritten')

@@ -1501,15 +1501,15 @@
     "scripts/editor/install_0_7_22.py": "e0e3689420718a71de11136a85275538c21389ba8cefa24948db8fbdfbe6ef92",
     "scripts/editor/install_0_7_23.py": "14447d5c1f8a13705024b76cec02343651c72ea0d708c78abc53b103064b068f",
     "scripts/editor/install_basis_0_2_38.py": "d646086f435c1463ca2a35aedc82dceb50057d209953857f83c0ea2514aee233",
-    "scripts/editor/install_basis_0_2_50.py": "4b44a59505143570206569ae765e70bca61a153bc063c86a739b7ead265d4999",
-    "scripts/editor/package_windows.py": "eaaf67c8913ffba5b1e6d8712de97ab3b9f6900bb1bc99c0cb451612cad837bc",
+    "scripts/editor/install_basis_0_2_50.py": "1cbb3f6ca82329f3ff950a449874e9835009f696e732b4478664f09d5b37fe4e",
+    "scripts/editor/package_windows.py": "1a1e5ba0e56a81a6c325141d2f8c76285f07b0d2e7c101d37076cbac03a583aa",
     "scripts/editor/test_basis_0_2_38_install.py": "a985e6a09721334a38c918b62fdc9dadd221534446b8ad03e748ae16774ea94c",
-    "scripts/editor/test_basis_0_2_50_install.py": "3feb34d189eb5e2c5b46a6cc067e90c75b99b5a641ed5066709246a7b99a53b3",
+    "scripts/editor/test_basis_0_2_50_install.py": "4eba50fbf149b19ef5c14adcd8e32298c9c2fe323775e4b183283374f2722e8d",
     "scripts/editor/test_candidate_install.py": "9f00c67b100d084d40b3cb2124a4ba83d30b95af0195ba32d4d88e9222584479",
     "scripts/editor/test_editor_i18n.py": "5093ec820caaac256687638e240bdc826fac7ce6a8676113ac336b2be0f97f47",
     "scripts/editor/test_map_compatibility.py": "e97aad4beda2b04eef318b07c39696dbb7888fede3445a546b4bea8ca47c421d",
     "scripts/editor/test_windows_install.py": "7ecf1be05a8ecf01c592908d263cddda2032577b32dbb82f363aa3ef2bd61077",
-    "scripts/editor/test_windows_package.py": "4909e45b182b27836a8e674dc2d001b521fd42d05fefab4fcc33aaeed78868f3",
+    "scripts/editor/test_windows_package.py": "dd18849ef1b85dde67a375448745dbc7e1909346287c838a0b7ff7fb62cd9a00",
     "scripts/editor/update_0_2_27.py": "e023a30a613787d5fe86be42e90cbde25cd8db057b681026418185d79710a785",
     "scripts/editor/windows_editor.py": "b1e8d144b871782bcd5662200862df9a1879888e4fac6a648fc3562fb6a87dca",
     "scripts/golden.sh": "3d6d2a77822a6a53be70b3b7553436fe39d67ab4788ed48352fba3e7ec74a544",
@@ -1553,6 +1553,6 @@
     "tools/omsi-check/src/fleet.rs": "58cf793089b1bc20e17107d3200df77e657eff2b5b30dad1ddb14e3b6515d6cd",
     "tools/omsi-check/src/main.rs": "5cbaf56e9df24cca5a09af87dc252ab7c71edeb4d34c0d80b5dc9b973f1d4c79",
     "tools/test-support/original_root.rs": "6ef641f2504bcecfc0e120c6700fdb9413dfde550b53f2acf95e287f54111241",
-    "docs/UPDATE_0.8.3.md": "7b4513e96b3365639a8833f3ddf3b20fa523345e655a7afe77f896d42bdfab77"
+    "docs/UPDATE_0.8.3.md": "07216703d35fd24f44c6dd3c619ed4dcd1db6b196fd339c5a80132d97361f277"
   }
 }

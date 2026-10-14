@@ -21,7 +21,7 @@ if not exist "%OMSI_CONTENT%" (
   pause
   exit /b 1
 )
-"%~dp0openomsi.exe" %* --launcher
+"%~dp0openomsi.exe" %*
 if errorlevel 1 (
   echo Editor could not start. See START-HERE.txt and the log in %%USERPROFILE%%\.openomsi\game.log
   pause

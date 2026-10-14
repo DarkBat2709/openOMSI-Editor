@@ -40,6 +40,8 @@ class PackageTests(unittest.TestCase):
             for name in (*RUNTIME, 'steam_api64.dll', 'openomsi.exe', 'openomsi-launcher-app.exe', 'start-editor.cmd'):
                 self.assertTrue((extracted/name).is_file(), name)
             self.assertTrue((extracted/'docs'/GUIDES[1]).is_file())
+            self.assertIn('"%~dp0openomsi.exe" %*', (extracted/'start-editor.cmd').read_text())
+            self.assertNotIn('--launcher', (extracted/'start-editor.cmd').read_text())
             with self.assertRaises(ValueError):
                 package(source, source/'openomsi.exe', runtime, out, 'test-sha')
             self.assertEqual((source/'openomsi.exe').read_bytes(), b'fixture')

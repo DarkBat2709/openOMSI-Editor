@@ -24,9 +24,9 @@ Der Editor bringt seine eigene Engine mit. Ein Update des separaten Spiels aktua
 
 ## Installation / Update
 
-Close the editor and extract into a new folder. Windows: start-editor.cmd; Microsoft Edge WebView2 Runtime is required. Linux: bash start-editor.sh "/path/to/content" --launcher. Reuse or transfer your existing content separately; original OMSI 2 content is required and not included. Linux package requires glibc 2.39 or newer.
+Close the editor and extract into a new folder. Windows: start-editor.cmd; Microsoft Edge WebView2 Runtime is required. Linux: bash start-editor.sh "/path/to/content". Reuse or transfer your existing content separately; original OMSI 2 content is required and not included. Linux package requires glibc 2.39 or newer.
 
-Editor schließen und in einen neuen Ordner entpacken. Windows: start-editor.cmd; Microsoft Edge WebView2 Runtime wird benötigt. Linux: bash start-editor.sh "/Pfad/zum/Inhaltsordner" --launcher. Vorhandene Inhalte getrennt weiterverwenden oder übernehmen; originale OMSI-2-Inhalte werden benötigt und sind nicht enthalten. Das Linux-Paket benötigt glibc 2.39 oder neuer.
+Editor schließen und in einen neuen Ordner entpacken. Windows: start-editor.cmd; Microsoft Edge WebView2 Runtime wird benötigt. Linux: bash start-editor.sh "/Pfad/zum/Inhaltsordner". Vorhandene Inhalte getrennt weiterverwenden oder übernehmen; originale OMSI-2-Inhalte werden benötigt und sind nicht enthalten. Das Linux-Paket benötigt glibc 2.39 oder neuer.
 
 The included German and English operating guides describe the unchanged building controls (guide edition 0.8.2). / Die enthaltenen deutschen und englischen Bedienungsanleitungen beschreiben die unveränderten Bauwerkzeuge (Anleitungsstand 0.8.2).
 
