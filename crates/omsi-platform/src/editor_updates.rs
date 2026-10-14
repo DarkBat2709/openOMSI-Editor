@@ -178,7 +178,6 @@ impl ManagedUpdate {
         // Preserve content root, launch arguments and working directory of start-editor.sh.
         std::process::Command::new(p.exe)
             .args(std::env::args_os().skip(1))
-            .env_remove("OMSI_LAUNCHER_INPUT")
             .spawn()?;
         Ok(())
     }

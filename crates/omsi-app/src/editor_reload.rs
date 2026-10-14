@@ -24,12 +24,12 @@ fn prepare_reload<T>(save:bool,write:impl FnOnce()->Result<(),String>,open:impl 
 }
 
 impl App {
-    #[cfg(target_os="android")]
+    #[cfg(any(target_os="android", target_os="ios"))]
     pub(crate) fn editor_reload_map(&mut self){
         self.service_msg=Some(("Reload map is available in the desktop editor".into(),5.0));
     }
 
-    #[cfg(not(target_os="android"))]
+    #[cfg(not(any(target_os="android", target_os="ios")))]
     pub(crate) fn editor_reload_map(&mut self){
         if self.net.lan.is_some() || self.cam.starting.is_some(){
             self.service_msg=Some(("Reload map is available in the loaded single-player editor".into(),5.0));return;

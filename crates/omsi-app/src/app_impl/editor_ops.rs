@@ -573,7 +573,7 @@ impl App {
             Some(KeyCode::Delete) => window.erase(true),
             Some(KeyCode::KeyA) if ctrl => window.replace = true,
             Some(KeyCode::KeyV) if ctrl => {
-                #[cfg(not(target_os = "android"))]
+                #[cfg(not(any(target_os = "android", target_os = "ios")))]
                 if let Ok(mut clipboard) = arboard::Clipboard::new() { if let Ok(text) = clipboard.get_text() { window.type_text(&text); } }
             }
             _ if !ctrl => { if let Some(text) = text { window.type_text(text); } }

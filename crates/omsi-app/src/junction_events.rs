@@ -55,12 +55,17 @@ impl App {
                 self.editor_open_textures(if matches!(command,Command::WalkTexture) {TextureTarget::JunctionWalk} else {TextureTarget::JunctionRoad});
             }
             Command::Load=>{
+                #[cfg(not(any(target_os="android", target_os="ios")))]
+                {
                 let mut dialog=rfd::FileDialog::new().set_title(omsi_ui::tr("Load junction project").as_ref()).add_filter(omsi_ui::tr("Junction project").as_ref(),&["json"]);
                 if let Some(content)=crate::startup::content_dir() {dialog=dialog.set_directory(content.join("Sceneryobjects/openOMSI_Editor/Junctions"));}
                 if let Some(path)=dialog.pick_file() {
                     let window=self.menus.editor.as_mut().unwrap().junction_window.as_mut().unwrap();
                     if let Err(e)=window.load(&path) {window.message=format!("Not loaded: {e}");}
                 }
+                }
+                #[cfg(any(target_os="android", target_os="ios"))]
+                { self.menus.editor.as_mut().unwrap().junction_window.as_mut().unwrap().message="Load junction project is available in the desktop editor".into(); }
                 self.input.keys.clear();self.input.buttons_held=(false,false);
             }
             Command::UseSpline=>{
