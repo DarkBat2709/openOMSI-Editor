@@ -18,8 +18,8 @@
     ".github/workflows/issue_triage.yml": "80f9f30a0ef0a2725b634a0495da01556f9da03818c6ee4f364fb6918cba7a75",
     ".github/workflows/pages.yml": "90ac29d7d761e3d19075fa72a1f10008fe6bd837ce73b98bb6a0e9838cc796b7",
     ".github/workflows/pr_builds.yml": "f31a668d43343bc1a3f77af70712a2128386e90ee0d376fa0c8880de7b174bd0",
-    ".github/workflows/pr_checks.yml": "644ff0c730e6aa2d6c4ef938e5d06729af4b2b24000ac4e94b21048d9d2e61e6",
-    ".github/workflows/release.yml": "6745a853aadbfbee3b4db0fd4ca587eef04609e01b2065d8fb4a38bc1963960f",
+    ".github/workflows/pr_checks.yml": "601ce386eb00e59729df79dd15721e2e763b8073687cf3c15fccc518262576c8",
+    ".github/workflows/release.yml": "aba6cd5379407b4cad122a468ee034f97fa9cc16065e4533a4890b33a2f00664",
     ".github/workflows/rt_check.yml": "59e422d1455c8edf06b9018f06ad76a80664025283ac78d96e65180613121ce5",
     ".github/workflows/security_audit.yml": "9587125e83ff6487f992a27c2670a1c0a554e12bd64639163b86bc3a6a879bb1",
     ".gitignore": "8b84b6ab999d69f1e3c829fb6011beb5b52a0dd1c7c1c7e097e4157dd723681f",
@@ -1280,7 +1280,7 @@
     "launcher/ui/vendor/preact-htm.js": "72284e8e9079c87817145df1110f74e8a2aa040b2fc384922e18dfcb46fc1fd7",
     "release/health.json": "3979d2283a99a1f7d97002aed6bb5bbc8355982e3623a61b99467e504e49e9c6",
     "scripts/arch-guard.sh": "b586ddc4f47e1854768b7ffb7313e0419174157960ddb0b9ca9dbf8679be40d9",
-    "scripts/arch-rules.txt": "a0b5df396ee8fb02fed1037fe10c3c0fd97f2c2404827b0635f059b7c69608e4",
+    "scripts/arch-rules.txt": "5ce72216328d4a33296ffd039f84ac22bf739e9e3ec2c3286aacae38d757577d",
     "scripts/audio-trace.sh": "d52145ad58a02a75aa2169c5b1a09c9478a5d4d4a4a5ece07aabfbc1e73d9e24",
     "scripts/audio_trace_diff.py": "7c525d6d65c27e8afb3062d511a8ebc91a198970499907a4ad2cb1e07bc7ba93",
     "scripts/bench-window.sh": "58137106aa38cfdd2730c7354f469d3abfe1e3396a68ebe643d0e9c49978ccbe",
@@ -1324,7 +1324,7 @@
     "scripts/server/start.cmd": "f9c5817d8b2beef055c8d9b65954adc4ccfb0c68851255896c2bc077071e5410",
     "scripts/server/start.sh": "07edae6ba6bbf2159662d34f184933dac238fe077ef101a17e163d7bf640b403",
     "scripts/size-budget.sh": "e0e3474f154880ef1f5b93e7334c1227aeddbe825767d3085eb5648e1b1a8d88",
-    "scripts/size-budget.txt": "50109ff281b8f8130609120b7bf862cd974b4023aa8f5cf28c0e69c7bc28f2ec",
+    "scripts/size-budget.txt": "11ac3dc60e3d4d42954e84e47973f5f8ffd1a247ed990fc503cd58e72dc76e88",
     "scripts/traffic-compare.py": "912c9541dd4031d03daada007a9002ed33b976cb0f80a74f122c7b243636f8c5",
     "scripts/version.sh": "17a6038077710a13630ceef747f13c11a13cc0081e8067f0993bf3e6f6c9887c",
     "services/presence/.gitignore": "c7b19c97f231bcf1859c702d5bccd673eae2d28c31b73ec76ae6c30134ac2627",
@@ -1353,6 +1353,6 @@
     "tools/omsi-check/src/fleet.rs": "58cf793089b1bc20e17107d3200df77e657eff2b5b30dad1ddb14e3b6515d6cd",
     "tools/omsi-check/src/main.rs": "3fdfcb2bf870e4c25bb5ed8890fdee08b7aecc14f37f20fe91a189ea7004a548",
     "tools/test-support/original_root.rs": "6ef641f2504bcecfc0e120c6700fdb9413dfde550b53f2acf95e287f54111241",
-    "docs/UPDATE_0.8.2.md": "da07490b52f633a0bf8c72700aaeba0ae3fe3410b34669b613248a491e6fe9f6"
+    "docs/UPDATE_0.8.2.md": "f7045558710a8a7f8fe7184432c28ae8e82348b3e4976ea2dcc1a8d785ac647d"
   }
 }

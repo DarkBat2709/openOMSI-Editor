@@ -153,4 +153,7 @@ forbid omsi-guard omsi-audio
 forbid omsi-guard omsi-launcher-ui
 
 # Lines of Rust in crates/omsi-app (may grow 2 % past this; lower with --update).
-app-lines 69722
+app-lines 86871
+
+# Editor fork 0.8.2: baseline includes the existing in-game editor subsystem.
+# Future subsystem extraction remains desirable; dependency rules are unchanged.

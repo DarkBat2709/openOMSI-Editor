@@ -31,3 +31,7 @@ Back up maps and close the editor. Extract the package into a new folder. Window
 Karten sichern und Editor schließen. Paket in einen neuen Ordner entpacken. Windows: start-editor.cmd. Linux: bash start-editor.sh "/Pfad/zum/Inhaltsordner" --launcher. Benötigte Inhalte separat übernehmen oder weiterverwenden. Originale OMSI-2-Inhalte werden benötigt und sind nicht enthalten. Linux benötigt glibc 2.39 oder neuer.
 
 [Demonstration video / Vorstellungsvideo (German, MP4)](https://github.com/DarkBat2709/openOMSI-Editor/releases/download/v0.8.0-pre/openOMSI-Editor-Vorstellung-DE.mp4) - filmed with 0.8.0-pre; shows the basic in-game workflow.
+
+## Maintainer validation notes
+
+The fork now records its existing editor modules in the size/architecture budgets. The previous budgets described the upstream game and already rejected the 0.8.1 editor modules. This update also records the tested group-selection and undo additions; these larger modules remain refactoring debt. Future size growth is still constrained and crate dependency rules are unchanged. Only the two packaged PDF guides receive a bounded 8 MB file-size allowance. Game-platform release PR builds target main; editor branches use the dedicated Linux/Windows editor validation workflow.
