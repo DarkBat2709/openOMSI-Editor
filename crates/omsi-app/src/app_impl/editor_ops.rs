@@ -46,15 +46,13 @@ impl App {
             use crate::terrain_editor::{Command,Field};
             let shift=self.input.keys.contains(&KeyCode::ShiftLeft)||self.input.keys.contains(&KeyCode::ShiftRight);
             let ctrl=self.input.keys.contains(&KeyCode::ControlLeft)||self.input.keys.contains(&KeyCode::ControlRight);
-            let command=match code {
+            let command=crate::terrain_editor::history_command(code,shift,ctrl).or_else(|| match code {
                 KeyCode::Escape=>Some(Command::Exit),
-                KeyCode::KeyZ if ctrl=>Some(if shift {Command::Redo} else {Command::Undo}),
-                KeyCode::KeyY if ctrl=>Some(Command::Redo),
                 KeyCode::KeyS if ctrl=>Some(Command::Save),
                 KeyCode::BracketLeft=>Some(Command::Adjust(Field::Radius,-1.0)),
                 KeyCode::BracketRight=>Some(Command::Adjust(Field::Radius,1.0)),
                 _=>None,
-            };
+            });
             if let Some(command)=command {self.editor_terrain_command(command);return true;}
             // Camera letters have no editor binding; all object/spline keys stay inactive.
             return crate::editor::action_for(code,shift,ctrl,0.0).is_some();
@@ -108,6 +106,14 @@ impl App {
     /// Mouse buttons and keys run the same editor action and validation.
     pub(crate) fn editor_action(&mut self, action: crate::editor::Action) -> bool {
         if self.menus.editor.is_none() { return false; }
+        if self.menus.editor.as_ref().is_some_and(|ed| ed.spline_mode && ed.splines.multiple_selected())
+            && matches!(action, crate::editor::Action::Connect | crate::editor::Action::ReplaceConnection
+                | crate::editor::Action::TerrainToRoad | crate::editor::Action::FitTerrain | crate::editor::Action::SmoothRoad(_)
+                | crate::editor::Action::Branch(_) | crate::editor::Action::SnapEnd | crate::editor::Action::Split
+                | crate::editor::Action::ConstructionWindow | crate::editor::Action::RoadsideWindow | crate::editor::Action::SidewalkWindow) {
+            self.service_msg = Some(("Select one spline for this tool; groups support moving and height changes".into(), 5.0));
+            return true;
+        }
         if let crate::editor::Action::Workspace(mode) = action {
             self.editor_workspace(mode); return true;
         }
@@ -138,6 +144,10 @@ impl App {
         }
         let msg = match action {
             crate::editor::Action::Workspace(_) => unreachable!(),
+            crate::editor::Action::CycleSelectionFilter => {
+                let ed = self.menus.editor.as_mut().unwrap();
+                if ed.spline_mode { ed.splines.cycle_selection_filter().into() } else { String::new() }
+            },
             crate::editor::Action::ObjectText => {
                 if self.net.lan.is_some() { "Object text editing is currently available in single-player".into() }
                 else {
@@ -688,6 +698,11 @@ impl App {
 
         let _diagnostic = crate::editor_diagnostics::Span::new("editor_tile_reload", "");
         let Some(world) = self.world.clone() else { return; };
+        let dirty = world.spline_edits.lock().dirty;
+        if dirty && !crate::roadside_objects::prepare_async(&world) {
+            self.service_msg = Some(("Preparing object rows in the background…".into(), 1.0));
+            return;
+        }
         let (changed, mut tiles): (bool, hashbrown::HashSet<_>) = {
             let mut edits = world.spline_edits.lock();
             let changed = edits.dirty; edits.dirty = false;
@@ -695,7 +710,8 @@ impl App {
         };
         if changed {
             if let Some(ed)=self.menus.editor.as_mut(){ed.traffic_overlay.invalidate();}
-            if let Err(error) = crate::roadside_objects::initialize(&world).and_then(|_| crate::roadside_objects::refresh(&world)) {
+            let preparation_error = world.roadside_edits.lock().initialization_error.clone();
+            if let Err(error) = preparation_error.map_or_else(|| crate::roadside_objects::refresh(&world), Err) {
                 log::warn!("Object rows after road change: {error}");
                 self.service_msg = Some((format!("Check object rows: {error}"), 6.0));
             }
@@ -913,13 +929,16 @@ impl App {
         let construction_hit=match self.menus.editor.as_ref().and_then(|e|e.construction_plane) { Some(z)=>crate::construction_tools::plane_hit(o,d.as_dvec3(),z), None=>crate::placing::ground_hit(&world,o,d.as_dvec3(),400.0) };
         let ed = self.menus.editor.as_mut().unwrap();
         if ed.spline_mode {
-            ed.pick(&world, o, d);
-            if !ed.splines.connection_active() {
+            let additive = self.input.keys.contains(&KeyCode::ControlLeft) || self.input.keys.contains(&KeyCode::ControlRight);
+            ed.selected = None;
+            ed.editing_added = None;
+            ed.splines.pick_group(&world, o, d, additive);
+            if !additive && !ed.splines.connection_active() {
                 if let Some(hit) = construction_hit {
                 ed.splines.begin_drag(&world, hit);
                 }
             }
-            self.menus.editor_drag = !ed.splines.connection_active() && ed.splines.selected.is_some();
+            self.menus.editor_drag = !additive && !ed.splines.connection_active() && ed.splines.selected.is_some();
             self.service_msg = Some((ed.describe(&world), 5.0));
             return true;
         }
