@@ -44,7 +44,7 @@ impl World {
         let mut seen: hashbrown::HashSet<*const ObjectType> = hashbrown::HashSet::new();
         for o in &p.objects {
             if let Some(inst) = &o.script {
-                let selection = scenery_texture_selection(&o.ot, inst);
+                let selection = scenery_texture_selection(&o.ot, &|n| inst.var(n));
                 for (group, &index) in o.ot.dynamic_textures.iter().zip(&selection) {
                     for (_, file, dir) in group.choices.get(index).into_iter().flatten() {
                         let mut dirs = o.ot.texture_dirs(&self.root);
@@ -830,7 +830,7 @@ impl World {
         state.light_objects = placing.light_objects;
         state.poles = placing.poles;
         drop(states);
-        self.scripted.lock().extend(scripted);
+        { let mut target = self.scripted.lock(); for object in scripted { target.push(object); } }
         self.clear_editor_script_states(key);
         if restored_scripts > 0 && omsi_cfg::env::var_os("OMSI_EDITOR_TREE_TRACE").is_some() {
             log::info!("scenery rebuild: tile {:?}, restored {} script states", key, restored_scripts);

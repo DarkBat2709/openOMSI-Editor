@@ -28,14 +28,7 @@ impl PeopleSim {
                     _ => p.inside(BusId::Player),
                 }
         });
-        for p in self.people.iter_mut().chain(waiting.iter_mut().map(|(p,_,_)|p)) {
-            p.meshes.clear();
-            p.skins.clear();
-            p.skin_bones = None;
-            p.pose_changed = true;
-            p.skinned = false;
-            p.since_posed = 0;
-        }
+        // Render bodies belong to the replacement view; only CPU passengers survive.
         self.bodies.ops.clear();
         if let Some(m) = &mut self.money {
             m.meshes.clear();
@@ -209,7 +202,7 @@ mod tests {
             id,
             ty: ty.clone(),
             variant: 0,
-            meshes: Vec::new(),
+
             position: DVec3::Y * 1000.0,
             heading: 0.0,
             lheading: 0.0,
@@ -218,18 +211,18 @@ mod tests {
             pace: 1.1,
             activity: Activity::Stand,
             anim: OmsiAnim::default(),
-            procedural: None,
+
             state: if standing {
                 State::Standing
             } else {
                 State::Pax(Box::new(Pax::new(1.1, 0.5)))
             },
             t_state: 0.0,
-            skins: Vec::new(),
-            skin_bones: None,
-            pose_changed: false,
+
+
+
             interior: 0.0,
-            lit: 0.0,
+
             tilt: Mat4::IDENTITY,
             age: 40.0,
             stuck: 0.0,
@@ -238,10 +231,10 @@ mod tests {
             detour: 0.0,
             detour_side: 0.0,
             why: "",
-            skinned: false,
-            since_posed: 0,
-            posed_at: (DVec3::ZERO, 0.0),
-            ankles: [Vec3::ZERO; 2],
+
+
+
+
             puppet,
             remote,
         };
@@ -249,7 +242,6 @@ mod tests {
             let mut old = PeopleSim::new(Path::new("/nonexistent"), 200);
             let mut rider = person(12, false, None, false);
             rider.place = Place::Bus(BusId::Player, Vec3::new(1.0, -3.0, 0.5));
-            rider.meshes = vec![(77, 88)];
             if let State::Pax(pax) = &mut rider.state {
                 pax.inside = Some(BusId::Player);
                 pax.bus = Some(BusId::Player);
@@ -290,7 +282,6 @@ mod tests {
             }
             let saved = old.into_player_passengers();
             assert_eq!(saved.0.people.len(), 1);
-            assert!(saved.0.people[0].meshes.is_empty());
             let mut fresh = PeopleSim::new(Path::new("/nonexistent"), 200);
             fresh.people.push(person(12, false, None, true));
             fresh.bodies.ops.push(BodyOp::Spawn {

@@ -21,7 +21,7 @@ impl App {
     /// The object editor on or off; on, it starts with the free camera where the view is.
     pub(crate) fn toggle_editor(&mut self) {
         if self.photo_on() {
-            self.exit_photo();
+            self.photo_request(crate::photo::Request::Exit);
         }
         self.remember_editor_camera();
         self.editor_terrain_finish();

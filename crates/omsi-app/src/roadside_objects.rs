@@ -815,7 +815,7 @@ mod tests {
         let mut editor=crate::spline_editor::SplineEditor::default();
         editor.apply_sidewalk(&world,plan.pieces.clone(),None,false).unwrap();
         let generated=editor.selected.unwrap();
-        world.lanes.lock().clear(); // runtime consumes this queue even with no AI vehicles
+        world.traffic_inbox.take(); // runtime consumes this queue even with no AI vehicles
         let mut overlay=crate::traffic_editor::Overlay::default();
         overlay.wait_for_test(&world,DVec3::ZERO);assert_eq!(overlay.lanes.len(),2);
         let cached=world.roadside_edits.lock().sources.get(&(0,0)).unwrap().tile.clone();
@@ -832,7 +832,7 @@ mod tests {
         // Saving and reopening still displays paths after the runtime queue is drained.
         std::fs::write(map.join("tile_0_0.map"),saved).unwrap();omsi_cfg::content_changed();
         let reopened=Arc::new(World::open(&dir,&map.join("global.cfg"),20000101).unwrap());
-        reopened.lanes.lock().clear();let mut overlay=crate::traffic_editor::Overlay::default();
+        reopened.traffic_inbox.take();let mut overlay=crate::traffic_editor::Overlay::default();
         overlay.wait_for_test(&reopened,DVec3::ZERO);assert_eq!(overlay.lanes.len(),2);
         let mut edit_window=crate::traffic_editor::Window::new(road.key);
         edit_window.load_existing(&reopened);assert!(edit_window.replace);assert!(!edit_window.settings.connected);

@@ -163,7 +163,7 @@ impl App {
                         h.stop_targets=self.session.schedule.as_ref().map(|s|s.stop_targets());
                         h.stop_names=self.session.schedule.as_ref().map(|s|s.stop_names());
                         h.center=p.vehicle.position;
-                        (kept_passengers,kept_waiting)=h.restore_player_passengers_in_world(passengers,w.as_ref());
+                        (kept_passengers,kept_waiting)=h.restore_player_passengers_in_world(passengers,w.data().as_ref());
                         if let Some(m) = h.money.as_mut() { crate::money::restore_scene(m, w, r, scene); }
                         h.show_bodies(&mut self.gfx.sim_view.people, w, r, scene);
                     }
@@ -226,33 +226,32 @@ mod tests {
         let ty=Arc::new(HumanType::load(&dir.join("person.hum")).unwrap());
         for change in [0,1,2,3] {
             let world=World::open(&dir,&dir.join("global.cfg"),20261012).unwrap();
-            world.terrains.write().insert((0,0),Arc::new(omsi_map::Terrain::flat()));
+            world.data.update(|d| { std::sync::Arc::make_mut(&mut d.ground).terrains.insert((0,0),Arc::new(omsi_map::Terrain::flat())); });
             let at=glam::DVec3::new(10.0,10.0,0.0);
-            world.bus_stops.lock().push((123,at,0.0,"Test stop".into()));
-            world.object_positions.lock().insert(456,(glam::DVec3::new(11.0,10.0,0.0),[0.0;3]));
-            world.waiting_places.lock().push((456,glam::DVec3::new(11.0,11.0,0.0),0.0,0.0));
+            world.data.update(|d| Arc::make_mut(&mut d.lists).bus_stops.push((123,at,0.0,"Test stop".into())));
+            world.data.update(|d| Arc::make_mut(&mut d.objects).place((0,0),vec![(456,(glam::DVec3::new(11.0,10.0,0.0),[0.0;3]))]));
+            world.data.update(|d| Arc::make_mut(&mut d.lists).waiting_places.push((456,glam::DVec3::new(11.0,11.0,0.0),0.0,0.0)));
             let mut old=PeopleSim::new(&dir,200);old.types=vec![ty.clone()];
-            old.populate(&world,at);
-            let index=old.spawn_waiting(&world,123).expect("synthetic stop must have a waiting place");
+            old.populate(world.data().as_ref(),at);
+            let index=old.spawn_waiting(world.data().as_ref(),123).expect("synthetic stop must have a waiting place");
             let id=old.people[index].id;
-            old.people[index].meshes=vec![(77,88)];
             if let State::Pax(p)=&mut old.people[index].state {p.dest=Some("Hauptbahnhof".into());}
             let saved=old.into_player_passengers();
-            if change==1 {world.bus_stops.lock()[0].1.x+=5.0;}
-            if change==2 {world.bus_stops.lock().clear();}
-            if change==3 {world.bus_stops.lock()[0].1.x+=100.0;}
+            if change==1 {world.data.update(|d| Arc::make_mut(&mut d.lists).bus_stops[0].1.x+=5.0);}
+            if change==2 {world.data.update(|d| Arc::make_mut(&mut d.lists).bus_stops.clear());}
+            if change==3 {world.data.update(|d| Arc::make_mut(&mut d.lists).bus_stops[0].1.x+=100.0);}
             let mut fresh=PeopleSim::new(&dir,200);fresh.center=at;
-            let (riders,waiting)=fresh.restore_player_passengers_in_world(saved,&world);
+            let (riders,waiting)=fresh.restore_player_passengers_in_world(saved,world.data().as_ref());
             assert_eq!(riders,0);
             assert_eq!(waiting,if change<=1{1}else{0});
             if change<=1 {
-                assert_eq!(fresh.people[0].id,id);assert!(fresh.people[0].meshes.is_empty());
+                assert_eq!(fresh.people[0].id,id);
                 let State::Pax(p)=&fresh.people[0].state else{panic!("waiter missing");};
                 assert_eq!(p.dest.as_deref(),Some("Hauptbahnhof"));
                 assert_eq!(p.task.name(),"WaitingForBus");assert!(p.bus.is_none());
                 assert_eq!(fresh.stops[&123].taken,vec![true]);
                 if change==1 {assert!((fresh.people[0].position.x-16.0).abs()<0.01);}
-                fresh.populate(&world,at);assert_eq!(fresh.people.len(),1);
+                fresh.populate(world.data().as_ref(),at);assert_eq!(fresh.people.len(),1);
                 assert!(fresh.next_id>id);
             } else {assert!(fresh.people.is_empty());}
         }

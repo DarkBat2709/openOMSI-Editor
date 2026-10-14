@@ -18,7 +18,7 @@ use omsi_map::Terrain;
         let world=World::open(&content,&map.join("global.cfg"),20000101).unwrap();let request=[(0,0,file)];
         for deleted in [false,true,false]{world.object_edits.lock().insert(7,ObjectEdit{deleted,..Default::default()});world.forget_staged(&[(0,0)]);
             let(prepared,_)=world.prepare_tiles(&request);assert_eq!(prepared.len(),1);
-            let surfaces=world.surfaces.read();let surface=surfaces.get(&(0,0)).unwrap();
+            let data=world.data();let surface=data.ground.surfaces.get(&(0,0)).unwrap();
             assert_eq!(surface.cut_at(80.0,100.0,0.0,0.03),!deleted);
             assert!(surface.cut_at(200.0,100.0,0.0,0.03));
             assert_eq!(std::fs::read(&terrain_path).unwrap(),heights);

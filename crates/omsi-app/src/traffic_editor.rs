@@ -178,7 +178,7 @@ pub fn build(roads:&[(Key,MapSpline,bool)],s:&Settings) -> Result<Plan,String> {
             key.0.0,key.0.1,key.1,if *backwards {1}else{0},if s.two_way {2}else{1},if s.reverse {1}else{0},
             (s.width*1000.0).round() as i64,format!("{}_{}",(s.offset*1000.0).round() as i64,(s.height*1000.0).round() as i64));
         let name=name.replace(".sli",&format!("_v14_{:x}.sli",half_width.to_bits()));
-        let name=if s.nodes.is_empty()&&s.connections.is_empty()&&!s.parallel{name}else{use sha2::{Digest,Sha256};name.replace(".sli",&format!("_free_{:x}.sli",Sha256::digest(body.as_bytes())))};
+        let name=if s.nodes.is_empty()&&s.connections.is_empty()&&!s.parallel{name}else{use sha2::{Digest,Sha256};name.replace(".sli",&format!("_free_{}.sli",Sha256::digest(body.as_bytes()).iter().map(|b|format!("{b:02x}")).collect::<String>()))};
         piece.file=name.clone();plan.definitions.push((name,body));
         let c=SplineCurve {half_cant_width:half_width,..SplineCurve::from_map(&piece,DVec2::new(key.0.0 as f64,key.0.1 as f64)*omsi_map::tile_size())};
         let start=c.point_at(if *backwards {piece.length}else{0.0});
@@ -360,7 +360,7 @@ impl Window {
                 if self.preview.markers.len()>100000{return Err("Preview is too large: select a shorter chain".into());}
             } else {self.preview=if skipped==roads.len() {Plan::default()} else {build_missing(&roads,&self.settings,&occupied)?};}
             // Conservative endpoint diagnostic. Interior junctions need explicit connectors.
-            let lanes=world.lanes.lock();let mut open=0;
+            let lanes=world.traffic_inbox.peek(omsi_sim::world_data::TrafficArrivals::lanes_of);let mut open=0;
             for (i,(p,d,start)) in self.preview.endpoints.iter().enumerate() {
                 let internal=self.preview.endpoints.iter().enumerate().any(|(j,(q,e,other))|i!=j&&start!=other&&p.distance(*q)<0.5&&d.dot(*e)>0.8);
                 let external=self.targets.iter().any(|t|*start!=t.start&&p.distance(t.point)<0.5&&d.dot(t.direction)>0.8)

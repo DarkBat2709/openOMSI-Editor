@@ -24,7 +24,7 @@ use omsi_render::{
 use omsi_scenery::{SceneryObject, Spline};
 use omsi_sim::traffic::{Lane, LaneBuilder, LaneKey, LaneKind, TrafficLightController};
 use omsi_texture::{Image, TextureCache, TextureData};
-use parking_lot::{Mutex, RwLock};
+use parking_lot::Mutex;
 use rayon::prelude::*;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -62,7 +62,6 @@ mod vehicle_types;
 mod vehicles;
 pub mod lanes;
 mod season_looks;
-mod sim_world;
 pub mod host;
 
 pub use staging::*;

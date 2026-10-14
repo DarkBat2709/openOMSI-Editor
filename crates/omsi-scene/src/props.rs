@@ -37,11 +37,17 @@ impl World {
     /// Parked car `key` drives off: it is hidden, its box leaves the obstacles, and its space
     /// stays empty for the rest of the run. What it was, for the car that takes its place.
     pub fn depart_parked(&self, renderer: &Renderer, scene: &mut Scene, key: i64) -> Option<ParkedObject> {
+        let p = self.take_departing_parked(key)?;
+        show_parked_instances(renderer, scene, &p.instances, false);
+        Some(p)
+    }
+
+    /// The world's side of [`World::depart_parked`] (its box and space), without the
+    /// renderer: the simulation's, which hands the hiding of `instances` on to the view
+    /// (`show_parked_instances`).
+    pub fn take_departing_parked(&self, key: i64) -> Option<ParkedObject> {
         let p = self.parked_objects.lock().remove(&key)?;
         self.departed.lock().insert(key);
-        for inst in &p.instances {
-            hide_instance(renderer, scene, *inst);
-        }
         let (mut obst, mut boxes) = (Vec::new(), Vec::new());
         if let Some(st) = self.tile_state.lock().get_mut(&p.tile) {
             obst = st.obstacles.iter().filter(|b| b.id == key).cloned().collect();
@@ -189,22 +195,30 @@ impl World {
     /// An AI car has parked in the space of departed parked car `key`: the parked object is
     /// there again (shown, an obstacle, a parked car the traffic keeps clear of).
     pub fn return_parked(&self, renderer: &Renderer, scene: &mut Scene, key: i64) -> bool {
-        let Some((p, obst, boxes)) = self.departed_objects.lock().remove(&key) else { return false };
+        match self.take_returning_parked(key) {
+            Some(instances) => {
+                show_parked_instances(renderer, scene, &instances, true);
+                true
+            }
+            None => false,
+        }
+    }
+
+    /// The world's side of [`World::return_parked`] (the box and the space back), without
+    /// the renderer: the instances to show again (`show_parked_instances`), None when the
+    /// object is not there to come back.
+    pub fn take_returning_parked(&self, key: i64) -> Option<Vec<usize>> {
+        let (p, obst, boxes) = self.departed_objects.lock().remove(&key)?;
         let mut states = self.tile_state.lock();
-        let Some(st) = states.get_mut(&p.tile) else { return false };
+        let st = states.get_mut(&p.tile)?;
         st.obstacles.extend(obst);
         st.parked_boxes.extend(boxes);
         drop(states);
-        for &inst in &p.instances {
-            if let Some(i) = scene.instances.get(inst) {
-                let (alpha, uv) = (i.slot_alpha.clone(), i.slot_uv.clone());
-                renderer.set_params(scene, inst, &alpha, true, &uv);
-            }
-        }
+        let instances = p.instances.clone();
         self.departed.lock().remove(&key);
         self.parked_objects.lock().insert(key, p);
         self.refresh_tile_lists();
-        true
+        Some(instances)
     }
 
     /// The object editor changed map object `id` (the whole edit so far, from where the
@@ -221,7 +235,7 @@ impl World {
         }
         show_edit(renderer, scene, &eo, edit);
         if omsi_cfg::env::var_os("OMSI_EDITOR_TREE_TRACE").is_some() {
-            let animated = self.scripted.lock().iter().any(|o| o.tile == eo.tile && o.map_id == id);
+            let animated = self.scripted.lock().views.iter().any(|o| o.tile == eo.tile && o.map_id == id);
             log::info!("object edit: id {}, {:?}, {} render instances, scripted {}, deleted {}",
                 id, eo.sco, eo.instances.len(), animated, edit.deleted);
         }
@@ -310,7 +324,7 @@ impl World {
         if next.is_none() {
             let index = self.index();
             let max = index.splines.keys().copied()
-                .chain(self.object_positions.lock().keys().copied())
+                .chain(self.data().objects.iter().map(|(id,_)| *id))
                 .chain(index.masters.keys().map(|(_, id)| *id))
                 .chain(self.spline_edits.lock().added.keys().map(|(_, id)| *id))
                 .max().unwrap_or(0).max(recipe_max).max(0);
@@ -336,7 +350,7 @@ impl World {
     pub fn editor_row_source(&self, key: (i32, i32)) -> Result<(Tile, HashSet<i64>), String> {
         let path = self.tile_source(key.0, key.1).ok_or("Road tile missing")?;
         let base = Tile::load(&path).map_err(|e| e.to_string())?;
-        let active = omsi_world::map_index::read_tile(&path, &self.chrono_dirs.read()).ok_or("Active tile missing")?;
+        let active = omsi_world::map_index::read_tile(&path, &self.chrono_dirs()).ok_or("Active tile missing")?;
         // Preserve full equality (and duplicate IDs), but avoid scanning every
         // active spline once for each base spline on dense map tiles.
         let mut active_by_id: std::collections::HashMap<i64, Vec<_>> = std::collections::HashMap::new();
@@ -351,7 +365,7 @@ impl World {
     pub fn collect_editor_splines(&self) {
         if omsi_map::world_coordinates() { return; }
         let loaded = self.loaded_tiles();
-        let chrono = self.chrono_dirs.read().clone();
+        let chrono = self.chrono_dirs();
         self.spline_edits.lock().collected.prepare(omsi_cfg::content_generation(), &chrono, &loaded);
         for tile in loaded {
             if self.spline_edits.lock().collected.contains(tile) { continue; }
@@ -384,19 +398,25 @@ impl World {
         if state.gpu.instances.is_empty() { return None; }
         let gpu = std::mem::take(&mut state.gpu);
         drop(states);
+        Some(gpu)
+    }
+
+    /// Capture CPU scripts before the editor replaces tiles. Simulation owns these
+    /// instances in 0.2.50; GPU views only provide their source and map labels.
+    pub fn capture_editor_scripts(&self, scenery: &omsi_sim::scenery::SceneryState, changed: &[(i32,i32)]) {
         let scripted = self.scripted.lock();
         let mut saved = self.editor_script_states.lock();
+        let selected = |tile: (i32,i32)| changed.iter().any(|q| (tile.0-q.0).abs() <= 1 && (tile.1-q.1).abs() <= 1);
         let mut counts = HashMap::new();
-        for object in scripted.iter().filter(|o| o.tile == key) {
-            *counts.entry(object.map_id).or_insert(0usize) += 1;
+        for view in scripted.views.iter().filter(|v| selected(v.tile)) {
+            *counts.entry((view.tile,view.map_id)).or_insert(0usize) += 1;
         }
-        for object in scripted.iter().filter(|o| o.tile == key) {
-            if counts.get(&object.map_id) != Some(&1) { continue; }
-            // Preserve script variables (including advertisement choices), not GPU/audio
-            // handles. Textures, pages and sound resources are built for the new instance.
-            saved.insert((key, object.map_id), EditorScriptState::capture(&object.ty.sco.path, &object.map_labels, &object.inst));
+        let by_key: HashMap<_,_> = scenery.objects().iter().map(|o| (o.key, o)).collect();
+        for view in scripted.views.iter().filter(|v| selected(v.tile)) {
+            if counts.get(&(view.tile, view.map_id)) != Some(&1) { continue; }
+            let Some(object) = by_key.get(&view.key) else { continue; };
+            saved.insert((view.tile, view.map_id), EditorScriptState::capture(&view.ty.sco.path, &view.map_labels, &object.inst));
         }
-        Some(gpu)
     }
 
     pub fn clear_editor_script_states(&self, key: (i32, i32)) {
@@ -475,8 +495,11 @@ impl World {
         }
         let freed = self.gpu.lock().release_tile(renderer, scene, state.gpu);
         self.drop_scripted(key, audio);
-        self.terrains.write().remove(&key);
-        self.surfaces.write().remove(&key);
+        self.data.update(|d| {
+            let g = Arc::make_mut(&mut d.ground);
+            g.terrains.remove(&key);
+            g.surfaces.remove(&key);
+        });
         freed > 0
     }
 
@@ -571,12 +594,13 @@ impl World {
         id: i64, strings: &[String]) -> Result<TileGpu, String> {
         let object = self.edit_objects.lock().get(&id).cloned().ok_or("Object no longer loaded")?;
         let ot = self.editor_object_type(&object.sco.to_string_lossy())?;
-        let scripted = self.scripted.lock().iter().any(|o| o.map_id == id);
+        let scripted = self.scripted.lock().views.iter().any(|o| o.map_id == id);
         let resources = self.update_editor_label_materials(renderer, scene, &ot, &object.instances, strings, scripted);
-        for object in self.scripted.lock().iter_mut().filter(|o| o.map_id == id) {
-            for (value, text) in object.inst.state.str_vars.iter_mut().zip(strings) { value.clone_from(text); }
-            object.inst.set_var("Refresh_Strings", 1.0);
+        let mut objects = self.scripted.lock();
+        for view in objects.views.iter_mut().filter(|v| v.map_id == id) {
+            view.map_labels = strings.to_vec();
         }
+        objects.inbox.push(omsi_sim::scenery::SceneryChange::EditorLabels { id, strings: strings.to_vec() });
         Ok(resources)
     }
 
@@ -641,21 +665,7 @@ impl World {
         if self.light_maps.lock().remove(&key).is_some() {
             self.light_maps_generation.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         }
-        let mut scripted = self.scripted.lock();
-        if !scripted.iter().any(|o| o.tile == key) {
-            return;
-        }
-        let mut kept = Vec::with_capacity(scripted.len());
-        for mut o in scripted.drain(..) {
-            if o.tile == key {
-                if let (Some(a), Some(mut ss)) = (audio, o.sounds.take()) {
-                    ss.stop_all(a);
-                }
-            } else {
-                kept.push(o);
-            }
-        }
-        *scripted = kept;
+        self.scripted.lock().drop_tile(key, audio);
     }
 
     /// Object types no loaded tile uses any more leave the type cache (with their meshes on
@@ -749,19 +759,24 @@ impl World {
             night.extend(s.night_slots.iter().cloned());
             modes.extend(s.night_modes.iter().cloned());
         }
-        *self.bus_stops.lock() = stops;
-        *self.waiting_places.lock() = waiting;
-        *self.collision.lock() = Arc::new(collision);
-        *self.parked_boxes.lock() = Arc::new(parked);
+        let generation = self.tiles_generation.load(std::sync::atomic::Ordering::Relaxed) + 1;
+        self.data.update(|d| {
+            d.lists = Arc::new(omsi_sim::world_data::TileLists {
+                generation,
+                bus_stops: stops,
+                waiting_places: waiting,
+                collision: Arc::new(collision),
+                parked_boxes: Arc::new(parked),
+                petrol_stations: petrol,
+                reverb_zones: reverb,
+            })
+        });
         *self.static_coronas.lock() = coronas;
         *self.static_lights.lock() = lights;
         *self.light_objects.lock() = lamps;
         *self.night_slots.lock() = night;
         *self.night_modes.lock() = modes;
-        *self.petrol_stations.lock() = petrol;
-        *self.reverb_zones.lock() = reverb;
-        self.tiles_generation
-            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        self.tiles_generation.store(generation, std::sync::atomic::Ordering::Relaxed);
         if omsi_cfg::flags::OMSI_PROFILE.is_set() {
             log::info!("tile lists: {} tiles in {:.1} ms", states.len(), t0.elapsed().as_secs_f64() * 1000.0);
         }
@@ -789,7 +804,7 @@ impl World {
             (x / tile_size()).floor() as i32,
             (y / tile_size()).floor() as i32,
         );
-        self.terrains.read().contains_key(&key)
+        self.data.peek().ground.terrains.contains_key(&key)
     }
 
     /// What the loaded tiles hold, for the streaming statistics.
@@ -967,16 +982,17 @@ impl World {
             }
         }
         let (mut rasters, mut drive, mut tris) = (0usize, 0usize, 0usize);
-        let surfaces = self.surfaces.read();
+        let data = self.data.peek();
+        let surfaces = &data.ground.surfaces;
         for sf in surfaces.values() {
             let (r, d) = sf.heap_bytes();
             rasters += r;
             drive += d;
             tris += sf.drive.tris.len();
         }
-        let terrains: usize = self
+        let terrains: usize = data
+            .ground
             .terrains
-            .read()
             .values()
             .map(|t| t.heights.capacity() * 4)
             .sum();
@@ -1193,7 +1209,13 @@ impl World {
             .textures
             .values()
             .fold((0u64, false), |(b, d), e| (b + e.bytes, d || e.dropped > 0));
-        let usage = scenery_bytes + vehicle_bytes;
+        // Every texture of the scene counts against the card as well (the people, the
+        // script and text textures, the sky's and the terrain's): past half of the card's own
+        // memory, what they hold beyond it is taken from the scenery and the vehicles. The
+        // budget counted the scenery and the vehicles alone, and on an 8 GB card with a
+        // 4000 MB budget the textures grew to 5.4 GB over a drive; with the picture's targets
+        // the card paged to the system's memory and the frame rate fell from 140 to 25 (#2295).
+        let usage = scenery_bytes + vehicle_bytes + texture_overdraft(renderer.texture_bytes(scene));
         if pass == BudgetPass::AfterStreaming && usage <= limit && !memo.resume {
             // (the bytes are all a forced look is for: the restores wait for the second's)
             return 0;
@@ -1492,6 +1514,17 @@ pub(super) fn edited_object_pose(pos: DVec3, xf: Mat4, edit: ObjectEdit) -> (DVe
         Mat4::from_rotation_z(-(edit.turned.to_radians() as f32)) * xf)
 }
 
+/// The renderer's side of a parked car driving off (`visible` false) or coming back (true):
+/// its object's instances hidden or shown, their other parameters kept.
+pub fn show_parked_instances(renderer: &Renderer, scene: &mut Scene, instances: &[usize], visible: bool) {
+    for &inst in instances {
+        if let Some(i) = scene.instances.get(inst) {
+            let (alpha, uv) = (i.slot_alpha.clone(), i.slot_uv.clone());
+            renderer.set_params(scene, inst, &alpha, visible, &uv);
+        }
+    }
+}
+
 /// Stop drawing an instance, keeping its other parameters.
 pub(super) fn hide_instance(renderer: &Renderer, scene: &mut Scene, inst: usize) {
     let Some(i) = scene.instances.get(inst) else { return };
@@ -1598,7 +1631,7 @@ impl World {
         let path=self.tile_source(key.tile.0,key.tile.1).ok_or("AI path tile is not loaded")?;
         let base=Tile::load(&path).map_err(|e|e.to_string())?;
         if base.version<14 {return Err("AI path editing requires a version 14 tile".into());}
-        let active=omsi_world::map_index::read_tile(&path,&self.chrono_dirs.read()).ok_or("Active tile missing")?;
+        let active=omsi_world::map_index::read_tile(&path,&self.chrono_dirs()).ok_or("Active tile missing")?;
         let valid=if source==1 {
             let b:Vec<_>=base.splines.iter().filter(|s|s.id==key.id).collect();let a:Vec<_>=active.splines.iter().filter(|s|s.id==key.id).collect();
             b.len()==1&&a.len()==1&&b[0]==a[0]
@@ -1608,6 +1641,16 @@ impl World {
         }else {false};
         if valid{Ok(())}else{Err("This AI path belongs to a changed Chrono record or an unsupported element".into())}
     }
+}
+
+/// What all textures of the scene (`total`, bytes) hold beyond half of the graphics card's
+/// own memory (none on a card that shares the system's memory, whose size is not known).
+fn texture_overdraft(total: u64) -> u64 {
+    let vram_mb = omsi_render::ADAPTER_VRAM_MB.load(std::sync::atomic::Ordering::Relaxed);
+    if vram_mb == 0 {
+        return 0;
+    }
+    total.saturating_sub(vram_mb * 1_000_000 / 2)
 }
 
 /// Which look at the texture budget (see [`World::update_texture_budget`]).

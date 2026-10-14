@@ -98,7 +98,7 @@ impl Connector {
         piece.rules.push(MapRule {path_index:0,kind:"editor_additional_connection".into(),value:1.0,..Default::default()});
         let body=crate::traffic_editor::definition(&s,false);
         let identity=format!("{body}\n{:?}\n{heading:.17}\n{length:.17}\n{}",piece.pos,self.bus_only);
-        piece.file=format!("{PREFIX}{:x}.sli",Sha256::digest(identity.as_bytes()));
+        piece.file=format!("{PREFIX}{}.sli",Sha256::digest(identity.as_bytes()).iter().map(|b|format!("{b:02x}")).collect::<String>());
         let curve=SplineCurve::from_map(&piece,DVec2::new(origin.x,origin.y));
         let sample=|station:f64|omsi_geometry::editor_path_point(&curve,&s.nodes,0,station,0.0,0.0);
         let mut plan=Plan::default();
