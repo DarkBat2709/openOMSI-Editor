@@ -46,15 +46,13 @@ impl App {
             use crate::terrain_editor::{Command,Field};
             let shift=self.input.keys.contains(&KeyCode::ShiftLeft)||self.input.keys.contains(&KeyCode::ShiftRight);
             let ctrl=self.input.keys.contains(&KeyCode::ControlLeft)||self.input.keys.contains(&KeyCode::ControlRight);
-            let command=match code {
+            let command=crate::terrain_editor::history_command(code,shift,ctrl).or_else(|| match code {
                 KeyCode::Escape=>Some(Command::Exit),
-                KeyCode::KeyZ if ctrl=>Some(if shift {Command::Redo} else {Command::Undo}),
-                KeyCode::KeyY if ctrl=>Some(Command::Redo),
                 KeyCode::KeyS if ctrl=>Some(Command::Save),
                 KeyCode::BracketLeft=>Some(Command::Adjust(Field::Radius,-1.0)),
                 KeyCode::BracketRight=>Some(Command::Adjust(Field::Radius,1.0)),
                 _=>None,
-            };
+            });
             if let Some(command)=command {self.editor_terrain_command(command);return true;}
             // Camera letters have no editor binding; all object/spline keys stay inactive.
             return crate::editor::action_for(code,shift,ctrl,0.0).is_some();

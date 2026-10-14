@@ -488,3 +488,27 @@ mod tests {
         std::fs::remove_dir_all(dir).unwrap();
     }
 }
+
+/// The caller resolves logical Z/Y before mapping undo and redo.
+pub(crate) fn history_command(code: winit::keyboard::KeyCode, shift: bool, ctrl: bool) -> Option<Command> {
+    use winit::keyboard::KeyCode;
+    match code {
+        KeyCode::KeyZ if ctrl => Some(if shift { Command::Redo } else { Command::Undo }),
+        KeyCode::KeyY if ctrl => Some(Command::Redo),
+        _ => None,
+    }
+}
+#[cfg(test)]
+mod history_shortcut_tests {
+    use super::*;
+    use winit::keyboard::Key;
+    #[test]
+    fn logical_z_undoes_terrain_and_logical_y_redoes_on_both_layouts() {
+        let z=crate::editor::history_shortcut(&Key::Character("z".into()),true).unwrap();
+        let y=crate::editor::history_shortcut(&Key::Character("y".into()),true).unwrap();
+        assert!(matches!(history_command(z,false,true),Some(Command::Undo)));
+        assert!(matches!(history_command(y,false,true),Some(Command::Redo)));
+        assert!(matches!(history_command(z,true,true),Some(Command::Redo)));
+        assert!(history_command(z,false,false).is_none());
+    }
+}
