@@ -64,3 +64,16 @@ Nächste lokale Optimierung:
 - Objektgruppen teilen pro Aktualisierung einen gemeinsamen aktuellen Kachel- und Straßenstand. Planung aller Gruppen bleibt vor Installation ihrer Ergebnisse; Fehlerbehandlung und stabile Objekt-IDs bleiben erhalten. Es gibt noch kein Überspringen vermeintlich unbetroffener Gruppen.
 - Regression: mehrere verschobene Straßen/Objektgruppen gegen unabhängige Planung, unveränderte IDs, neu eingelesene Disk-Splines nach Inhaltswechsel und Erhalt ungespeicherter Änderungen. Separater Cache-Test für Inhaltsgeneration, Chrono-Wechsel, ausgeladene Kacheln und Wiederholung nicht erfolgreicher Lesevorgänge.
 - Praktische Zeitersparnis dieser zweiten Optimierung noch offen. Nächster Durchgang: erster Klick nach Laden getrennt von wiederholten Klicks, Verschieben/Rückgängig, Speichern/Neuladen und Auswahl danach.
+
+## Dritter Merge-Durchgang, Hintergrundvorbereitung und Mehrfachauswahl
+
+Neue Messung: Auswahl Alle 17,853 ms, Straßen 5,208 ms, Markierungen 5,782 ms im Mittel. Einsammeln wiederverwendeter Daten meist 0,002–0,003 ms. Objektgruppen-Aktualisierung 52,211 ms im Mittel, 96,526 ms Maximum. Einmalige Initialisierung noch 1414 ms, gesamte entsprechende Aktualisierung 1511 ms. Unterschiedliche Klickzahlen/Standorte; kein kontrollierter Benchmark.
+
+Lokale nächste Testfassung:
+- Die erste Vorbereitung der Objektgruppen läuft in einem CPU-Hintergrundthread für die aktuelle World. Geänderte Kacheln bleiben bis zum Abschluss vorgemerkt; erst dann werden Gruppen auf Basis der aktuellen Änderungen berechnet und Kacheln aktualisiert. Fehler werden zurückgemeldet; eine verlassene World kann keine neue Sitzung verändern. Während der Vorbereitung wird Speichern mit einem Hinweis abgewiesen.
+- Strg+Klick fügt einen Spline zur Gruppe hinzu oder entfernt ihn. Normaler Klick auf ein Gruppenmitglied erhält die Gruppe zum Ziehen, auf einen anderen Spline ersetzt er sie; Klick ins Leere hebt die Auswahl auf. Tab kehrt zur Einzelauswahl zurück. Auswahlfilter gelten weiterhin pro Klick; für Straße plus Markierungen/Gehweg empfiehlt sich Alle Splines.
+- Alle Gruppenmitglieder erhalten Marker; die Statusanzeige nennt die Anzahl. I/J/K/L und U/O sowie Mausziehen bewegen die Gruppe mit identischer Verschiebung. Ein Mauszug ergibt einen gemeinsamen Rückgängig-Schritt. Andere Geometriewerkzeuge benötigen Einzelauswahl.
+- Mitglieder dürfen auf unterschiedlichen Kacheln liegen, bleiben aber jeweils innerhalb ihrer ursprünglichen Kachelgrenzen. Wird eine Grenze verletzt oder fehlt ein Mitglied, bewegt sich keines. Bestehende Verknüpfungen/IDs werden beibehalten; Anschlüsse an nicht mitbewegte Nachbarn müssen anschließend geprüft werden.
+- Tests: Gruppenauswahl, Entnahme und Leerklick; gemeinsame Verschiebung/Höhe; abgelehnte Grenzüberschreitung ohne Teiländerung; mehrere Mausbewegungen mit einem Undo; Speichern auf zwei Kacheln bei unveränderten Originaldateien; asynchrone Vorbereitung bei erhaltener Dirty-Warteschlange. DE/EN-Bedienhinweise ergänzt.
+
+Veröffentlichung ausdrücklich erst nach praktischen Tests und Freigabe von Chris. Nur lokale Bautest-Installation aktualisieren, kein Push und kein Release-Upload.

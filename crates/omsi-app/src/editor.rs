@@ -903,6 +903,9 @@ impl Editor {
     /// Write every tile with edits as a copy under `content` (the map's own folder there),
     /// from the file the game reads it from. Returns the files written.
     pub fn save(&self, world: &World, map_rel: &str, content: &Path, original: &Path) -> Result<Vec<PathBuf>, String> {
+        if world.roadside_edits.lock().initializing {
+            return Err("Object rows are still being prepared. Save again once the preview is ready.".into());
+        }
         let edits = world.object_edits.lock().clone();
         let mut by_tile: HashMap<(i32, i32), HashMap<i64, ObjectEdit>> = HashMap::new();
         for (id, e) in edits {

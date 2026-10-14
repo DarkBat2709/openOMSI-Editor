@@ -75,6 +75,29 @@ pub fn initialize(world: &World) -> Result<(), String> {
     if !edits.initialized { edits.sources.extend(sources); edits.groups = groups; edits.initialized = true; }
     Ok(())
 }
+/// Disk reads and recipe validation run off the UI thread. Dirty road edits stay
+/// queued until this finishes; a worker only ever belongs to its captured World.
+pub fn prepare_async(world: &Arc<World>) -> bool {
+    {
+        let mut edits = world.roadside_edits.lock();
+        if edits.initialized || edits.initialization_error.is_some() { return true; }
+        if edits.initializing { return false; }
+        edits.initializing = true;
+    }
+    let worker = world.clone();
+    if let Err(error) = std::thread::Builder::new().name("editor-object-rows".into()).spawn(move || {
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| initialize(&worker)))
+            .unwrap_or_else(|_| Err("Object row preparation failed".into()));
+        let mut edits = worker.roadside_edits.lock();
+        edits.initializing = false;
+        edits.initialization_error = result.err();
+    }) {
+        let mut edits = world.roadside_edits.lock();
+        edits.initializing = false;
+        edits.initialization_error = Some(error.to_string());
+    }
+    false
+}
 fn current_tiles(world: &World) -> HashMap<TileKey, Source> {
         let _diagnostic = crate::editor_diagnostics::Span::new("current_tiles", "");
     let known:HashSet<_>=world.roadside_edits.lock().sources.keys().copied().collect();
@@ -859,7 +882,19 @@ mod tests {
         let mut second = segment(((0,0),2), 20.0, 100.0);
         second.spline.pos[0] += 200.0;
         std::fs::write(map.join("tile_0_0.map"), format!("[version]\n14\n{}{}", spline_record(&first.spline), spline_record(&second.spline))).unwrap();
-        let world = World::open(&dir, &map.join("global.cfg"), 20000101).unwrap();
+        let world = Arc::new(World::open(&dir, &map.join("global.cfg"), 20000101).unwrap());
+        world.spline_edits.lock().dirty=true;
+        world.spline_edits.lock().dirty_tiles.insert((0,0));
+        assert!(!prepare_async(&world));
+        let deadline=std::time::Instant::now()+std::time::Duration::from_secs(10);
+        while !prepare_async(&world) {
+            assert!(std::time::Instant::now()<deadline,"background preparation timed out");
+            std::thread::sleep(std::time::Duration::from_millis(2));
+        }
+        assert!(world.roadside_edits.lock().initialized);
+        assert!(world.roadside_edits.lock().initialization_error.is_none());
+        assert!(world.spline_edits.lock().dirty);
+        assert!(world.spline_edits.lock().dirty_tiles.contains(&(0,0)));
         for road in [&first, &second] {
             apply(&world, road.key, Settings::default(), DEFAULT_OBJECT.into()).unwrap();
             let mut moved = road.spline.clone(); moved.pos[0] += 10.0;

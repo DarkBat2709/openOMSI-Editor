@@ -3048,3 +3048,27 @@ _version: 2
 
 "Selection: other / unknown":
   de: "Auswahl: Sonstige / unbekannt"
+
+"Preparing object rows in the background…":
+  de: "Objektreihen werden im Hintergrund vorbereitet…"
+
+"Object rows are still being prepared. Save again once the preview is ready.":
+  de: "Objektreihen werden noch vorbereitet. Bitte nach der Aktualisierung erneut speichern."
+
+"Selected splines":
+  de: "Ausgewählte Splines"
+
+"Move together · Ctrl+Z undoes the whole move":
+  de: "Gemeinsam verschieben · Strg+Z nimmt die gesamte Bewegung zurück"
+
+"Group move would cross a tile boundary; nothing moved":
+  de: "Gruppenbewegung würde eine Kachelgrenze überschreiten; nichts verschoben"
+
+"Select existing splines first":
+  de: "Zuerst vorhandene Splines auswählen"
+
+"Select one spline for this tool; groups support moving and height changes":
+  de: "Für dieses Werkzeug einen Spline auswählen; Gruppen können verschoben und in der Höhe geändert werden"
+
+"Ctrl+click: add/remove · Click empty: clear":
+  de: "Strg+Klick: hinzufügen/entfernen · Ins Leere klicken: Auswahl aufheben"

@@ -60,6 +60,8 @@ pub struct Source { pub tile: Arc<Tile>, pub editable: Arc<HashSet<i64>> }
 #[derive(Clone, Default)]
 pub struct Edits {
     pub initialized: bool,
+    pub initializing: bool,
+    pub initialization_error: Option<String>,
     pub sources: HashMap<TileKey, Source>,
     pub groups: Vec<Group>,
     pub changes: HashMap<TileKey, HashMap<i64, Option<RowEdit>>>,

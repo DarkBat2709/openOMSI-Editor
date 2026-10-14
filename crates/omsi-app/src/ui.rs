@@ -844,7 +844,7 @@ impl Ui {
             self.editor_hint_mode = Some((spline, expanded));
         }
         let shortcuts = editor_shortcuts(spline, expanded);
-        let footer = if connection.is_some() { 198.0 } else if tools.is_some() { 288.0 } else if objects.is_some() {192.0} else { 0.0 };
+        let footer = if connection.is_some() { 198.0 } else if tools.is_some() { 320.0 } else if objects.is_some() {192.0} else { 0.0 };
         let hud_bottom = self.editor_hud_rect.map_or(viewport[1], |rect| rect[3]);
         let layout = editor_dock_layout(viewport, s, hud_bottom, shortcuts.len(), footer, self.editor_dock_position, spline);
         self.editor_help_scroll_max = layout.max_scroll;
@@ -1146,11 +1146,13 @@ impl Ui {
         use crate::editor::Action;
         let Some((enabled, filter)) = enabled else { return; };
         let [x, y] = origin;
-        let panel = [x, y, x + 284.0 * s, y + 288.0 * s];
+        let panel = [x, y, x + 284.0 * s, y + 320.0 * s];
         self.editor_tools_rect = Some(panel);
         self.editor_surface(r, scene, panel, 3.0 * s, PANEL);
         self.catalog_text(r, scene, if enabled { "Road shoulders / terrain" } else { "Select a road first" },
             (x + 8.0 * s, y + 5.0 * s), 268.0 * s, 13.0 * s, MUTED);
+        self.catalog_text(r, scene, "Ctrl+click: add/remove · Click empty: clear",
+            (x + 8.0 * s, y + 285.0 * s), 268.0 * s, 12.0 * s, MUTED);
         for (row, (action, title)) in [
             (Action::CycleSelectionFilter, filter.title()),
             (Action::SmoothRoad(false), "Smooth shoulder (F8)"),

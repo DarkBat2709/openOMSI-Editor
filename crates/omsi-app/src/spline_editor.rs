@@ -43,6 +43,8 @@ fn selection_category(file: &str, def: Option<&omsi_scenery::Spline>) -> Selecti
 pub struct SplineEditor {
     pub selected: Option<Key>,
     pub selection_filter: SelectionFilter,
+    group: Vec<Key>,
+    group_drag_before: Option<Vec<(Key, MapSpline)>>,
     candidates: Vec<Key>,
     next: usize,
     start: Option<(DVec3, String)>,
@@ -110,6 +112,55 @@ struct ConnectionGeometry {
 }
 
 impl SplineEditor {
+    pub fn multiple_selected(&self) -> bool { self.selection_keys().len() > 1 }
+    fn selection_keys(&self) -> Vec<Key> {
+        match self.selected {
+            Some(key) if self.group.contains(&key) => self.group.clone(),
+            Some(key) => vec![key], None => Vec::new(),
+        }
+    }
+    fn update_group(&mut self, previous: Vec<Key>, hit: Option<Key>, additive: bool) {
+        self.group = previous;
+        if additive {
+            if let Some(key) = hit {
+                if self.group.contains(&key) { self.group.retain(|k| *k != key); }
+                else { self.group.push(key); }
+            }
+        } else if hit.is_none_or(|key| !self.group.contains(&key)) {
+            self.group = hit.into_iter().collect();
+        }
+        self.selected = hit.filter(|k| self.group.contains(k)).or_else(|| self.group.last().copied());
+    }
+    pub fn pick_group(&mut self, world: &World, eye: DVec3, forward: Vec3, additive: bool) {
+        if self.connection_active() { self.pick(world, eye, forward); return; }
+        let previous = self.selection_keys();
+        self.pick(world, eye, forward);
+        self.update_group(previous, self.selected, additive);
+    }
+    fn move_group(&mut self, world: &World, delta: DVec3) -> Option<String> {
+        let keys = self.selection_keys();
+        let before: Vec<_> = { let edits = world.spline_edits.lock();
+            keys.iter().filter_map(|k| edits.current(*k).filter(|s| !s.deleted).map(|s| (*k, s))).collect() };
+        if before.len() != keys.len() || before.is_empty() { return Some("Select existing splines first".into()); }
+        let after: Vec<_> = before.iter().map(|(key, s)| {
+            let mut s = s.clone(); s.pos[0] += delta.x; s.pos[1] += delta.y; s.pos[2] += delta.z; (*key, s)
+        }).collect();
+        if after.iter().any(|(_, s)| !inside_tile(s)) {
+            return Some("Group move would cross a tile boundary; nothing moved".into());
+        }
+        if after == before { return Some(self.describe(world)); }
+        if self.drag_offset.is_some() {
+            if let Some(initial) = self.group_drag_before.take() { self.remember(initial); }
+        } else { self.remember(before); }
+        let mut edits = world.spline_edits.lock();
+        for (key, s) in after {
+            if edits.added.contains_key(&key) { edits.added.insert(key, s); }
+            else { edits.changed.insert(key, s); }
+            edits.dirty_tiles.insert(key.0);
+        }
+        edits.dirty = true; drop(edits);
+        Some(self.describe(world))
+    }
     pub fn cycle_selection_filter(&mut self) -> &'static str {
         self.selection_filter = self.selection_filter.next();
         self.candidates.clear(); self.next = 0;
@@ -159,6 +210,8 @@ impl SplineEditor {
     }
 
     fn pick_loaded(&mut self, cache: &parking_lot::Mutex<Edits>, loaded: &[(i32, i32)], eye: DVec3, forward: Vec3, edges: &HashMap<Key, Vec<DVec3>>) -> Option<i64> {
+        self.group.clear();
+        self.group_drag_before = None;
         let edits = cache.lock();
         let loaded: HashSet<_> = loaded.iter().copied().collect();
         let f = forward.as_dvec3().normalize_or_zero();
@@ -189,6 +242,7 @@ impl SplineEditor {
     }
 
     pub fn next_pick(&mut self) -> Option<i64> {
+        self.group.clear();
         if self.candidates.is_empty() { self.selected = None; return None; }
         self.selected = Some(self.candidates[self.next % self.candidates.len()]);
         self.next += 1;
@@ -200,6 +254,8 @@ impl SplineEditor {
         if let Some((p, _)) = &self.start {
             return format!("Start {:.2}/{:.2}/{:.2}: point at target and press Shift+G · B cancels", p.x, p.y, p.z);
         }
+        let count = self.selection_keys().len();
+        if count > 1 { return format!("{}: {count} · {}", omsi_ui::tr("Selected splines"), omsi_ui::tr("Move together · Ctrl+Z undoes the whole move")); }
         let Some((key, s)) = self.selected.and_then(|k| world.spline_edits.lock().current(k).map(|s| (k, s))) else {
             return "No road selected".into();
         };
@@ -211,10 +267,9 @@ impl SplineEditor {
 
     pub fn markers(&self, world: &World) -> Vec<DVec3> {
         if let Some((p, _)) = &self.start { return vec![*p]; }
-        self.selected.and_then(|k| world.spline_edits.lock().current(k).map(|s| (k, s)))
-            .filter(|(_, s)| !s.deleted)
-            .map(|(k, s)| edge_markers(world, k.0, &s, 8))
-            .unwrap_or_default()
+        let roads: Vec<_> = { let edits = world.spline_edits.lock();
+            self.selection_keys().into_iter().filter_map(|k| edits.current(k).filter(|s| !s.deleted).map(|s| (k,s))).collect() };
+        roads.into_iter().flat_map(|(k,s)| edge_markers(world,k.0,&s,8)).collect()
     }
 
     pub fn connection_active(&self) -> bool { self.connection.is_some() }
@@ -417,6 +472,10 @@ impl SplineEditor {
         if matches!(action, Action::Straight) && self.start.take().is_some() {
             return Some("Spline creation cancelled".into());
         }
+        if self.selection_keys().len() > 1 {
+            if let Action::Move(delta) = action { return self.move_group(world, *delta); }
+            return Some("Select one spline for this tool; groups support moving and height changes".into());
+        }
         let key = self.selected?;
         let mut s = world.spline_edits.lock().current(key)?;
         match action {
@@ -500,7 +559,7 @@ impl SplineEditor {
         }
         let Some(before) = self.undo.pop() else { return "No action to undo".into() };
         let selection = before.splines.first().map(|(key, _)| *key).or(self.selected);
-        self.drag_offset = None;
+        self.finish_drag();
         let terrain_keys: Vec<_> = before.terrain.iter().map(|(key, _)| *key).collect();
         {
             let mut terrain = world.terrain_edits.lock();
@@ -973,7 +1032,12 @@ impl SplineEditor {
     pub fn begin_drag(&mut self, world: &World, ground: DVec3) {
         self.drag_offset = None;
         self.drag_before = None;
+        self.group_drag_before = None;
         if self.connection_active() { return; }
+        if self.selection_keys().len() > 1 {
+            let edits = world.spline_edits.lock();
+            self.group_drag_before = Some(self.selection_keys().iter().filter_map(|k| edits.current(*k).map(|s| (*k,s))).collect());
+        }
         if let Some((key, s)) = self.selected.and_then(|k| world.spline_edits.lock().current(k).map(|s| (k, s))) {
             if s.deleted { return; }
             self.drag_offset = Some(curve(key.0, &s).point_at(0.0) - ground);
@@ -981,11 +1045,15 @@ impl SplineEditor {
         }
     }
 
-    pub fn finish_drag(&mut self) { self.drag_offset = None; self.drag_before = None; }
+    pub fn finish_drag(&mut self) { self.drag_offset = None; self.drag_before = None; self.group_drag_before = None; }
 
     pub fn drag_to(&mut self, world: &World, ground: DVec3) -> Option<String> {
         let key = self.selected?;
         let offset = self.drag_offset?;
+        if self.selection_keys().len() > 1 {
+            let current = world.spline_edits.lock().current(key)?;
+            return self.move_group(world, ground + offset - curve(key.0, &current).point_at(0.0));
+        }
         let mut s = world.spline_edits.lock().current(key)?;
         let before_move = s.clone();
         let at = ground + offset;
@@ -1771,6 +1839,68 @@ mod tests {
 
     fn parsed(text: &str) -> Tile {
         Tile::parse(&omsi_cfg::CfgFile::from_str("test.map", text))
+    }
+
+    #[test]
+    fn group_selection_toggles_preserves_drag_target_and_clears_on_empty_click() {
+        let a=((0,0),1); let b=((1,0),2); let mut editor=SplineEditor::default();
+        editor.update_group(vec![a],Some(b),true);
+        assert_eq!(editor.selection_keys(),vec![a,b]);
+        editor.update_group(editor.selection_keys(),Some(a),false);
+        assert_eq!(editor.selection_keys(),vec![a,b]);
+        editor.update_group(editor.selection_keys(),Some(a),true);
+        assert_eq!(editor.selection_keys(),vec![b]);
+        editor.update_group(editor.selection_keys(),None,true);
+        assert_eq!(editor.selection_keys(),vec![b]);
+        editor.update_group(editor.selection_keys(),None,false);
+        assert!(editor.selection_keys().is_empty());
+    }
+
+    #[test]
+    fn group_move_drag_undo_boundary_rejection_and_save_cover_multiple_tiles() {
+        let stamp=std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos();
+        let dir=std::env::temp_dir().join(format!("omsi-spline-group-{stamp}"));
+        let original=dir.join("original");let map=original.join("maps/Test");let content=dir.join("mod");
+        std::fs::create_dir_all(&map).unwrap();
+        std::fs::write(map.join("global.cfg"),"[map]\n0\n0\ntile_0_0.map\n[map]\n1\n0\ntile_1_0.map\n").unwrap();
+        let a=((0,0),1);let b=((1,0),2);
+        let first=MapSpline{id:1,pos:[100.0,20.0,3.0],length:20.0,file:"road.sli".into(),..Default::default()};
+        let second=MapSpline{id:2,pos:[110.0,30.0,4.0],..first.clone()};
+        for (key,spline) in [(a,&first),(b,&second)] {
+            std::fs::write(map.join(format!("tile_{}_0.map",key.0.0)),format!("[version]\n14\n{}",record(spline,"0","\n"))).unwrap();
+        }
+        let world=World::open(&original,&map.join("global.cfg"),20000101).unwrap();
+        world.spline_edits.lock().originals.extend([(a,first.clone()),(b,second.clone())]);
+        let mut editor=SplineEditor{selected:Some(a),group:vec![a,b],..Default::default()};
+        editor.apply(&world,&Action::Move(DVec3::new(2.0,3.0,4.0))).unwrap();
+        assert_eq!(world.spline_edits.lock().current(a).unwrap().pos,[102.0,23.0,7.0]);
+        assert_eq!(world.spline_edits.lock().current(b).unwrap().pos,[112.0,33.0,8.0]);
+        assert_eq!(world.spline_edits.lock().dirty_tiles.len(),2);
+        assert_eq!(editor.undo.len(),1);editor.undo(&world);
+        assert_eq!(world.spline_edits.lock().current(a).unwrap(),first);
+        assert_eq!(world.spline_edits.lock().current(b).unwrap(),second);
+        let undo_count=editor.undo.len();
+        assert!(editor.move_group(&world,DVec3::new(1000.0,0.0,0.0)).unwrap().contains("nothing moved"));
+        assert_eq!(editor.undo.len(),undo_count);
+        assert_eq!(world.spline_edits.lock().current(a).unwrap(),first);
+        assert_eq!(world.spline_edits.lock().current(b).unwrap(),second);
+        let ground=curve(a.0,&first).point_at(0.0);
+        editor.begin_drag(&world,ground);
+        editor.drag_to(&world,ground+DVec3::new(2.0,0.0,0.0)).unwrap();
+        editor.drag_to(&world,ground+DVec3::new(5.0,0.0,0.0)).unwrap();
+        editor.finish_drag();assert_eq!(editor.undo.len(),undo_count+1);
+        assert_eq!(world.spline_edits.lock().current(b).unwrap().pos[0],115.0);
+        crate::editor::Editor::default().save(&world,"maps/Test/global.cfg",&content,&original).unwrap();
+        for (key,old) in [(a,&first),(b,&second)] {
+            let saved=Tile::load(&content.join(format!("maps/Test/tile_{}_0.map",key.0.0))).unwrap();
+            assert_eq!(saved.splines[0].pos[0],old.pos[0]+5.0);
+            assert_eq!(saved.splines[0].id,old.id);
+            assert_eq!(Tile::load(&map.join(format!("tile_{}_0.map",key.0.0))).unwrap().splines[0].pos[0],old.pos[0]);
+        }
+        editor.undo(&world);
+        assert_eq!(world.spline_edits.lock().current(a).unwrap(),first);
+        assert_eq!(world.spline_edits.lock().current(b).unwrap(),second);
+        std::fs::remove_dir_all(dir).unwrap();
     }
 
     #[test]
