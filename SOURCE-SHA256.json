@@ -1,5 +1,5 @@
 {
-  "version": "0.8.2-port-test",
+  "version": "0.8.3-pre",
   "base": "0.2.50",
   "files": {
     ".cargo/config.toml": "6f20c4a5a8634e914fc01a0b5d96d66a9b4347cf26b7f88ca47916ed079e1634",
@@ -13,7 +13,7 @@
     ".github/scripts/issue_triage.py": "49d44411481d0a3498b7a23190fdf7e863978acb9db7d4087c8a1257c9f6fe4c",
     ".github/workflows/apple.yml": "010993cd71827866b2a768b1d520b2f951e4eda93951de923b16ef120816838a",
     ".github/workflows/close_invalid_prs.yml": "c93b1205db33cd66e1dbfb0cb3c37455d84598e606a1f6d9999ae1b648256e8a",
-    ".github/workflows/editor-preview.yml": "6ceabbf4f5bd3ff4b429d7e0aa9cd1dc97e51b982af8911a6323256ce027d100",
+    ".github/workflows/editor-preview.yml": "02d147dec65147f97e69b1042381005fed6fb769bab24f9095826378ae01dd14",
     ".github/workflows/issue_language.yml": "9b7902757ff4f68510a1cbc7eead57bc10ee7001781a882c20cbce43e6b80fa0",
     ".github/workflows/issue_triage.yml": "80f9f30a0ef0a2725b634a0495da01556f9da03818c6ee4f364fb6918cba7a75",
     ".github/workflows/pages.yml": "90ac29d7d761e3d19075fa72a1f10008fe6bd837ce73b98bb6a0e9838cc796b7",
@@ -29,7 +29,7 @@
     "Cargo.toml": "a86a1e8202bf950e7a7454700134f69f40f6f08c8c5671f87f17830279c1db11",
     "INSTALLIEREN.sh": "b348f2493e0194ada83ceff1e7b1cadcdab487dc8308bd1a4135e8ea9009b1db",
     "LICENSE": "7e311b06b1ec5da87629d84bf2f61eaa9bb6fd3bc689576563645e619d88c5d7",
-    "README.md": "b33720edc639909beb967319493d5ab67fc67e73ea7ee2e7e107e3af69ab4ffd",
+    "README.md": "8aa553bae77fef54ce4e77b560d9e5156e9fdc406890a3099e0b2bbe275f9fb3",
     "SECURITY.md": "e126b16e5e6ab95f14fd55e2505938b4079ded10bb14e2070485bc99e2fafc9d",
     "VERSION": "88930bd051d214a973581b9492a5ca110aea3fdd5dc65a68bc444b6173877bbd",
     "android/AndroidManifest.xml": "36cdd205aa939f83674ae52b6472325dcc03b5418d1b3b3af82590cfee679025",
@@ -304,7 +304,7 @@
     "crates/omsi-app/src/app_events/frame/road.rs": "8ca627e92eb1c23de0d36c59dc625c34c5951e1f21262124be9351560134a0bc",
     "crates/omsi-app/src/app_events/frame/stages.rs": "9a991faed064b5aff2fe639db7c888bf431a8c0322cc25bf7b152c4347e0259a",
     "crates/omsi-app/src/app_events/frame/steps.rs": "26bf8497f4e852da9e8ff0d9124ce885b5084a06f6f1853dbaa88ea4ec52615e",
-    "crates/omsi-app/src/app_events/frame/surroundings.rs": "a24d7c669d0e5feaa32b35b32e38d56bf948bd6a096846c36cd4eadda623df3d",
+    "crates/omsi-app/src/app_events/frame/surroundings.rs": "06c9c7d109fb2f183ab825dc6ce4f72259524570c6c93aaad2bcf3455bfa52db",
     "crates/omsi-app/src/app_events/frame/ticked.rs": "013237c01c263ed95cc16f6737f9131a7488bf8f11eb1009c38f29dd32386f96",
     "crates/omsi-app/src/app_events/frame/timing.rs": "c3ca84dfaed7f8f40aa6cb87dfcdd9e61ecd786c343d30cd77021058bf9873b9",
     "crates/omsi-app/src/app_events/frame/view_camera.rs": "6eefc8197b390876e14df629d77f03533048b681fdbc4b94b04e1ec151a5d160",
@@ -497,7 +497,7 @@
     "crates/omsi-app/src/view_sync/people/avatars.rs": "08aa0fcb6bc630479547c3e0c1cb8e072a674b45cf74945969a815b34c808a1d",
     "crates/omsi-app/src/view_sync/traffic.rs": "7dd86c002edd0511265b6b1433615e0ed522fe95c537bd79cc44f06b8d882871",
     "crates/omsi-app/src/view_sync/traffic_audio.rs": "105a573c15f8846192110af704d751e46d121f56468e4552c2fae92f194369a1",
-    "crates/omsi-app/src/view_sync/vehicle.rs": "0a3b27f7ed89b4c9df392d99200d0568493b278aba6089eac180c375a7867a11",
+    "crates/omsi-app/src/view_sync/vehicle.rs": "bc2afb93ad11e7947f5e371c8e743d373f4da4d9f47db50935393faa88157e2e",
     "crates/omsi-app/src/view_sync/vehicle_damage.rs": "65f4f1f66e3be860593d05e33f9788d9b66e07cfb9dc1f48ddab2d9114915be3",
     "crates/omsi-app/src/vr_navigator.rs": "6fd0bf9a7b9df15340633818ef7b69d4472f79f9f1080037a71ab0d68eec6cf6",
     "crates/omsi-app/src/weather_setup.rs": "db573e795d9fce189d73d0ae885758b9a143e0ac5678ebbf1179986e5bfe78b5",
@@ -1224,7 +1224,7 @@
     "docs/PBR.md": "55cc4bc4db665a1bcf69fc806fffc2e57726ce3dd220e1de37496b036b5d7784",
     "docs/PLUGINS.md": "e6ac3791a03fb9e1bc38c8033fdfd2489e78768f564e57faa078c3dd8e772eba",
     "docs/PORTIERUNG_0.2.38.md": "ef141f20831201f16c2088e251fd0b389851312674b3998e26fd8c56b00193bd",
-    "docs/PORTIERUNG_0.2.50.md": "98c8602f628fc66cccf814efd06e7821fed018a4ca860bf341b0dc3ec3d9c298",
+    "docs/PORTIERUNG_0.2.50.md": "d2f1e6936e7174076b6071d54d378fd76c7503929f0fa5b65e6b1e738cf398c6",
     "docs/PRUEFUNG_0.7.12.txt": "0a6e23e1a95e46b753b30223a753f9a1f5beed2bfe0139c978f10281a6fba514",
     "docs/PRUEFUNG_0.7.13.txt": "80d568e849acd00ab27d6ee2ab1480a7633e1b5ed50906a4704468b881418e1c",
     "docs/PRUEFUNG_0.7.14.txt": "2fc5a727432d7f7d01322defe05dedef6555260dc7c0bcee9cb0f2d2955d0b73",
@@ -1501,8 +1501,8 @@
     "scripts/editor/install_0_7_22.py": "e0e3689420718a71de11136a85275538c21389ba8cefa24948db8fbdfbe6ef92",
     "scripts/editor/install_0_7_23.py": "14447d5c1f8a13705024b76cec02343651c72ea0d708c78abc53b103064b068f",
     "scripts/editor/install_basis_0_2_38.py": "d646086f435c1463ca2a35aedc82dceb50057d209953857f83c0ea2514aee233",
-    "scripts/editor/install_basis_0_2_50.py": "83c802dde4da4a35cc14d66baf743ff084b753d61af6e85e51b8d182dc127061",
-    "scripts/editor/package_windows.py": "99e808377b4be5e08611fe8cb3cf22063bdda6e080083028398d38679ae32315",
+    "scripts/editor/install_basis_0_2_50.py": "4b44a59505143570206569ae765e70bca61a153bc063c86a739b7ead265d4999",
+    "scripts/editor/package_windows.py": "eaaf67c8913ffba5b1e6d8712de97ab3b9f6900bb1bc99c0cb451612cad837bc",
     "scripts/editor/test_basis_0_2_38_install.py": "a985e6a09721334a38c918b62fdc9dadd221534446b8ad03e748ae16774ea94c",
     "scripts/editor/test_basis_0_2_50_install.py": "3feb34d189eb5e2c5b46a6cc067e90c75b99b5a641ed5066709246a7b99a53b3",
     "scripts/editor/test_candidate_install.py": "9f00c67b100d084d40b3cb2124a4ba83d30b95af0195ba32d4d88e9222584479",
@@ -1552,6 +1552,7 @@
     "tools/omsi-check/src/dump.rs": "096875f93b0882a4fb21154d104ef63d934220ac090f0b50a09b6f2b5c2ecf10",
     "tools/omsi-check/src/fleet.rs": "58cf793089b1bc20e17107d3200df77e657eff2b5b30dad1ddb14e3b6515d6cd",
     "tools/omsi-check/src/main.rs": "5cbaf56e9df24cca5a09af87dc252ab7c71edeb4d34c0d80b5dc9b973f1d4c79",
-    "tools/test-support/original_root.rs": "6ef641f2504bcecfc0e120c6700fdb9413dfde550b53f2acf95e287f54111241"
+    "tools/test-support/original_root.rs": "6ef641f2504bcecfc0e120c6700fdb9413dfde550b53f2acf95e287f54111241",
+    "docs/UPDATE_0.8.3.md": "7b4513e96b3365639a8833f3ddf3b20fa523345e655a7afe77f896d42bdfab77"
   }
 }

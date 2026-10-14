@@ -10,7 +10,7 @@ import subprocess
 import sys
 import tempfile
 
-VERSION = '0.8.2-port-test'
+VERSION = '0.8.3-pre'
 ROOT = Path(__file__).resolve().parents[2]
 
 
@@ -41,7 +41,7 @@ def install(source, destination, profile="release"):
     if not binary.is_file() or not steam.is_file() or not launcher.is_file():
         raise ValueError('Build-Ausgabe oder Steam-Laufzeit fehlt.')
     destination.parent.mkdir(parents=True, exist_ok=True)
-    with tempfile.TemporaryDirectory(prefix='.editor-0.8.2-', dir=destination.parent) as folder:
+    with tempfile.TemporaryDirectory(prefix='.editor-0.8.3-', dir=destination.parent) as folder:
         staging = Path(folder) / 'editor'
         staging.mkdir()
         for item in [binary, steam, launcher]:
@@ -64,6 +64,7 @@ content_dir="$(cd -- "$1" && pwd)"
 shift
 export OMSI_CONTENT="$content_dir"
 export OMSI_NO_UPDATE=1
+export OPENOMSI_BIN="$editor_dir/openomsi"
 cd -- "$content_dir"
 exec "$editor_dir/openomsi" "$@"
 ''', encoding='utf-8')
@@ -78,7 +79,7 @@ exec bash "$editor_dir/start-editor.sh" "$@"
         (staging / 'VERSION-EDITOR.txt').write_text(
             f'Editor {VERSION}\nopenOMSI-Basis 0.2.50\nQuellpaket SHA256: '
             + hashlib.sha256((source / 'SOURCE-SHA256.json').read_bytes()).hexdigest()
-            + '\nLinux-Vorabversion; privater Portierungstest; keine Freigabe; VM-Installation noch nicht geprüft.\n', encoding='utf-8')
+            + '\nLinux-Vorabversion; Bau- und Fahrtests unter Linux bestanden; VM-Installation noch nicht geprüft.\n', encoding='utf-8')
         if destination.exists():
             raise ValueError('Zielordner wurde inzwischen angelegt.')
         staging.rename(destination)
@@ -115,5 +116,5 @@ if __name__ == '__main__':
     try:
         main()
     except (ValueError, OSError, subprocess.CalledProcessError) as exc:
-        print(f'\nAbgebrochen: {exc}\nBitte update-0.8.2-pre.log schicken.', file=sys.stderr)
+        print(f'\nAbgebrochen: {exc}\nBitte update-0.8.3-pre.log schicken.', file=sys.stderr)
         sys.exit(1)

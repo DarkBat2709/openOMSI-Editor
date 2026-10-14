@@ -100,6 +100,12 @@ pub fn sync_vehicle_part(
 /// `..\\Texture\\mb_pmon\\warning.bmp`: if the normal lookup misses, retry the part
 /// below the `Texture` component against the vehicle's texture search directories.
 pub(crate) fn find_vehicle_freetex(name: &str, dirs: &[&Path]) -> Option<PathBuf> {
+    // Generated timetable pictures live outside the vehicle's texture folders.
+    // Keep their absolute path intact; OMSI-relative resolution strips its root.
+    let absolute = Path::new(name.trim());
+    if absolute.is_absolute() && omsi_cfg::vfs::is_file(absolute) {
+        return Some(absolute.to_path_buf());
+    }
     if let Some(path) = omsi_texture::find_texture(name, dirs) {
         return Some(path);
     }
@@ -519,6 +525,19 @@ mod freetex_key_tests {
 #[cfg(test)]
 mod freetex_path_tests {
     use super::*;
+
+    #[test]
+    fn vehicle_freetex_finds_generated_schedule_outside_texture_dirs() {
+        let root = std::env::temp_dir().join(format!("openomsi-schedule-path-{}", std::process::id()));
+        let paper = root.join("cache/schedules/schedule.png");
+        std::fs::create_dir_all(paper.parent().unwrap()).unwrap();
+        let dirs = [root.as_path()];
+        // An earlier miss must not hide a subsequently generated timetable.
+        assert!(find_vehicle_freetex(paper.to_str().unwrap(), &dirs).is_none());
+        std::fs::write(&paper, b"generated picture").unwrap();
+        assert_eq!(find_vehicle_freetex(paper.to_str().unwrap(), &dirs), Some(paper));
+        std::fs::remove_dir_all(root).unwrap();
+    }
 
     #[test]
     fn vehicle_freetex_retries_paths_below_texture_component() {

@@ -106,3 +106,17 @@ Gelände/Textur, KI-Kurven, Speichern/Neuladen sowie Linienfahrt mit Fahrgastwec
 und stabilen Werbetafeln. Danach Release-Build mit Performance-Vergleich und
 Windows-Build prüfen. Die vollständigen frischen VM-Tests bleiben für 0.9 geplant.
 Erst nach diesen Prüfungen einen öffentlichen Versionswechsel vornehmen.
+
+
+## Nachtest: Editoranzeigen und Inhaltsordner (14.10.2026)
+
+Der praktische Test fand fehlende Spline-Auswahlpunkte und KI-Pfade. Beim Port auf die neue LightsCx-Stufe fehlte der Editor-Overlay-Block. Wiederhergestellt: Spline-/Verbindungsmarker, KI-Pfade samt Auswahlzielen und Kurvengriffen, Audit-, Gehweg-, Straßenrand-, Gelände- und Objektmarker. Menus wird in dieser Stufe als schreibbar deklariert, da die Pfadansicht Auswahlziele aktualisiert. Die Darstellung benötigt keinen Spielerbus und keine aktive Verkehrssimulation.
+
+Das Testlog verwendete den leeren Testpaketordner als OMSI_CONTENT. Die gemeldeten fehlenden Geländetexturen (u.a. Texture/LemmentalV2/Gras1_1.jpg und Texture/Rat_Feld1.bmp) liegen im bisherigen Spielinhaltsordner. Der lokale start-merge-test.sh setzt diesen Ordner explizit und öffnet die Merge-Karte im Editormodus. Keine Kartendateien verändert.
+
+Validierung: cargo check und 524 App-Tests erfolgreich, 5 ignoriert. Sichtprüfung im laufenden Editormodus nach Neubau noch erforderlich.
+
+
+## Nachtest: Fahrplanzettel (14.10.2026)
+
+Nutzer bestätigt Bearbeitung während der Fahrt mit normalem Fahrgastwechsel sowie Erhalt des Dienstes nach Neuladen. Der leere Fahrplanzettel ist separat: Log meldet aktive BGN/300001-Dienstzuordnung und eine nicht gefundene file_schedule-Textur, obwohl die erzeugte PNG im Cache vorhanden ist. Die Fahrzeug-Freitextursuche erhält jetzt absolute vorhandene Pfade vor der OMSI-relativen Suche. Regressionstest deckt eine generierte Cache-Datei außerhalb der Fahrzeugordner einschließlich vorherigem Suchfehlschlag ab. Praktische Sichtprüfung des Zettels steht noch aus.
