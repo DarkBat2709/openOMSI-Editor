@@ -13,9 +13,36 @@ pub const OFFICIAL_UPDATES_DISABLED: bool = cfg!(feature = "standalone-editor");
 
 pub use omsi_scene::editor_splines::Edits;
 
+/// Asset metadata is preferred; named markings without paths are a conservative hint.
+#[derive(Default, Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SelectionFilter { #[default] All, Roads, Sidewalks, Markings, Other }
+impl SelectionFilter {
+    pub fn title(self) -> &'static str { match self {
+        Self::All => "Selection: all splines", Self::Roads => "Selection: roads",
+        Self::Sidewalks => "Selection: sidewalks", Self::Markings => "Selection: markings",
+        Self::Other => "Selection: other / unknown",
+    }}
+    fn next(self) -> Self { match self { Self::All=>Self::Roads, Self::Roads=>Self::Sidewalks,
+        Self::Sidewalks=>Self::Markings, Self::Markings=>Self::Other, Self::Other=>Self::All } }
+    fn accepts(self, category: Self) -> bool { self == Self::All || self == category }
+}
+fn selection_category(file: &str, def: Option<&omsi_scenery::Spline>) -> SelectionFilter {
+    if let Some(def) = def {
+        if def.paths.iter().any(|p| p.kind == 0) { return SelectionFilter::Roads; }
+        if def.paths.iter().any(|p| p.kind == 1) { return SelectionFilter::Sidewalks; }
+        if !def.paths.is_empty() { return SelectionFilter::Other; }
+    } else { return SelectionFilter::Other; }
+    let name = file.rsplit(['/', '\\']).next().unwrap_or(file).to_lowercase();
+    if name.split(|c: char| !c.is_alphanumeric()).any(|w|
+        ["markierung", "markierungen", "marking", "markings", "roadmarking", "leitlinie", "sperrlinie"].contains(&w)) {
+        SelectionFilter::Markings
+    } else { SelectionFilter::Other }
+}
+
 #[derive(Default)]
 pub struct SplineEditor {
     pub selected: Option<Key>,
+    pub selection_filter: SelectionFilter,
     candidates: Vec<Key>,
     next: usize,
     start: Option<(DVec3, String)>,
@@ -83,7 +110,19 @@ struct ConnectionGeometry {
 }
 
 impl SplineEditor {
+    pub fn cycle_selection_filter(&mut self) -> &'static str {
+        self.selection_filter = self.selection_filter.next();
+        self.candidates.clear(); self.next = 0;
+        // Keep the current edit and selection; the filter applies to the next pick.
+        self.selection_filter.title()
+    }
     pub fn pick(&mut self, world: &World, eye: DVec3, forward: Vec3) -> Option<i64> {
+        let label = match self.selection_filter {
+            SelectionFilter::All => "spline_pick_all", SelectionFilter::Roads => "spline_pick_roads",
+            SelectionFilter::Sidewalks => "spline_pick_sidewalks", SelectionFilter::Markings => "spline_pick_markings",
+            SelectionFilter::Other => "spline_pick_other",
+        };
+        let _diagnostic = crate::editor_diagnostics::Span::new(label, "");
         world.collect_editor_splines();
         let loaded = world.loaded_tiles();
         let connecting = self.connection_active();
@@ -95,6 +134,11 @@ impl SplineEditor {
             edits.originals.keys().filter(|k| loaded.contains(&k.0))
                 .filter_map(|k| edits.current(*k).filter(|s| !s.deleted).map(|s| (*k, s))).collect()
         };
+        let roads: Vec<_> = roads.into_iter().filter(|(_, s)| {
+            if self.selection_filter == SelectionFilter::All { return true; }
+            let ty = world.spline_type(&s.file);
+            self.selection_filter.accepts(selection_category(&s.file, ty.as_ref().map(|t| &t.def)))
+        }).collect();
         let edges: HashMap<_, _> = roads.iter().map(|(k, s)| (*k, edge_markers(world, k.0, s, 8))).collect();
         let picked = self.pick_loaded(&world.spline_edits, &loaded, eye, forward, &edges);
         if connecting { log::info!("spline connection: selection {:?}; pick lock released", self.selected); }
@@ -108,7 +152,7 @@ impl SplineEditor {
         let f = forward.as_dvec3().normalize_or_zero();
         let mut scores = Vec::new();
         for key in edits.originals.keys() {
-            if !loaded.contains(&key.0) { continue; }
+            if !loaded.contains(&key.0) || (self.selection_filter != SelectionFilter::All && !edges.contains_key(key)) { continue; }
             let Some(s) = edits.current(*key).filter(|s| !s.deleted) else { continue };
             let c = curve(key.0, &s);
             let count = (s.length / 2.0).ceil().clamp(1.0, 512.0) as usize;
@@ -1718,6 +1762,43 @@ mod tests {
     }
 
     #[test]
+    fn selection_categories_prefer_paths_and_keep_unknown_assets_accessible() {
+        let mut def = omsi_scenery::Spline::default();
+        assert_eq!(selection_category("Splines/Markierungen/road.sli", Some(&def)), SelectionFilter::Other);
+        assert_eq!(selection_category("Splines/markierung_weiss.sli", Some(&def)), SelectionFilter::Markings);
+        assert_eq!(selection_category("Splines/Marktplatz.sli", Some(&def)), SelectionFilter::Other);
+        def.paths.push(omsi_scenery::PathDef { kind: 1, ..Default::default() });
+        assert_eq!(selection_category("road.sli", Some(&def)), SelectionFilter::Sidewalks);
+        def.paths.push(omsi_scenery::PathDef { kind: 0, ..Default::default() });
+        assert_eq!(selection_category("markierung_road.sli", Some(&def)), SelectionFilter::Roads);
+        assert_eq!(selection_category("road.sli", None), SelectionFilter::Other);
+        for category in [SelectionFilter::Roads, SelectionFilter::Sidewalks, SelectionFilter::Markings, SelectionFilter::Other] {
+            assert!(SelectionFilter::All.accepts(category));
+        }
+    }
+
+    #[test]
+    fn filtered_pick_and_tab_exclude_overlaid_marking_without_changing_records() {
+        let keys = [((0,0),1), ((0,0),2)];
+        let road = between("road.sli",1,(0,0),DVec3::new(100.0,100.0,0.0),DVec3::new(100.0,120.0,0.0),0.0);
+        let mut marking = road.clone(); marking.id=2; marking.file="markierung.sli".into();
+        let cache = parking_lot::Mutex::new(Edits { originals: HashMap::from([(keys[0],road),(keys[1],marking)]), ..Default::default() });
+        let mut editor=SplineEditor::default();
+        editor.selected=Some(keys[1]); editor.candidates=keys.to_vec();
+        editor.cycle_selection_filter();
+        assert_eq!(editor.selected,Some(keys[1])); assert!(editor.candidates.is_empty());
+        let edges=HashMap::from([(keys[0],Vec::new())]);
+        assert_eq!(editor.pick_loaded(&cache,&[(0,0)],DVec3::new(100.0,110.0,10.0),-Vec3::Z,&edges),Some(1));
+        assert_eq!(editor.next_pick(),Some(1));
+        assert!(!cache.lock().dirty);
+        editor.selection_filter=SelectionFilter::All;
+        editor.pick_loaded(&cache,&[(0,0)],DVec3::new(100.0,110.0,10.0),-Vec3::Z,&edges);
+        assert_eq!(editor.candidates.len(),2);
+        editor.selection_filter=SelectionFilter::Other;
+        assert_eq!(editor.pick_loaded(&cache,&[(0,0)],DVec3::new(100.0,110.0,10.0),-Vec3::Z,&HashMap::new()),None);
+    }
+
+    #[test]
     fn second_connection_pick_releases_the_cache_before_preview_reads_it() {
         let source_key = ((0, 0), 1);
         let target_key = ((0, 0), 2);
@@ -1985,6 +2066,25 @@ mod tests {
             assert!(changed > 0);
             assert!(terrain_plan(&bed,&HashMap::from([((0,0), result.clone())]),0.0,0.0).after.is_empty());
         }
+    }
+
+    #[test]
+    fn terrain_to_road_crosses_tile_boundary_and_undo_restores_both_tiles() {
+        let size = omsi_map::tile_size();
+        let bed = road_patch(size-12.0,size+12.0,40.0,90.0,2.0,0.03,0.01);
+        let mut terrain = omsi_map::Terrain::flat(); terrain.heights.fill(9.0);
+        let original = HashMap::from([((0,0),terrain.clone()),((1,0),terrain)]);
+        let plan = terrain_plan(&bed,&original,0.0,0.0);
+        assert_eq!(plan.after.len(),2);
+        let mut after: HashMap<_,_> = plan.after.iter().cloned().collect();
+        let left=&after[&(0,0)]; let right=&after[&(1,0)];
+        for y in 0..left.samples() {
+            assert_eq!(left.height_at(left.samples()-1,y),right.height_at(0,y));
+        }
+        assert_eq!(left.height_at(0,0),9.0);
+        assert_eq!(right.height_at(right.samples()-1,0),9.0);
+        let undo=Undo{splines:Vec::new(),terrain:plan.before,terrain_after:plan.after};
+        undo.restore_terrain(&mut after); assert_eq!(after,original);
     }
 
     #[test]

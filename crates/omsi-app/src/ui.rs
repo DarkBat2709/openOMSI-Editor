@@ -826,7 +826,7 @@ impl Ui {
     }
 
     pub fn draw_editor_dock(&mut self, r: &Renderer, scene: &mut Scene,
-        editor: Option<(bool, bool)>, tools: Option<bool>, connection: Option<&(String, bool)>,
+        editor: Option<(bool, bool)>, tools: Option<(bool, crate::spline_editor::SelectionFilter)>, connection: Option<&(String, bool)>,
         replace: bool, transition: bool, objects:Option<(bool,bool,bool,bool,bool)>,terrain: Option<&crate::terrain_editor::TerrainEditor>, scale: f32, viewport: [f32; 4], cursor: (f32, f32)) {
         self.clear_editor_dock_targets();
         let Some((spline, expanded_allowed)) = editor else {
@@ -844,7 +844,7 @@ impl Ui {
             self.editor_hint_mode = Some((spline, expanded));
         }
         let shortcuts = editor_shortcuts(spline, expanded);
-        let footer = if connection.is_some() { 198.0 } else if tools.is_some() { 256.0 } else if objects.is_some() {192.0} else { 0.0 };
+        let footer = if connection.is_some() { 198.0 } else if tools.is_some() { 288.0 } else if objects.is_some() {192.0} else { 0.0 };
         let hud_bottom = self.editor_hud_rect.map_or(viewport[1], |rect| rect[3]);
         let layout = editor_dock_layout(viewport, s, hud_bottom, shortcuts.len(), footer, self.editor_dock_position, spline);
         self.editor_help_scroll_max = layout.max_scroll;
@@ -1141,17 +1141,18 @@ impl Ui {
     }
 
     /// Fixed dock footer: hints can scroll without moving these actions.
-    fn draw_spline_tools(&mut self, r: &Renderer, scene: &mut Scene, enabled: Option<bool>,
+    fn draw_spline_tools(&mut self, r: &Renderer, scene: &mut Scene, enabled: Option<(bool, crate::spline_editor::SelectionFilter)>,
         s: f32, origin: [f32; 2], cursor: (f32, f32)) {
         use crate::editor::Action;
-        let Some(enabled) = enabled else { return; };
+        let Some((enabled, filter)) = enabled else { return; };
         let [x, y] = origin;
-        let panel = [x, y, x + 284.0 * s, y + 256.0 * s];
+        let panel = [x, y, x + 284.0 * s, y + 288.0 * s];
         self.editor_tools_rect = Some(panel);
         self.editor_surface(r, scene, panel, 3.0 * s, PANEL);
         self.catalog_text(r, scene, if enabled { "Road shoulders / terrain" } else { "Select a road first" },
             (x + 8.0 * s, y + 5.0 * s), 268.0 * s, 13.0 * s, MUTED);
         for (row, (action, title)) in [
+            (Action::CycleSelectionFilter, filter.title()),
             (Action::SmoothRoad(false), "Smooth shoulder (F8)"),
             (Action::SmoothRoad(true), "Smooth wider (Shift+F8)"),
             (Action::FitTerrain, "Road to terrain (F6)"),
@@ -1160,7 +1161,7 @@ impl Ui {
             (Action::SidewalkWindow, "Sidewalk along the road"),
             (Action::ConstructionWindow, "Bridge / tunnel / underground …"),
         ].into_iter().enumerate() {
-            let enabled=enabled||matches!(action,Action::ConstructionWindow);
+            let enabled=enabled||matches!(action,Action::ConstructionWindow | Action::CycleSelectionFilter);
             let top = y + (27.0 + row as f32 * 32.0) * s;
             let rect = [x + 6.0 * s, top, x + 278.0 * s, top + 27.0 * s];
             let color = if !enabled { PANEL_ALT }

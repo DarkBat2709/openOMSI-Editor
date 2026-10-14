@@ -3033,3 +3033,18 @@ _version: 2
 
 "Splines":
   de: "Splines"
+
+"Selection: all splines":
+  de: "Auswahl: alle Splines"
+
+"Selection: roads":
+  de: "Auswahl: Straßen"
+
+"Selection: sidewalks":
+  de: "Auswahl: Gehwege"
+
+"Selection: markings":
+  de: "Auswahl: Markierungen"
+
+"Selection: other / unknown":
+  de: "Auswahl: Sonstige / unbekannt"

@@ -188,6 +188,7 @@ pub enum Action {
     SplineMode,
     Workspace(Workspace),
     TerrainToRoad,
+    CycleSelectionFilter,
     Generate,
     Connect,
     ReplaceConnection,

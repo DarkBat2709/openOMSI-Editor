@@ -138,6 +138,10 @@ impl App {
         }
         let msg = match action {
             crate::editor::Action::Workspace(_) => unreachable!(),
+            crate::editor::Action::CycleSelectionFilter => {
+                let ed = self.menus.editor.as_mut().unwrap();
+                if ed.spline_mode { ed.splines.cycle_selection_filter().into() } else { String::new() }
+            },
             crate::editor::Action::ObjectText => {
                 if self.net.lan.is_some() { "Object text editing is currently available in single-player".into() }
                 else {

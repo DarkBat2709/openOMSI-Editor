@@ -504,7 +504,7 @@ impl App {
                         let replace = self.menus.editor.as_ref().is_some_and(|ed| ed.spline_mode && ed.splines.connection_can_replace());
                         let tools = self.menus.editor.as_ref().filter(|ed| editor_visible && ed.spline_mode && !ed.terrain.active
                             && ed.catalog.is_none() && ed.tile_window.is_none() && ed.text_window.is_none() && ed.junction_window.is_none() && ed.roadside_window.is_none() && ed.sidewalk_window.is_none() && ed.construction_window.is_none() && ed.traffic_window.is_none() && ed.placing_asset.is_none() && !ed.splines.connection_active())
-                            .map(|ed| ed.splines.selected.is_some());
+                            .map(|ed| (ed.splines.selected.is_some(), ed.splines.selection_filter));
                         let dock = self.menus.editor.as_ref().filter(|ed| editor_visible && ed.catalog.is_none() && ed.tile_window.is_none() && ed.text_window.is_none() && ed.junction_window.is_none() && ed.roadside_window.is_none() && ed.sidewalk_window.is_none() && ed.construction_window.is_none() && ed.traffic_window.is_none())
                             .map(|ed| (ed.spline_mode, ed.placing_asset.is_none() && !ed.splines.connection_active()));
                         let objects=self.menus.editor.as_ref().filter(|ed|editor_visible && !ed.spline_mode && !ed.terrain.active
