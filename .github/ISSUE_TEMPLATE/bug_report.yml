@@ -1,200 +1,162 @@
-name: Bug Report
-description: Something isn't working as expected
-labels: [ "bug" ]
+name: Fehler melden / Bug report
+description: Fehler im openOMSI-Editor melden – Deutsch oder Englisch. / Report an editor bug in German or English.
+labels: ["bug"]
 body:
   - type: markdown
     attributes:
       value: |
-        Thanks for taking the time to report a bug! A few things make it much quicker to fix:
+        **Deutsch und Englisch sind willkommen. Eine Sprache reicht!**
+        **German and English are welcome. One language is enough!**
 
-        * **Write in English.** Issues in other languages are closed until they are translated - a translator such as DeepL or Google Translate is fine.
-        * **One problem per issue.** Several problems in one report get lost; open one issue for each.
-        * **Use the latest release.** The launcher updates itself; many problems are already fixed in a newer build.
-        * **The game stopped on an error?** Use *Report on GitHub* in the launcher's error message - it fills in the error and the end of the log for you.
+        Bitte ein Problem pro Meldung. Prüfe nach Möglichkeit die neueste Editor-Version.
+        Please report one problem per issue. Try the latest editor version if possible.
 
   - type: checkboxes
     id: checks
     attributes:
-      label: Before you start
+      label: Vorher prüfen / Before submitting
       options:
-        - label: I wrote this report in English.
-          required: true
-        - label: I searched the [open and closed issues](https://github.com/openOMSI-org/openOMSI/issues?q=is%3Aissue) and this is not a duplicate.
-          required: true
-        - label: It still happens on the latest release.
+        - label: Ich habe nach [vorhandenen Meldungen](https://github.com/DarkBat2709/openOMSI-Editor/issues?q=is%3Aissue) gesucht. / I searched the existing issues.
           required: true
 
   - type: dropdown
     id: area
     attributes:
-      label: What is it about?
+      label: Bereich / Area
       options:
-        - Crash, freeze or the game doesn't start
-        - Performance (FPS, stutter, loading)
-        - Passengers, doors, tickets and money
-        - Driving, controls, input devices and cameras
-        - AI traffic, timetable and navigation
-        - Multiplayer or dedicated server
-        - One particular bus, DLC or map
-        - Graphics, weather and effects
-        - Sound
-        - Launcher, menus and HUD
-        - Something else
+        - Start, Absturz oder graues Fenster / Startup, crash or grey window
+        - Objekte und Szenerie / Objects and scenery
+        - Straßen und Splines / Roads and splines
+        - Kreuzungen und Kreisverkehre / Junctions and roundabouts
+        - Gelände / Terrain
+        - KI und Verkehrspfade / AI and traffic paths
+        - Speichern und Laden / Saving and loading
+        - Grafik und Leistung / Graphics and performance
+        - Bedienung und Menüs / Controls and menus
+        - Sonstiges / Other
     validations:
       required: true
 
   - type: textarea
     id: description
     attributes:
-      label: What happened?
-      description: A clear description of the bug. Screenshots and videos help a lot - paste or drag them in here.
+      label: Was passiert? / What happens?
+      description: Beschreibe den Fehler. Bilder oder Videos kannst du hier anhängen. / Describe the bug. Attach screenshots or videos here.
     validations:
       required: true
 
   - type: textarea
     id: steps
     attributes:
-      label: Steps to reproduce
-      description: How can we make it happen ourselves? Name the stop, the line or the place on the map if it matters.
+      label: Schritte zum Fehler / Steps to reproduce
+      description: Wie lässt sich der Fehler auslösen? Falls unbekannt, schreibe das dazu. / How can we reproduce it? Say if you do not know.
       placeholder: |
-        1. Start a duty on ... with ...
-        2. Drive to ...
-        3. ...
+        1. Editor starten / Start the editor
+        2. … 
+        3. Fehler tritt auf / Bug occurs
     validations:
       required: true
 
   - type: textarea
     id: expected
     attributes:
-      label: Expected behavior
-      description: What did you expect to happen instead? If OMSI 2 does it differently, say how.
+      label: Erwartetes Verhalten / Expected behavior
+      description: Was sollte stattdessen passieren? / What should happen instead?
     validations:
       required: false
 
   - type: input
     id: version
     attributes:
-      label: Game version
-      description: Shown in the launcher's side bar and on the first line of `game.log`.
-      placeholder: e.g. 0.1.1313
+      label: Editor-Version / Editor version
+      description: Bitte die genaue Editor-Version angeben. / Enter the exact editor version.
+      placeholder: "z. B. / e.g. 0.8.4-pre"
     validations:
       required: true
-
-  - type: input
-    id: worked-before
-    attributes:
-      label: Did it work in an earlier version?
-      description: If it broke in an update, the last version that worked tells us where to look.
-      placeholder: e.g. worked in 0.1.1166, broken since 0.1.1169
-    validations:
-      required: false
 
   - type: dropdown
     id: os
     attributes:
-      label: Operating system
+      label: Betriebssystem / Operating system
       options:
         - Windows
-        - macOS
         - Linux
-        - Android
+        - Sonstiges / Other
     validations:
       required: true
-
-  - type: dropdown
-    id: game-type
-    attributes:
-      label: How were you playing?
-      options:
-        - Single player
-        - Multiplayer (client)
-        - Multiplayer (host)
-        - Dedicated server
-    validations:
-      required: false
-
-  - type: input
-    id: map
-    attributes:
-      label: Map
-      description: The map's name; for a mod map, where it comes from (a link is best).
-      placeholder: e.g. Berlin-Spandau (stock)
-    validations:
-      required: false
-
-  - type: input
-    id: vehicle
-    attributes:
-      label: Bus or vehicle
-      description: The vehicle's name; for a mod or DLC, which one (a link is best).
-      placeholder: e.g. MAN SD200 (stock)
-    validations:
-      required: false
-
-  - type: input
-    id: graphics
-    attributes:
-      label: Graphics
-      description: For graphics, performance and crash problems - the Graphics and Graphics API settings, and your graphics card.
-      placeholder: e.g. Enhanced, Vulkan, NVIDIA RTX 3060
-    validations:
-      required: false
-
-  - type: textarea
-    id: logs
-    attributes:
-      label: Logs
-      description: |
-        Paste the relevant part of `game.log` (or `launcher.log` for launcher problems). Both are in the `.openomsi` folder in your user folder - on Windows `C:\Users\<you>\.openomsi`. This will be automatically formatted as code.
-      render: shell
-    validations:
-      required: false
 
   - type: input
     id: operating-system-version
     attributes:
-      label: Welche Betriebssystem-Version verwendest du?
-      description: Unter Windows findest du sie mit Win + R und „winver“.
-      placeholder: "Zum Beispiel Windows 11 24H2 oder Ubuntu 24.04"
+      label: Betriebssystem-Version / Operating system version
+      description: "Windows: Win + R → winver. Falls unbekannt: „unbekannt“. / If unknown, enter “unknown”."
+      placeholder: "z. B. / e.g. Windows 11 24H2, Ubuntu 24.04"
     validations:
       required: true
 
   - type: input
     id: gpu-driver-details
     attributes:
-      label: Welche Grafikkarte und Treiberversion verwendest du?
-      description: Bitte Hersteller, Modell und Treiberversion angeben. Falls unbekannt, schreibe „unbekannt“.
-      placeholder: "Hersteller und Modell / Treiberversion"
+      label: Grafikkarte und Treiber / Graphics card and driver
+      description: NVIDIA, AMD oder Intel; Modell und Treiberversion. Falls bekannt, auch Grafik-API. / Model and driver version; graphics API if known.
+      placeholder: "Grafikkarte / GPU · Treiber / Driver · Vulkan / OpenGL"
+    validations:
+      required: false
+
+  - type: input
+    id: map
+    attributes:
+      label: Betroffene Karte / Affected map
+      description: Kartenname, bei Zusatzkarten gern mit Link. / Map name; add a link for custom maps if possible.
     validations:
       required: false
 
   - type: textarea
     id: comparison-with-other-maps
     attributes:
-      label: Passiert der Fehler auch auf einer anderen Karte?
-      description: Nenne bitte die getesteten Karten und das jeweilige Ergebnis.
-      placeholder: |
-        Betroffene Karte:
-        Andere getestete Karte:
-        Ergebnis oder „noch nicht getestet“:
+      label: Auch auf anderen Karten? / Also on other maps?
+      description: Nenne die getesteten Karten und Ergebnisse, oder „nicht getestet“. / List tested maps and results, or “not tested”.
     validations:
       required: false
 
   - type: dropdown
     id: main-game-startup
     attributes:
-      label: Startet das normale openOMSI-Hauptspiel problemlos?
+      label: Startet das normale openOMSI-Hauptspiel? / Does the regular openOMSI game start?
+      description: Besonders bei Startproblemen hilfreich. / Especially useful for startup problems.
       options:
-        - "Ja"
-        - "Nein"
-        - "Noch nicht getestet"
+        - Ja / Yes
+        - Nein / No
+        - Nicht getestet / Not tested
     validations:
-      required: true
+      required: false
 
   - type: input
     id: main-game-test-version
     attributes:
-      label: Welche Version des Hauptspiels hast du getestet?
-      description: Nur ausfüllen, wenn du den Start des Hauptspiels verglichen hast.
+      label: Getestete Hauptspiel-Version / Tested main game version
+      description: Nur falls getestet. / Only if tested.
+    validations:
+      required: false
+
+  - type: input
+    id: worked-before
+    attributes:
+      label: Ging es vorher? / Did it work before?
+      description: Wenn bekannt, letzte funktionierende Editor-Version nennen. / Last working editor version, if known.
+    validations:
+      required: false
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logdateien / Log files
+      description: |
+        Bitte die vollständige game.log direkt nach dem Fehler hier anhängen oder einfügen.
+        Bei Launcher-Problemen auch launcher.log. Persönliche Angaben vor dem Hochladen prüfen.
+        Please attach or paste the full game.log immediately after the error.
+        For launcher problems, include launcher.log too. Check for personal details before uploading.
+
+        Windows: %USERPROFILE%\.openomsi\ · Linux: ~/.openomsi/
     validations:
       required: false
