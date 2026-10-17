@@ -142,14 +142,14 @@ _version: 2
 "Brush size":
   de: "Pinselgröße"
 
-"Terrain editor 0.8.2-pre":
-  de: "Gelände-Editor 0.8.2-pre"
+"Terrain editor 0.8.4-pre":
+  de: "Gelände-Editor 0.8.4-pre"
 
-"Spline editor 0.8.2-pre":
-  de: "Spline-Editor 0.8.2-pre"
+"Spline editor 0.8.4-pre":
+  de: "Spline-Editor 0.8.4-pre"
 
-"Object editor 0.8.2-pre":
-  de: "Objekt-Editor 0.8.2-pre"
+"Object editor 0.8.4-pre":
+  de: "Objekt-Editor 0.8.4-pre"
 
 "Spline connections · entire map":
   de: "Spline-Verbindungen · ganze Karte"
@@ -3022,8 +3022,8 @@ _version: 2
 "No terrain samples need changing under this road":
   de: "Unter dieser Straße sind keine Geländerasterpunkte zu ändern"
 
-"Terrain fitted under selected road only · Ctrl+Z to undo · Ctrl+S to save":
-  de: "Gelände nur unter gewählter Straße angepasst · Strg+Z rückgängig · Strg+S speichern"
+"Terrain fitted across road width and raster edge · Ctrl+Z to undo · Ctrl+S to save":
+  de: "Gelände über Straßenbreite und Rasterrand angepasst · Strg+Z rückgängig · Strg+S speichern"
 
 "AI paths":
   de: "KI-Fahrwege"
@@ -3069,3 +3069,110 @@ _version: 2
 
 "Ctrl+click: add/remove · Click empty: clear":
   de: "Strg+Klick: hinzufügen/entfernen · Ins Leere klicken: Auswahl aufheben"
+
+"Ctrl+Tab: add overlap · C: continue":
+  de: "Strg+Tab: dazu · C: weiterbauen"
+
+
+"Group shaping needs free ends without profile transitions; nothing changed":
+  de: "Gruppenformung braucht freie Enden ohne Profilübergänge; nichts geändert"
+
+"Connected group starts cannot rotate; use curvature instead":
+  de: "Verbundene Gruppenanfänge können nicht gedreht werden; stattdessen Kurve formen"
+
+"Unsupported group shaping action":
+  de: "Diese Gruppenformung wird nicht unterstützt"
+
+"Select parallel sections with matching starts and ends; nothing changed":
+  de: "Parallele Abschnitte mit passenden Anfängen und Enden auswählen; nichts geändert"
+
+"Group curve is too tight; nothing changed":
+  de: "Gruppenkurve zu eng; nichts geändert"
+
+"Group length outside valid range; nothing changed":
+  de: "Gruppenlänge außerhalb des gültigen Bereichs; nichts geändert"
+
+
+"Group: +/- length · ,/. curve · Home/End gradient":
+  de: "Gruppe: +/- Länge · ,/. Kurve · Pos1/Ende Steigung"
+
+"Select one spline for this tool; groups support moving, shaping and continuation (C)":
+  de: "Dieses Werkzeug braucht einen Spline; Gruppen können verschoben, geformt und mit C fortgesetzt werden"
+
+"Group shaping leaves the map; nothing changed":
+  de: "Gruppenformung verlässt die Karte; nichts geändert"
+
+"Invalid group geometry; nothing changed":
+  de: "Ungültige Gruppenform; nichts geändert"
+
+"Road and marking fitted together to terrain · Ctrl+Z to undo · Ctrl+S to save":
+  de: "Straße und Markierung gemeinsam an Gelände angepasst · Strg+Z: rückgängig · Strg+S: speichern"
+
+"Radius":
+  de: "Radius"
+
+"Spline":
+  de: "Spline"
+
+"Left line inset (m)":
+  de: "Linienabstand links (m)"
+
+"Right line inset (m)":
+  de: "Linienabstand rechts (m)"
+
+"Line width (m)":
+  de: "Linienbreite (m)"
+
+"Outer edge line: ON":
+  de: "Außenrandlinie: AN"
+
+"Outer edge line: OFF":
+  de: "Außenrandlinie: AUS"
+
+"Entrance dashes: ON":
+  de: "Zufahrten gestrichelt: AN"
+
+"Entrance dashes: OFF":
+  de: "Zufahrten gestrichelt: AUS"
+
+"Match edge lines …":
+  de: "Randlinien anpassen …"
+
+"Texture settings":
+  de: "Textureinstellungen"
+
+"Selected arm · Left/right looking towards island · Edge to line centre":
+  de: "Gewählter Arm · Links/rechts zur Insel blickend · Rand bis Linienmitte"
+
+"Use unmarked asphalt; painted texture lines cannot be interrupted.":
+  de: "Asphalt ohne Markierungen verwenden; Texturlinien bleiben sichtbar."
+
+"Invalid edge line dimensions":
+  de: "Ungültige Maße der Randlinie"
+
+"Edge line must stay inside its arm":
+  de: "Randlinie muss innerhalb des Straßenarms liegen"
+
+"Marking to road":
+  de: "Markierung an Straße"
+
+"Select asphalt and marking together (Ctrl+click)":
+  de: "Asphalt und Markierung gemeinsam auswählen (Strg+Klick)"
+
+"Select one asphalt section and one separate marking":
+  de: "Einen Asphaltabschnitt und eine separate Markierung auswählen"
+
+"Marking fitted to asphalt · Ctrl+Z to undo · Ctrl+S to save":
+  de: "Markierung an Asphalt angepasst · Strg+Z: rückgängig · Strg+S: speichern"
+
+"Marking extends beyond the asphalt profile":
+  de: "Markierung ragt über das Asphaltprofil hinaus"
+
+"Marking and asphalt cross-sections differ; nothing changed":
+  de: "Markierung und Asphalt haben unterschiedliche Querprofile; nichts geändert"
+
+"Select connected asphalt sections and one separate marking":
+  de: "Zusammenhängende Asphaltabschnitte und eine separate Markierung auswählen"
+
+"Select one continuous asphalt chain without gaps":
+  de: "Eine durchgehend verbundene Asphaltkette ohne Lücken auswählen"

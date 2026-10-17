@@ -2,7 +2,7 @@
 name: Editor preview validation
 on:
   push:
-    branches: [editor-preview, "update/**", "codex/editor-0.8.0-pre", "codex/editor-building-performance", "codex/editor-basis-0.2.50"]
+    branches: [editor-preview, "update/**", "codex/editor-0.8.0-pre", "codex/editor-0.8.4-pre", "codex/editor-building-performance", "codex/editor-basis-0.2.50"]
   pull_request:
     branches: [editor-preview]
   workflow_dispatch:
@@ -16,7 +16,7 @@ jobs:
         os: [ubuntu-22.04, windows-latest]
     runs-on: ${{ matrix.os }}
     env:
-      OPENOMSI_VERSION: 0.2.50-editor-0.8.3-pre
+      OPENOMSI_VERSION: 0.2.50-editor-0.8.4-pre
     steps:
       - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
@@ -70,7 +70,7 @@ jobs:
         if: runner.os == 'Windows'
         uses: actions/upload-artifact@v7.0.2
         with:
-          name: openOMSI-Editor-0.8.3-pre-windows-x64
+          name: openOMSI-Editor-0.8.4-pre-windows-x64
           path: out/editor-windows/*
           if-no-files-found: error
           retention-days: 30

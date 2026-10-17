@@ -188,6 +188,7 @@ pub enum Action {
     SplineMode,
     Workspace(Workspace),
     TerrainToRoad,
+    MarkingToRoad,
     CycleSelectionFilter,
     Generate,
     Connect,
@@ -1406,7 +1407,7 @@ pub fn action_for(code: winit::keyboard::KeyCode, shift: bool, ctrl: bool, yaw: 
 /// letters that no longer belong to an editor operation.
 pub(crate) fn one_shot_key(code: winit::keyboard::KeyCode, shift: bool, ctrl: bool) -> bool {
     action_for(code, shift, ctrl, 0.0).is_some_and(|action| matches!(action,
-        Action::TrafficManage | Action::TerrainToRoad | Action::FitTerrain | Action::SmoothRoad(_) | Action::Catalog | Action::PlaceObject
+        Action::TrafficManage | Action::MarkingToRoad | Action::TerrainToRoad | Action::FitTerrain | Action::SmoothRoad(_) | Action::Catalog | Action::PlaceObject
         | Action::Generate | Action::Connect | Action::ReplaceConnection | Action::Copy
         | Action::ClipboardCopy | Action::Paste | Action::RepeatObject | Action::PlacementRepeat | Action::CancelPlacement
         | Action::Branch(_) | Action::Split | Action::Save | Action::SplineMode

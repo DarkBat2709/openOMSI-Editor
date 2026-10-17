@@ -7,9 +7,15 @@ pub struct Roundabout {
     pub island_radius: f64,
     pub road_width: f64,
     pub island_height: f64,
+    #[serde(default)] pub outer_line: bool,
+    #[serde(default)] pub dashed_entries: bool,
+    #[serde(default="default_line_width")] pub line_width: f64,
+    #[serde(default="default_line_insets")] pub line_insets: [[f64;2];4],
 }
+fn default_line_width()->f64 {0.12}
+fn default_line_insets()->[[f64;2];4] {[[0.25;2];4]}
 impl Default for Roundabout {
-    fn default() -> Self {Self {island_radius:12.0,road_width:6.0,island_height:0.15}}
+    fn default() -> Self {Self {island_radius:12.0,road_width:6.0,island_height:0.15,outer_line:false,dashed_entries:false,line_width:default_line_width(),line_insets:default_line_insets()}}
 }
 fn polar(r:f64,a:f64)->DVec3 {DVec3::new(r*a.sin(),r*a.cos(),0.0)}
 fn delta(a:f64,b:f64)->f64 {(a-b+std::f64::consts::PI).rem_euclid(std::f64::consts::TAU)-std::f64::consts::PI}
@@ -40,10 +46,73 @@ fn on_road(p:&Project,point:DVec3)->bool {
     radius>=r.island_radius-1e-6 && radius<=outer_radius(p,point.x.atan2(point.y))+1e-6
 }
 
+// Open boundary strips follow the actual arm flare and circle outline. Port caps
+// are excluded entirely, so no stripe can close an entrance.
+fn edge_strips(p:&Project,outline:&[DVec2])->Vec<[DVec3;4]> {
+    let r=p.roundabout.as_ref().unwrap();let n=outline.len();
+    let cap=|a:DVec2,b:DVec2|p.arms.iter().any(|arm| {
+        if !arm.enabled {return false;}
+        let d=direction(arm.angle);let q=right(d);
+        [a,b].iter().all(|v|(v.dot(d)-arm.length).abs()<1e-5 && v.dot(q).abs()<=arm.width/2.0+1e-5)
+    });
+    let open=(0..n).map(|i|!cap(outline[i],outline[(i+1)%n])).collect::<Vec<_>>();
+    let inset=|v:DVec2| {
+        let outer=r.island_radius+r.road_width;
+        let mut value=0.25;
+        let mut best=0.0;
+        for (i,arm) in p.arms.iter().enumerate().filter(|(_,a)|a.enabled) {
+            let d=direction(arm.angle);let along=v.dot(d);
+            let t=((along-outer)/(arm.length-outer)).clamp(0.0,1.0);
+            if t>best {best=t;let side=if v.dot(right(d))>=0.0 {0}else{1};
+                value=0.25+(r.line_insets[i][side]-0.25)*t;
+            }
+        }
+        value
+    };
+    let vertex=|i:usize,dist:f64| {
+        let before=(i+n-1)%n;let after=(i+1)%n;
+        let a=right((outline[i]-outline[before]).normalize_or_zero());
+        let b=right((outline[after]-outline[i]).normalize_or_zero());
+        let normal=if !open[before] {b} else if !open[i] {a} else {
+            let bisector=(a+b).normalize_or_zero();bisector/bisector.dot(b).max(0.25)
+        };
+        (outline[i]+normal*dist).extend(0.015)
+    };
+    (0..n).filter(|&i|open[i]).map(|i| {
+        let j=(i+1)%n;let a=inset(outline[i]);let b=inset(outline[j]);let half=r.line_width/2.0;
+        [vertex(i,a-half),vertex(i,a+half),vertex(j,b+half),vertex(j,b-half)]
+    }).collect()
+}
+
+fn entrance_dashes(p:&Project)->Vec<[DVec3;4]> {
+    let r=p.roundabout.as_ref().unwrap();let radius=r.island_radius+r.road_width-0.25;
+    let half=r.line_width/2.0;let h=DVec3::Z*0.017;let mut result=Vec::new();
+    for arm in p.arms.iter().filter(|a|a.enabled) {
+        let opening=mouth_angle(r.island_radius+r.road_width,arm.width/2.0);
+        let length=2.0*opening*radius;
+        // Equal one-metre strokes and gaps, centred on the opening.
+        let strokes=((length+1.0)/2.0).floor().max(1.0) as usize;
+        let start=(length-(strokes as f64*2.0-1.0))/2.0;
+        for i in 0..strokes {for j in 0..4 {
+            let a=arm.angle.to_radians()-opening+(start+2.0*i as f64+j as f64/4.0)/radius;
+            let b=a+0.25/radius;
+            result.push([polar(radius-half,a)+h,polar(radius+half,a)+h,polar(radius+half,b)+h,polar(radius-half,b)+h]);
+        }}
+    }
+    result
+}
+
 pub(super) fn build(p:&Project)->Result<Built,String> {
     let r=p.roundabout.as_ref().unwrap();
     for (f,v) in [(Field::IslandRadius,r.island_radius),(Field::RingWidth,r.road_width),(Field::IslandHeight,r.island_height)] {
         let (lo,hi)=f.limits();if !v.is_finite() || !(lo..=hi).contains(&v) {return Err(format!("Invalid value: {}",f.title()));}
+    }
+    if !r.line_width.is_finite() || !(0.05..=0.5).contains(&r.line_width)
+        || r.line_insets.iter().flatten().any(|v|!v.is_finite() || !(0.05..=3.0).contains(v)) {
+        return Err("Invalid edge line dimensions".into());
+    }
+    if r.outer_line && p.arms.iter().enumerate().any(|(i,a)|a.enabled && r.line_insets[i].iter().any(|v|*v<r.line_width/2.0 || *v+r.line_width/2.0>=a.width/2.0)) {
+        return Err("Edge line must stay inside its arm".into());
     }
     let outer=r.island_radius+r.road_width;let mid=r.island_radius+r.road_width/2.0;
     let sign=if p.left_hand {-1.0} else {1.0};
@@ -97,6 +166,8 @@ pub(super) fn build(p:&Project)->Result<Built,String> {
                 polar(r.island_radius+0.30,b)+h,polar(r.island_radius+0.18,b)+h,2,1.0);
         }
     }
+    if r.outer_line {for [a,b,c,d] in edge_strips(p,&outline) {quad(&mut mesh,a,b,c,d,2,1.0);}}
+    if r.dashed_entries {for [a,b,c,d] in entrance_dashes(p) {quad(&mut mesh,a,b,c,d,2,1.0);}}
     // Connections use separate shared ring nodes: every entrance can reach every exit,
     // without duplicating all origin/destination routes or crossing the island.
     let mut entries=Vec::new();let mut exits=Vec::new();let mut nodes=Vec::new();
@@ -158,6 +229,53 @@ pub(super) fn build(p:&Project)->Result<Built,String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    #[ignore = "Writes a local visual QA preview when requested"]
+    fn render_edge_line_preview() {
+        let mut w=Window::new_roundabout(false);w.command(Command::Shape(false));
+        for a in &mut w.project.arms {a.width=10.0;a.length=35.0;}
+        let r=w.project.roundabout.as_mut().unwrap();r.road_width=12.0;r.outer_line=true;r.dashed_entries=true;r.line_insets=[[0.8,0.8];4];
+        let b=super::build(&w.project).unwrap();
+        let img=crate::asset_catalog::junction_preview(std::path::Path::new("/tmp"),&b.mesh,0,None).unwrap();
+        image::RgbaImage::from_raw(img.width,img.height,img.rgba).unwrap().save("/tmp/editor-bautest8-roundabout.png").unwrap();
+    }
+
+    #[test]
+    fn edge_lines_follow_boundary_match_arm_offsets_and_leave_ports_open() {
+        for count in [3,4] {
+            let mut w=Window::new_roundabout(false);w.command(Command::Shape(count==4));
+            for arm in &mut w.project.arms {arm.angle=(arm.angle+17.0)%360.0;arm.width=10.0;arm.length=40.0;}
+            let r=w.project.roundabout.as_mut().unwrap();r.road_width=8.0;r.outer_line=true;r.line_width=0.15;
+            r.line_insets=[[0.6,0.9];4];
+            let b=super::build(&w.project).unwrap();let strips=edge_strips(&w.project,&b.outline);
+            assert!(!strips.is_empty());
+            for q in &strips {for v in q {assert!(on_road(&w.project,*v),"{v:?}");}}
+            for a in w.project.arms.iter().filter(|a|a.enabled) {
+                let d=direction(a.angle);let right=right(d);
+                let ends=strips.iter().flat_map(|q|[(q[0]+q[1])/2.0,(q[2]+q[3])/2.0])
+                    .filter(|v|(v.truncate().dot(d)-a.length).abs()<1e-5).collect::<Vec<_>>();
+                assert_eq!(ends.len(),2);
+                assert!(ends.iter().any(|v|(v.truncate().dot(right)-(a.width/2.0-0.6)).abs()<1e-5));
+                assert!(ends.iter().any(|v|(v.truncate().dot(right)+(a.width/2.0-0.9)).abs()<1e-5));
+            }
+            let json=serde_json::to_vec(&w.project).unwrap();let restored:Project=serde_json::from_slice(&json).unwrap();assert_eq!(w.project,restored);
+            w.command(Command::OuterLine);assert!(!w.project.roundabout.as_ref().unwrap().outer_line);
+            w.command(Command::Undo);assert!(w.project.roundabout.as_ref().unwrap().outer_line);
+        }
+    }
+    #[test]
+    fn dashed_entries_are_separate_and_only_cover_openings() {
+        let mut w=Window::new_roundabout(false);w.command(Command::Shape(false));
+        w.command(Command::DashedEntries);let b=super::build(&w.project).unwrap();assert!(!b.mesh.triangles.is_empty());
+        let p=&w.project;let r=p.roundabout.as_ref().unwrap();let dashes=entrance_dashes(p);assert!(!dashes.is_empty());
+        for q in &dashes {for v in q {
+            assert!(on_road(p,*v));let theta=v.x.atan2(v.y);
+            assert!(p.arms.iter().filter(|a|a.enabled).any(|a|delta(theta,a.angle.to_radians()).abs()<=mouth_angle(r.island_radius+r.road_width,a.width/2.0)+1e-6));
+        }}
+        let mut json=serde_json::to_value(p).unwrap();for name in ["outer_line","dashed_entries","line_width","line_insets"] {json["roundabout"].as_object_mut().unwrap().remove(name);}
+        let old:Project=serde_json::from_value(json).unwrap();assert!(!old.roundabout.as_ref().unwrap().outer_line);super::build(&old).unwrap();
+    }
+
     #[test]
     fn both_traffic_sides_all_exits_reachable_and_no_island_crossing() {
         for left in [false,true] {for count in [3,4] {
