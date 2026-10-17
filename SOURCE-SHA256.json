@@ -461,7 +461,7 @@
     "crates/omsi-app/src/soundscape/mod.rs": "48b5a948c3e0b276932cd2d4d5a85e9484726260eec5cc7fd76e9a30308b8dd2",
     "crates/omsi-app/src/spawn.rs": "8e805b247fdac2fdec1c7c8486a6fc110a85e4fbcd4c79adc70ae312e8f74671",
     "crates/omsi-app/src/spline_audit.rs": "f4383278ab359759c2bdc0ac316c9bb23c5a8585fc052d0fdd0a92086af779f6",
-    "crates/omsi-app/src/spline_editor.rs": "238e0b697a94f99136af519f4bf7eba0efcb3b62fca9020713327535d0030682",
+    "crates/omsi-app/src/spline_editor.rs": "8ebd0e8f4eb5c5b87e376427cfac4608adcd6f05cd9763619d81511fdb2eec51",
     "crates/omsi-app/src/startup.rs": "5629824312e31db5cd39bb6ba71d8a802dcb6ef941786b2fa7c51915cb755cdd",
     "crates/omsi-app/src/steam.rs": "f1e7a1bb78b8ef1f541903f033660ccb13d871f2a8cffdd9b928ca207ff4f952",
     "crates/omsi-app/src/support_bundle.rs": "3bd452a64d9ddc565b0d3014fab14baae895f0aaa8734a3dd9df29b51e7650cd",
@@ -1554,6 +1554,7 @@
     "tools/omsi-check/src/main.rs": "5cbaf56e9df24cca5a09af87dc252ab7c71edeb4d34c0d80b5dc9b973f1d4c79",
     "tools/test-support/original_root.rs": "6ef641f2504bcecfc0e120c6700fdb9413dfde550b53f2acf95e287f54111241",
     "docs/UPDATE_0.8.3.md": "07216703d35fd24f44c6dd3c619ed4dcd1db6b196fd339c5a80132d97361f277",
-    "docs/UPDATE_0.8.4.md": "e7ac97d2fc2ca51fbb84907323ed69fe154a576a9a0d685fd5a36cbe03e92be9"
+    "docs/UPDATE_0.8.4.md": "e7ac97d2fc2ca51fbb84907323ed69fe154a576a9a0d685fd5a36cbe03e92be9",
+    "crates/omsi-app/src/spline_editor/tests.rs": "ae1453f535cef87b7da3bd86c12653000b92673ba660616a4e81a333ab3c39aa"
   }
 }
