@@ -149,3 +149,52 @@ body:
       render: shell
     validations:
       required: false
+
+  - type: input
+    id: operating-system-version
+    attributes:
+      label: Welche Betriebssystem-Version verwendest du?
+      description: Unter Windows findest du sie mit Win + R und „winver“.
+      placeholder: "Zum Beispiel Windows 11 24H2 oder Ubuntu 24.04"
+    validations:
+      required: true
+
+  - type: input
+    id: gpu-driver-details
+    attributes:
+      label: Welche Grafikkarte und Treiberversion verwendest du?
+      description: Bitte Hersteller, Modell und Treiberversion angeben. Falls unbekannt, schreibe „unbekannt“.
+      placeholder: "Hersteller und Modell / Treiberversion"
+    validations:
+      required: false
+
+  - type: textarea
+    id: comparison-with-other-maps
+    attributes:
+      label: Passiert der Fehler auch auf einer anderen Karte?
+      description: Nenne bitte die getesteten Karten und das jeweilige Ergebnis.
+      placeholder: |
+        Betroffene Karte:
+        Andere getestete Karte:
+        Ergebnis oder „noch nicht getestet“:
+    validations:
+      required: false
+
+  - type: dropdown
+    id: main-game-startup
+    attributes:
+      label: Startet das normale openOMSI-Hauptspiel problemlos?
+      options:
+        - "Ja"
+        - "Nein"
+        - "Noch nicht getestet"
+    validations:
+      required: true
+
+  - type: input
+    id: main-game-test-version
+    attributes:
+      label: Welche Version des Hauptspiels hast du getestet?
+      description: Nur ausfüllen, wenn du den Start des Hauptspiels verglichen hast.
+    validations:
+      required: false
