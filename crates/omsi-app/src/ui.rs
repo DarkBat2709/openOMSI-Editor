@@ -739,7 +739,7 @@ impl Ui {
         let flat = self.text.flat;
         self.text.flat = true;
         self.editor_surface(r, scene, layout.panel, 5.0 * s, PANEL);
-        let title = if terrain { "Terrain editor 0.8.2-pre" } else if spline { "Spline editor 0.8.2-pre" } else { "Object editor 0.8.2-pre" };
+        let title = if terrain { "Terrain editor 0.8.4-pre" } else if spline { "Spline editor 0.8.4-pre" } else { "Object editor 0.8.4-pre" };
         self.put(r, scene, title, ((13.0 * s) as u32).max(1) | BOLD,
             MUTED, layout.panel[0] + 10.0 * s, layout.panel[1] + 12.0 * s);
         self.editor_surface(r, scene, layout.selection, 3.0 * s, PANEL_ALT);
@@ -846,7 +846,7 @@ impl Ui {
             self.editor_hint_mode = Some((spline, expanded));
         }
         let shortcuts = editor_shortcuts(spline, expanded);
-        let footer = if connection.is_some() { 198.0 } else if tools.is_some() { 320.0 } else if objects.is_some() {192.0} else { 0.0 };
+        let footer = if connection.is_some() { 198.0 } else if tools.is_some() { 372.0 } else if objects.is_some() {192.0} else { 0.0 };
         let hud_bottom = self.editor_hud_rect.map_or(viewport[1], |rect| rect[3]);
         let layout = editor_dock_layout(viewport, s, hud_bottom, shortcuts.len(), footer, self.editor_dock_position, spline);
         self.editor_help_scroll_max = layout.max_scroll;
@@ -1148,19 +1148,24 @@ impl Ui {
         use crate::editor::Action;
         let Some((enabled, filter)) = enabled else { return; };
         let [x, y] = origin;
-        let panel = [x, y, x + 284.0 * s, y + 320.0 * s];
+        let panel = [x, y, x + 284.0 * s, y + 372.0 * s];
         self.editor_tools_rect = Some(panel);
         self.editor_surface(r, scene, panel, 3.0 * s, PANEL);
         self.catalog_text(r, scene, if enabled { "Road shoulders / terrain" } else { "Select a road first" },
             (x + 8.0 * s, y + 5.0 * s), 268.0 * s, 13.0 * s, MUTED);
         self.catalog_text(r, scene, "Ctrl+click: add/remove · Click empty: clear",
-            (x + 8.0 * s, y + 285.0 * s), 268.0 * s, 12.0 * s, MUTED);
+            (x + 8.0 * s, y + 317.0 * s), 268.0 * s, 12.0 * s, MUTED);
+        self.catalog_text(r, scene, "Ctrl+Tab: add overlap · C: continue",
+            (x + 8.0 * s, y + 332.0 * s), 268.0 * s, 12.0 * s, MUTED);
+        self.catalog_text(r, scene, "Group: +/- length · ,/. curve · Home/End gradient",
+            (x + 8.0 * s, y + 347.0 * s), 268.0 * s, 11.0 * s, MUTED);
         for (row, (action, title)) in [
             (Action::CycleSelectionFilter, filter.title()),
             (Action::SmoothRoad(false), "Smooth shoulder (F8)"),
             (Action::SmoothRoad(true), "Smooth wider (Shift+F8)"),
             (Action::FitTerrain, "Road to terrain (F6)"),
             (Action::TerrainToRoad, "Terrain to road (Shift+F6)"),
+            (Action::MarkingToRoad, "Marking to road"),
             (Action::RoadsideWindow, "Objects along the road"),
             (Action::SidewalkWindow, "Sidewalk along the road"),
             (Action::ConstructionWindow, "Bridge / tunnel / underground …"),
@@ -1796,7 +1801,7 @@ impl Ui {
             (rect(32.0,468.0,326.0,30.0),"Width / texture from selected spline".into(),Command::UseSpline,true,false),
             (rect(32.0,511.0,158.0,30.0),"Choose asphalt …".into(),Command::RoadTexture,true,!window.project.road_texture.is_empty()),
             (rect(200.0,511.0,158.0,30.0),if roundabout {"Choose island texture …"}else{"Choose sidewalk …"}.into(),Command::WalkTexture,true,!window.project.walk_texture.is_empty()),
-            (rect(32.0,551.0,326.0,28.0),if roundabout {if window.project.markings {"Island edge line: ON"}else{"Island edge line: OFF"}}else if window.project.markings {"Centre lines: ON"} else {"Centre lines: OFF"}.into(),Command::Markings,true,window.project.markings),
+            (rect(32.0,551.0,if roundabout {158.0}else{326.0},28.0),if roundabout {if window.project.markings {"Island edge line: ON"}else{"Island edge line: OFF"}}else if window.project.markings {"Centre lines: ON"} else {"Centre lines: OFF"}.into(),Command::Markings,true,window.project.markings),
             (rect(32.0,591.0,158.0,30.0),"Undo".into(),Command::Undo,!window.undo.is_empty(),false),
             (rect(200.0,591.0,158.0,30.0),"Redo".into(),Command::Redo,!window.redo.is_empty(),false),
             (rect(410.0,551.0,184.0,32.0),"Show AI paths".into(),Command::ShowPaths,true,window.show_paths),
@@ -1804,6 +1809,13 @@ impl Ui {
             (rect(800.0,551.0,184.0,32.0),"Load project …".into(),Command::Load,true,false),
             (rect(726.0,680.0,272.0,42.0),if window.target.is_some(){if roundabout {"Update placed roundabout"}else{"Update placed junction"}}else{"Save & place"}.into(),Command::Export,window.error.is_none(),false),
         ]);
+        if roundabout {
+            let enabled=window.project.roundabout.as_ref().unwrap().outer_line;
+            let dashed=window.project.roundabout.as_ref().unwrap().dashed_entries;
+            buttons.push((rect(610.0,514.0,184.0,24.0),if dashed {"Entrance dashes: ON"}else{"Entrance dashes: OFF"}.into(),Command::DashedEntries,true,dashed));
+            buttons.push((rect(200.0,551.0,158.0,28.0),if enabled {"Outer edge line: ON"}else{"Outer edge line: OFF"}.into(),Command::OuterLine,true,enabled));
+            buttons.push((rect(802.0,514.0,180.0,24.0),if window.line_settings {"Texture settings"}else{"Match edge lines …"}.into(),Command::LineSettings,true,window.line_settings));
+        }
         if window.target.is_some(){buttons.push((rect(410.0,680.0,302.0,42.0),"Connect road to selected arm".into(),Command::ConnectRoad,window.error.is_none(),window.pending.is_some()));}
         self.editor_surface(r,scene,rect(402.0,76.0,596.0,464.0),5.0*s,PANEL_ALT);
         self.catalog_text(r,scene,"3D preview · Dimensions in metres",(x+416.0*s,y+86.0*s),556.0*s,17.0*s,SOFT);
@@ -1823,6 +1835,19 @@ impl Ui {
             }
         }
         let mut digit_hits=Vec::new();
+        if roundabout && window.line_settings {
+            for (i,field) in [Field::LineLeft,Field::LineRight,Field::LineWidth].into_iter().enumerate() {
+                let left=414.0+i as f32*194.0;
+                self.catalog_text(r,scene,field.title(),(x+left*s,y+592.0*s),180.0*s,11.0*s,SOFT);
+                let input=window.input.as_ref().filter(|p|p.field==field);
+                let text=input.map(|p|format!("{}│",p.text)).unwrap_or_else(||window.number_text(field));
+                buttons.push((rect(left,607.0,24.0,28.0),"−".into(),Command::Adjust(field,-0.01),true,false));
+                buttons.push((rect(left+154.0,607.0,24.0,28.0),"+".into(),Command::Adjust(field,0.01),true,false));
+                buttons.push((rect(left+28.0,607.0,122.0,28.0),text,Command::Edit(field),true,input.is_some()));
+            }
+            self.catalog_text(r,scene,"Selected arm · Left/right looking towards island · Edge to line centre",(x+414.0*s,y+644.0*s),570.0*s,11.0*s,SOFT);
+            self.catalog_text(r,scene,"Use unmarked asphalt; painted texture lines cannot be interrupted.",(x+414.0*s,y+660.0*s),570.0*s,11.0*s,AMBER);
+        } else {
         for (i,field) in [Field::UStart,Field::UEnd,Field::TextureWidth].into_iter().enumerate() {
             let left=414.0+i as f32*194.0;
             self.catalog_text(r,scene,field.title(),(x+left*s,y+592.0*s),180.0*s,11.0*s,SOFT);
@@ -1853,6 +1878,7 @@ impl Ui {
             for (line,help) in help.into_iter().enumerate() {
                 self.catalog_text(r,scene,help,(x+left*s,y+(650.0+line as f32*12.0)*s),180.0*s,10.0*s,SOFT);
             }
+        }
         }
         let message=if window.input.is_some() {"Enter value · Enter applies · Esc cancels input"} else {&window.message};
         for (i,line) in wrap(&self.text,message,11.0*s,374.0*s).iter().take(6).enumerate() {

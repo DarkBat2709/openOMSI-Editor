@@ -57,6 +57,7 @@ pub struct SplineEditor {
 }
 
 struct Undo {
+    selection: Option<Vec<Key>>,
     splines: Vec<(Key, MapSpline)>,
     terrain: Vec<((i32, i32), omsi_map::Terrain)>,
     terrain_after: Vec<((i32, i32), omsi_map::Terrain)>,
@@ -126,7 +127,7 @@ impl SplineEditor {
                 if self.group.contains(&key) { self.group.retain(|k| *k != key); }
                 else { self.group.push(key); }
             }
-        } else if hit.is_none_or(|key| !self.group.contains(&key)) {
+        } else {
             self.group = hit.into_iter().collect();
         }
         self.selected = hit.filter(|k| self.group.contains(k)).or_else(|| self.group.last().copied());
@@ -161,6 +162,51 @@ impl SplineEditor {
         edits.dirty = true; drop(edits);
         Some(self.describe(world))
     }
+    fn shape_group(&mut self, world: &World, action: &Action) -> String {
+        let keys = self.selection_keys();
+        let before = {
+            let edits = world.spline_edits.lock();
+            keys.iter().filter_map(|k| edits.current(*k).filter(|s| !s.deleted).map(|s| (*k,s))).collect::<Vec<_>>()
+        };
+        if before.len()!=keys.len() { return "Select existing splines first".into(); }
+        let mut working=before.clone();
+        for (key,part) in &mut working {
+            if deleted_spline_link_in_world(world,key.0,part.next_id) {part.next_id=0;}
+        }
+        for (key, part) in &working {
+            if let Some(reason)=group_shape_blocker(part) {
+                let name=part.file.rsplit(['/', '\\']).next().unwrap_or(&part.file);
+                let message=format!("Spline {} ({name}): {reason}",key.1);
+                log::info!("group shaping blocked: {message}");
+                return message;
+            }
+        }
+        let after = match shaped_group(&working, action) { Ok(v)=>v, Err(e)=>return e.into() };
+        if before==after {return self.describe(world);}
+        // Keep the original record owner (attachments refer to its index), but rebuild
+        // all crossed map tiles. Crossing an existing tile is valid spline geometry.
+        let mut touched=HashSet::new();
+        for (key,part) in before.iter().chain(after.iter()) {
+            let c=curve(key.0,part);
+            let steps=(part.length/1.0).ceil().max(1.0) as usize;
+            for i in 0..=steps {let tile=tile_at(c.point_at(part.length*i as f64/steps as f64));
+                if world.tile_source(tile.0,tile.1).is_none() {return "Group shaping leaves the map; nothing changed".into();}
+                touched.insert(tile);
+            }
+        }
+        self.finish_drag();
+        self.remember(before);
+        self.undo.last_mut().unwrap().selection=Some(keys);
+        let mut edits=world.spline_edits.lock();
+        for (key,s) in after {
+            if edits.added.contains_key(&key) {edits.added.insert(key,s);} else {edits.changed.insert(key,s);}
+            edits.dirty_tiles.insert(key.0);
+        }
+        edits.dirty_tiles.extend(touched);
+        edits.dirty=true; drop(edits);
+        self.describe(world)
+    }
+
     pub fn cycle_selection_filter(&mut self) -> &'static str {
         self.selection_filter = self.selection_filter.next();
         self.candidates.clear(); self.next = 0;
@@ -241,6 +287,21 @@ impl SplineEditor {
         self.selected.map(|k| k.1)
     }
 
+    /// Ctrl+Tab adds an overlap without discarding the current group.
+    pub fn add_next_pick(&mut self) -> Option<i64> {
+        let previous = self.selection_keys();
+        for step in 0..self.candidates.len() {
+            let index = (self.next + step) % self.candidates.len();
+            let key = self.candidates[index];
+            if !previous.contains(&key) {
+                self.next = index + 1;
+                self.update_group(previous, Some(key), true);
+                return Some(key.1);
+            }
+        }
+        self.selected.map(|key| key.1)
+    }
+
     pub fn next_pick(&mut self) -> Option<i64> {
         self.group.clear();
         if self.candidates.is_empty() { self.selected = None; return None; }
@@ -255,7 +316,19 @@ impl SplineEditor {
             return format!("Start {:.2}/{:.2}/{:.2}: point at target and press Shift+G · B cancels", p.x, p.y, p.z);
         }
         let count = self.selection_keys().len();
-        if count > 1 { return format!("{}: {count} · {}", omsi_ui::tr("Selected splines"), omsi_ui::tr("Move together · Ctrl+Z undoes the whole move")); }
+        if count > 1 {
+            let edits=world.spline_edits.lock();
+            let names=self.selection_keys().iter().filter_map(|key|edits.current(*key).map(|s| {
+                let name=s.file.rsplit(['/', '\\']).next().unwrap_or(&s.file);
+                format!("{}: {name}",key.1)
+            })).collect::<Vec<_>>().join(" | ");
+            let details=self.selected.and_then(|key|edits.current(key)).map(|s|format!(
+                " · {} {} · {} {:.2} m · {} {:.2} m · {} {:.2}/{:.2}% · {} {:.2} m",
+                omsi_ui::tr("Spline"),self.selected.unwrap().1,omsi_ui::tr("Length"),s.length,
+                omsi_ui::tr("Radius"),s.radius,omsi_ui::tr("Gradient"),s.grad_start,s.grad_end,
+                omsi_ui::tr("Height"),s.pos[2])).unwrap_or_default();
+            return format!("{}: {count} · {names}{details}",omsi_ui::tr("Selected splines"));
+        }
         let Some((key, s)) = self.selected.and_then(|k| world.spline_edits.lock().current(k).map(|s| (k, s))) else {
             return "No road selected".into();
         };
@@ -474,7 +547,11 @@ impl SplineEditor {
         }
         if self.selection_keys().len() > 1 {
             if let Action::Move(delta) = action { return self.move_group(world, *delta); }
-            return Some("Select one spline for this tool; groups support moving and height changes".into());
+            if matches!(action, Action::Copy) { return Some(self.extend_group(world)); }
+            if matches!(action, Action::Length(_) | Action::Curvature(_) | Action::Straight | Action::Grade(_) | Action::Turn(_)) {
+                return Some(self.shape_group(world,action));
+            }
+            return Some("Select one spline for this tool; groups support moving, shaping and continuation (C)".into());
         }
         let key = self.selected?;
         let mut s = world.spline_edits.lock().current(key)?;
@@ -543,7 +620,7 @@ impl SplineEditor {
 
     fn remember_with_terrain(&mut self, splines: Vec<(Key, MapSpline)>, terrain: Vec<((i32, i32), omsi_map::Terrain)>) {
         if self.undo.len() >= 100 { self.undo.remove(0); }
-        self.undo.push(Undo { splines, terrain, terrain_after: Vec::new() });
+        self.undo.push(Undo { selection: None, splines, terrain, terrain_after: Vec::new() });
     }
 
     pub(crate) fn can_undo(&self)->bool{!self.undo.is_empty()}
@@ -559,6 +636,8 @@ impl SplineEditor {
         }
         let Some(before) = self.undo.pop() else { return "No action to undo".into() };
         log::info!("Spline undo: restoring {} spline(s), {} terrain tile(s)", before.splines.len(), before.terrain.len());
+        if !before.splines.is_empty() { self.fitted_group.clear(); }
+        let restored_group = before.selection.clone();
         let selection = before.splines.first().map(|(key, _)| *key).or(self.selected);
         self.finish_drag();
         let terrain_keys: Vec<_> = before.terrain.iter().map(|(key, _)| *key).collect();
@@ -575,6 +654,10 @@ impl SplineEditor {
         }
         edits.dirty = true;
         self.selected = selection;
+        if let Some(group) = restored_group {
+            self.selected = group.last().copied();
+            self.group = group;
+        }
         drop(edits);
         self.describe(world)
     }
@@ -629,6 +712,7 @@ impl SplineEditor {
     /// Fit short, connected cubic sections to the unmodified terrain. Horizontal
     /// curves, texture distance, attachment indices and the original first ID survive.
     pub fn fit_terrain(&mut self, world: &World) -> String {
+        if self.multiple_selected() { return self.fit_group_terrain(world).unwrap_or_else(|e|e); }
         let Some(key) = self.selected else { return "Select a spline first".into() };
         let Some(s) = world.spline_edits.lock().current(key).filter(|s| !s.deleted) else {
             return "Select a spline first".into();
@@ -707,11 +791,87 @@ impl SplineEditor {
         format!("Height and road edges adjusted: {} sections · F8 smooths shoulder, Shift+F8 wider · Ctrl+Z to undo", pieces.len())
     }
 
+    // Stage the complete operation before touching edits: each layer receives the same
+    // vertical correction at corresponding stations, preserving its authored offset.
+    fn fit_group_terrain(&mut self, world: &World) -> Result<String,String> {
+        let keys=self.selection_keys();
+        let originals={let edits=world.spline_edits.lock();
+            keys.iter().map(|k|edits.current(*k).filter(|s|!s.deleted).map(|s|(*k,s))
+                .ok_or_else(||"Select existing splines first".to_string())).collect::<Result<Vec<_>,_>>()?};
+        let mut check=originals.clone();
+        for (_,s) in &mut check {s.next_id=0;}
+        shaped_group(&check,&Action::Length(0.0)).map_err(str::to_string)?;
+        // Choose the broadest rendered surface, independently of selection order.
+        let mut reference=None;
+        for (key,s) in &originals {
+            let ty=world.spline_type(&s.file).ok_or("Road profile not found")?;
+            let o=origin(key.0).extend(0.0);let mut bed=Roadbed::default();
+            bed.add_mesh(&omsi_geometry::build_spline_mesh(&ty.def,&curve(key.0,s),s.mirror,o),o);
+            let area=bed.faces.iter().map(|f|(f.points[1]-f.points[0]).truncate()
+                .perp_dot((f.points[2]-f.points[0]).truncate()).abs()).sum::<f64>();
+            if reference.as_ref().is_none_or(|(_,_,_,best)|area>*best) {reference=Some((*key,s.clone(),bed,area));}
+        }
+        let (reference_key,reference,profile,area)=reference.ok_or("Select existing splines first")?;
+        if area<=0.0 {return Err("Road profile has no visible surface".into());}
+        let c=curve(reference_key.0,&reference);
+        let count=(reference.length/5.0).ceil().clamp(1.0,256.0) as usize;
+        let mut correction=Vec::new();
+        for i in 0..=count {
+            let p=c.point_at(reference.length*i as f64/count as f64);
+            let h=world.editor_terrain_height(p.x,p.y).ok_or("Terrain not fully loaded; nothing changed")?;
+            correction.push(fitted_height(h,p,&profile)-p.z);
+        }
+        world.collect_editor_splines();
+        let mut after=Vec::new();let mut before=originals.clone();let mut ends=Vec::new();let mut fitted_keys=Vec::new();
+        for (key,s) in &originals {
+            let c=curve(key.0,s);
+            let heights=correction.iter().enumerate().map(|(i,d)|c.point_at(s.length*i as f64/count as f64).z+d).collect::<Vec<_>>();
+            let mut pieces=terrain_parts(s,&heights);
+            for part in pieces.iter_mut().skip(1) {part.id=world.allocate_editor_id().ok_or("No free map ID")?;}
+            let next=if deleted_spline_link_in_world(world,key.0,s.next_id){0}else{s.next_id};
+            for i in 0..pieces.len() {
+                pieces[i].prev_id=if i==0{s.prev_id}else{pieces[i-1].id};
+                pieces[i].next_id=if i+1==pieces.len(){next}else{pieces[i+1].id};
+            }
+            if next!=0 && pieces.len()>1 {
+                let edits=world.spline_edits.lock();
+                let candidates=edits.originals.keys().chain(edits.added.keys()).copied().collect::<std::collections::HashSet<_>>();
+                let found=candidates.into_iter().filter(|k|k.1==next).filter_map(|k|edits.current(k)
+                    .filter(|p|!p.deleted&&p.prev_id==s.id).map(|p|(k,p))).collect::<Vec<_>>();
+                if found.len()!=1 {return Err("Load neighbouring spline first; nothing changed".into());}
+                let (k,old)=found[0].clone();let mut changed=old.clone();changed.prev_id=pieces.last().unwrap().id;
+                before.push((k,old));after.push((k,changed));
+            }
+            for part in pieces.iter().skip(1) {let mut absent=part.clone();absent.deleted=true;before.push(((key.0,part.id),absent));}
+            ends.push((key.0,pieces.last().unwrap().id));
+            fitted_keys.extend(pieces.iter().map(|p|(key.0,p.id)));
+            after.extend(pieces.into_iter().map(|p|((key.0,p.id),p)));
+        }
+        let fitted=after.iter().filter(|(k,_)|fitted_keys.contains(k))
+            .map(|(k,s)|(k.0,s.clone())).collect::<Vec<_>>();
+        let plan=self.prepare_terrain(world,&fitted,2.0)?;
+        self.finish_drag();self.remember_with_terrain(before.clone(),plan.before);
+        self.undo.last_mut().unwrap().selection=Some(keys);
+        self.fitted_group=fitted_keys;
+        {let mut edits=world.spline_edits.lock();
+            for (k,s) in after {
+                if edits.added.contains_key(&k)||before.iter().any(|(b,s)|*b==k&&s.deleted) {
+                    edits.originals.entry(k).or_insert_with(||s.clone());edits.added.insert(k,s);
+                } else {edits.changed.insert(k,s);}
+                edits.dirty_tiles.insert(k.0);
+            }
+            edits.dirty=true;
+        }
+        self.group=ends;self.selected=self.group.last().copied();
+        self.commit_terrain(world,plan.after);
+        Ok("Road and marking fitted together to terrain · Ctrl+Z to undo · Ctrl+S to save".into())
+    }
+
     /// Shape the terrain under the actual rendered surface, including its profile,
     /// cant, mirror and skew. Terrain fitting creates a group so smoothing also covers its subdivisions.
     pub fn smooth_road(&mut self, world: &World, wide: bool) -> String {
         let Some(selected) = self.selected else { return "Select a road first, then press F8 or click Smooth shoulder".into() };
-        let keys = if self.fitted_group.contains(&selected) { self.fitted_group.clone() } else { vec![selected] };
+        let keys = if self.multiple_selected() && !self.fitted_group.contains(&selected) { self.selection_keys() } else if self.fitted_group.contains(&selected) { self.fitted_group.clone() } else { vec![selected] };
         let roads: Vec<_> = {
             let edits = world.spline_edits.lock();
             keys.iter().filter_map(|key| edits.current(*key).filter(|s| !s.deleted).map(|s| (key.0, s))).collect()
@@ -728,17 +888,83 @@ impl SplineEditor {
 
     /// Adjust only height samples inside the selected spline surface. No shoulder
     /// expansion or triangle clearance pass may modify samples outside that footprint.
+    /// Explicitly realign one selected paint layer to one selected asphalt section.
+    /// Neither unrelated splines nor the asphalt reference are modified.
+    pub fn marking_to_road(&mut self, world: &World) -> String {
+        let keys=self.selection_keys();
+        if keys.len()<2 || keys.len()>256 {return "Select asphalt and marking together (Ctrl+click)".into();}
+        let mut layers=Vec::new();
+        for key in keys.iter().copied() {
+            let Some(s)=world.spline_edits.lock().current(key).filter(|s|!s.deleted) else {return "Select an existing road first".into();};
+            let Some(ty)=world.spline_type(&s.file) else {return "Road profile missing".into();};
+            let coverage=ty.def.profiles.iter().flat_map(|p|p.points.windows(2)).map(|p|(p[1].x-p[0].x).abs() as f64).sum::<f64>();
+            layers.push((key,s,ty,coverage));
+        }
+        layers.sort_by(|a,b|b.3.total_cmp(&a.3));
+        let coverage=layers[0].3;
+        let paints=layers.iter().filter(|l|l.3<coverage*0.5).count();
+        if coverage<1.0 || paints!=1 {return "Select connected asphalt sections and one separate marking".into();}
+        let (mk,mark,mt,_)=layers.pop().unwrap();
+        let roads=layers.iter().map(|(k,s,_,_)|(*k,s.clone())).collect::<Vec<_>>();
+        let order=match marking_chain_order(&roads) {Ok(v)=>v,Err(e)=>return e};
+        let mut pieces=Vec::new();let mut distance=0.0;
+        for i in order {
+            let (rk,road,rt,_)=&layers[i];
+            // Keep the existing record in its original owner tile (attachments
+            // refer to its index). New pieces belong to the reference's tile.
+            let key=if pieces.is_empty(){mk}else{(rk.0,0)};
+            let mut next=match aligned_marking(*rk,road,&rt.def,key,&mark,&mt.def) {Ok(s)=>s,Err(e)=>return e};
+            next.tex_offset=mark.tex_offset+distance;next.map_chain_offset=Some(mark.map_chain_offset.unwrap_or(mark.tex_offset)+distance);
+            distance+=road.length;
+            for tile in connection_tiles(key,key,&next) {if world.tile_source(tile.0,tile.1).is_none(){return "Connection leaves the map".into();}}
+            pieces.push((key,next));
+        }
+        // Resolve the reciprocal next link before changing any spline.
+        let mut neighbor=None;
+        if pieces.len()>1 && mark.next_id!=0 && !deleted_spline_link_in_world(world,mk.0,mark.next_id) {
+            world.collect_editor_splines();let edits=world.spline_edits.lock();
+            let all=edits.originals.keys().chain(edits.changed.keys()).chain(edits.added.keys()).copied().collect::<HashSet<_>>();
+            let matches=all.into_iter().filter(|k|k.1==mark.next_id).filter_map(|k|edits.current(k).filter(|s|!s.deleted&&s.prev_id==mark.id).map(|s|(k,s))).collect::<Vec<_>>();
+            if matches.len()!=1{return "Load neighbouring spline first; nothing changed".into();}
+            neighbor=matches.into_iter().next();
+        }
+        for (k,s) in pieces.iter_mut().skip(1) {let Some(id)=world.allocate_editor_id() else{return "No free map ID".into();};k.1=id;s.id=id;}
+        for i in 0..pieces.len() {
+            pieces[i].1.prev_id=if i==0{mark.prev_id}else{pieces[i-1].1.id};
+            pieces[i].1.next_id=if i+1==pieces.len(){mark.next_id}else{pieces[i+1].1.id};
+        }
+        let mut before=vec![(mk,mark.clone())];
+        for (k,s) in pieces.iter().skip(1) {let mut absent=s.clone();absent.deleted=true;before.push((*k,absent));}
+        if let Some((k,s))=&neighbor {before.push((*k,s.clone()));}
+        self.remember(before);self.undo.last_mut().unwrap().selection=Some(keys);
+        let mut edits=world.spline_edits.lock();
+        for (i,(k,s)) in pieces.iter().enumerate() {
+            if i>0 || edits.added.contains_key(k) {edits.originals.entry(*k).or_insert_with(||s.clone());edits.added.insert(*k,s.clone());}
+            else {edits.changed.insert(*k,s.clone());}
+            edits.dirty_tiles.insert(k.0);
+        }
+        if let Some((k,mut s))=neighbor {s.prev_id=pieces.last().unwrap().1.id;
+            if edits.added.contains_key(&k){edits.added.insert(k,s);}else{edits.changed.insert(k,s);}edits.dirty_tiles.insert(k.0);
+        }
+        edits.dirty=true;
+        self.fitted_group.clear();self.start=None;
+        // Leave only the terminal pair selected, ready for continuing with C.
+        let last_road=marking_chain_order(&roads).unwrap().last().copied().unwrap();
+        self.group=vec![layers[last_road].0,pieces.last().unwrap().0];self.selected=Some(pieces.last().unwrap().0);
+        "Marking fitted to asphalt · Ctrl+Z to undo · Ctrl+S to save".into()
+    }
+
     pub fn terrain_to_road(&mut self, world: &World) -> String {
-        let Some(key) = self.selected else { return "Select a road first".into(); };
-        let Some(road) = world.spline_edits.lock().current(key).filter(|s| !s.deleted)
-            else { return "Select an existing road first".into(); };
-        let plan = match self.prepare_terrain(world, &[(key.0, road)], 0.0) {
+        let keys=if self.selected.is_some_and(|k|self.fitted_group.contains(&k)) {self.fitted_group.clone()} else {self.selection_keys()};
+        let roads={let edits=world.spline_edits.lock();keys.iter().filter_map(|k|edits.current(*k).filter(|s|!s.deleted).map(|s|(k.0,s))).collect::<Vec<_>>()};
+        if roads.is_empty() || roads.len()!=keys.len() {return "Select an existing road first".into();}
+        let plan = match self.prepare_terrain(world, &roads, 0.0) {
             Ok(plan) => plan, Err(error) => return error,
         };
         if plan.after.is_empty() { return "No terrain samples need changing under this road".into(); }
         self.remember_with_terrain(Vec::new(), plan.before);
         self.commit_terrain(world, plan.after);
-        "Terrain fitted under selected road only · Ctrl+Z to undo · Ctrl+S to save".into()
+        "Terrain fitted across road width and raster edge · Ctrl+Z to undo · Ctrl+S to save".into()
     }
 
     fn prepare_terrain(&self, world: &World, roads: &[((i32, i32), MapSpline)], shoulder: f64) -> Result<TerrainPlan, String> {
@@ -750,8 +976,10 @@ impl SplineEditor {
             bed.add_mesh(&mesh, o);
         }
         if bed.faces.is_empty() { return Err("Road profile has no surface to smooth".into()); }
-        let loaded: HashMap<_, _> = world.loaded_tiles().into_iter().filter_map(|key| world.editor_terrain_tile(key).map(|t| (key, t))).collect();
-        let guard = if shoulder == 0.0 { 0.0 } else { loaded.values().map(|t| omsi_map::tile_size() / t.cells.max(1) as f64).fold(0.0f64, f64::max) * std::f64::consts::SQRT_2 };
+        let loaded: HashMap<_, _> = world.editor_tile_keys().into_iter().filter_map(|key| world.editor_terrain_tile(key).map(|t| (key, t))).collect();
+        // A terrain triangle can overlap the asphalt even when its vertices are
+        // outside it. Support one grid diagonal beyond the real mesh footprint.
+        let guard = loaded.values().map(|t| omsi_map::tile_size() / t.cells.max(1) as f64).fold(0.0f64, f64::max) * std::f64::consts::SQRT_2;
         // Include duplicate boundary samples on both neighbouring tiles.
         let reach = (guard + shoulder).max(1e-6);
         let bounds = bed.bounds();
@@ -904,6 +1132,49 @@ impl SplineEditor {
         for tile in connection_tiles(key,key,&fitted){if world.tile_source(tile.0,tile.1).is_none(){return Err("Connection leaves the map".into());}}
         Ok(fitted)
     }
+    /// Fit co-located asphalt and decal layers from one reference curve. A narrow
+    /// marking profile must not be independently widened to the entire arm.
+    pub(crate) fn junction_layer_plan(&self,world:&World,key:Key,id:i64,port:crate::junction_connections::Port,def:&omsi_scenery::Spline)->Result<Vec<(Key,MapSpline)>,String>{
+        let source=world.spline_edits.lock().current(key).ok_or("Road no longer loaded")?;
+        let candidates={let edits=world.spline_edits.lock();
+            let keys=edits.originals.keys().chain(edits.changed.keys()).chain(edits.added.keys()).copied().collect::<HashSet<_>>();
+            keys.into_iter().filter_map(|k|edits.current(k).filter(|s|!s.deleted).map(|s|(k,s)))
+                .filter(|(k,s)|*k==key||junction_layers_match(key,&source,*k,s)||junction_layer_near_end(key,&source,*k,s)).collect::<Vec<_>>()};
+        let mut layers=Vec::new();
+        for (k,s) in candidates {
+            let Some(ty)=world.spline_type(&s.file) else {if k==key{return Err("Road profile missing".into());}continue;};
+            let edges=physical_edges(&ty.def,s.mirror);let span=(edges[1].0-edges[0].0).abs();
+            let coverage=ty.def.profiles.iter().flat_map(|p|p.points.windows(2)).map(|p|(p[1].x-p[0].x).abs() as f64).sum::<f64>();
+            layers.push((k,s,span,coverage));
+        }
+        layers.sort_by(|a,b|b.3.total_cmp(&a.3).then_with(||a.0.cmp(&b.0)));
+        let (base_key,base,span,coverage)=layers.first().cloned().ok_or("Road profile missing")?;
+        // Only sparse, narrower surface profiles are adopted automatically. Nearby
+        // full-width roads and crossing roads are never moved as side effects.
+        layers.retain(|(k,_,w,c)|*k==base_key || (*w<=span+0.02 && *c<coverage*0.5));
+        for (k,s,_,_) in &layers {
+            if *k!=base_key && !junction_layers_match(base_key,&base,*k,s) {
+                return Err(format!("Straße {} und Markierung {} haben unterschiedliche Abschnitte. Erst Länge und Unterteilung angleichen; nichts geändert",base.id,s.id));
+            }
+        }
+        if !layers.iter().any(|(k,_,_,_)|*k==key) {return self.junction_plan(world,key,id,port,def).map(|s|vec![(key,s)]);}
+        let fitted=self.junction_plan(world,base_key,id,port,def)?;
+        let mut result=vec![(base_key,fitted.clone())];
+        for (k,s,_,_) in layers.into_iter().skip(1) {
+            let end=junction_end(&base,&curve(base_key.0,&base),id,port.point);
+            let link=end.link(&s);
+            if link!=0 && link!=id && !deleted_spline_link_in_world(world,k.0,link) {
+                return Err(format!("Markierung {} ist mit {} verbunden; Anschluss unverändert",s.id,link));
+            }
+            let mut layer=fit_junction_layer(base_key,&base,&fitted,k,&s,end,id);
+            let ty=world.spline_type(&s.file).ok_or("Road profile missing")?;
+            preserve_layer_far_end(k.0,&s,&mut layer,&ty.def,end);
+            for tile in connection_tiles(k,k,&layer) {if world.tile_source(tile.0,tile.1).is_none(){return Err("Connection leaves the map".into());}}
+            result.push((k,layer));
+        }
+        Ok(result)
+    }
+
     pub(crate) fn junction_preview(world:&World,parts:&[(Key,MapSpline)])->Vec<[DVec3;2]>{
         let mut points=Vec::new();
         for(key,s)in parts{if let Some(ty)=world.spline_type(&s.file){let edges=physical_edges(&ty.def,s.mirror);let c=curve(key.0,s).with_sli(&ty.def);let n=(s.length/2.0).ceil().max(1.0)as usize;
@@ -980,6 +1251,97 @@ impl SplineEditor {
         for (i,(tile,s)) in pieces.into_iter().enumerate(){let key=(tile,s.id);if i==0&&original.is_some()&&!edits.added.contains_key(&key){edits.changed.insert(key,s);}else{edits.originals.entry(key).or_insert_with(||s.clone());edits.added.insert(key,s);}edits.dirty_tiles.insert(tile);}
         for(key,before,after)in neighbors{if edits.added.contains_key(&key){edits.added.insert(key,after);}else{edits.originals.entry(key).or_insert(before);edits.changed.insert(key,after);}edits.dirty_tiles.insert(key.0);}
         edits.dirty=true;self.selected=Some(first);Ok(count)
+    }
+
+    fn extend_group(&mut self, world: &World) -> String {
+        match self.prepare_group_extension(world) {
+            Err(error) => error,
+            Ok((sources, sections, ends)) => {
+                self.finish_drag();
+                let mut before = sources.iter().map(|(key, old, _)| (*key, old.clone())).collect::<Vec<_>>();
+                before.extend(sections.iter().map(|(key, part)| {
+                    let mut absent = part.clone(); absent.deleted = true; (*key, absent)
+                }));
+                self.remember(before);
+                self.undo.last_mut().unwrap().selection = Some(self.selection_keys());
+                let mut edits = world.spline_edits.lock();
+                for (key, _, source) in sources {
+                    if edits.added.contains_key(&key) { edits.added.insert(key, source); }
+                    else { edits.changed.insert(key, source); }
+                    edits.dirty_tiles.insert(key.0);
+                }
+                for (key, part) in sections {
+                    let c=curve(key.0,&part);
+                    for cut in straight_tile_cuts(c.start,c.end_point()).windows(2) {
+                        edits.dirty_tiles.insert(tile_at(c.start.lerp(c.end_point(),(cut[0]+cut[1])*0.5)));
+                    }
+                    edits.originals.insert(key, part.clone());
+                    edits.added.insert(key, part);
+                    edits.dirty_tiles.insert(key.0);
+                }
+                edits.dirty = true;
+                self.group = ends;
+                self.selected = self.group.last().copied();
+                self.candidates.clear();
+                format!("{} Splines gemeinsam fortgesetzt · Strg+Z: gesamten Schritt rückgängig", self.group.len())
+            }
+        }
+    }
+
+    // Validate every section before changing any map record, including tile cuts.
+    fn prepare_group_extension(&self, world: &World) -> Result<(Vec<(Key, MapSpline, MapSpline)>, Vec<(Key, MapSpline)>, Vec<Key>), String> {
+        if omsi_map::world_coordinates() { return Err("Gruppenfortsetzung benötigt eine normale OMSI-Karte".into()); }
+        let keys = self.selection_keys();
+        let originals = {
+            let edits = world.spline_edits.lock();
+            keys.iter().map(|key| edits.current(*key).filter(|s| !s.deleted).map(|s| (*key,s))
+                .ok_or("Ausgewählter Spline fehlt; nichts geändert".to_string())).collect::<Result<Vec<_>,_>>()?
+        };
+        // A common length keeps parallel road/marking ends together.
+        let length = originals.iter().find(|(key,_)| Some(*key)==self.selected)
+            .ok_or("Keine Auswahl")?.1.length.clamp(1.0,30.0);
+        let mut sources = Vec::new(); let mut sections = Vec::new(); let mut ends = Vec::new();
+        for (key, old) in originals {
+            if !valid_spline(&old) {return Err("Ungültiger Spline; nichts geändert".into());}
+            if old.next_id != 0 && !deleted_spline_link_in_world(world,key.0,old.next_id) {
+                return Err(format!("Spline {}: Ende mit {} verbunden oder nicht eindeutig geladen; nichts geändert",old.id,old.next_id));
+            }
+            if old.profile_transitions.iter().any(Option::is_some) || old.skew_end.abs()>1e-8 {
+                return Err("Profilübergang oder schräges Ende: einzeln verbinden; nichts geändert".into());
+            }
+            let c = curve(key.0, &old);
+            let start = c.end_point();
+            let end = start + SplineCurve::dir(c.heading_at(old.length)).extend(c.slope_at(old.length)) * length;
+            let cuts = straight_tile_cuts(start,end);
+            for pair in cuts.windows(2) {
+                let tile=tile_at(start.lerp(end,(pair[0]+pair[1])*0.5));
+                let path=world.tile_source(tile.0,tile.1).ok_or("Fortsetzung verlässt die Karte; nichts geändert")?;
+                let base=Tile::load(&path).map_err(|_| "Kachel nicht lesbar; nichts geändert")?;
+                if base.version != 0 && base.version < 14 { return Err("Kachelversion zu alt; nichts geändert".into()); }
+            }
+            let mut chain = Vec::new();
+            {
+                let tile=tile_at(start.lerp(end,1e-8));
+                let id=world.allocate_editor_id().ok_or("Keine freie Karten-ID")?;
+                let mut part=between(&old.file,id,tile,start,end,old.tex_offset+old.length);
+                part.mirror=old.mirror;
+                part.cant_start=old.cant_end; part.cant_end=old.cant_end;
+                part.rules=old.rules.clone();
+                part.terrain_align=old.terrain_align; part.terrain_align_flag=old.terrain_align_flag;
+                if !valid_spline(&part) {return Err("Ungültige Fortsetzung; nichts geändert".into());}
+                chain.push(((tile,id),part));
+            }
+            if chain.is_empty() {return Err("Keine Fortsetzung möglich; nichts geändert".into());}
+            for i in 0..chain.len() {
+                chain[i].1.prev_id=if i==0 {old.id} else {chain[i-1].1.id};
+                chain[i].1.next_id=if i+1==chain.len() {0} else {chain[i+1].1.id};
+            }
+            let mut changed=old.clone(); changed.next_id=chain[0].1.id;
+            sources.push((key,old,changed));
+            ends.push(chain.last().unwrap().0);
+            sections.extend(chain);
+        }
+        Ok((sources,sections,ends))
     }
 
     fn add(&mut self, world: &World, file: &str, start: DVec3, end: DVec3, offset: f64) -> String {
@@ -1136,6 +1498,21 @@ impl Roadbed {
             && f.bounds[1] <= o.y + size + reach && f.bounds[3] >= o.y - reach)
     }
 
+    /// Extend the closest surface plane to support surrounding grid vertices.
+    /// Clamping their height to the edge would flatten the bank and leave a gap
+    /// when the raster triangle interpolates back across a sloping road.
+    fn support_height(&self,p:DVec2,reach:f64)->Option<(f64,f64)> {
+        let mut best:Option<(f64,f64)>=None;
+        for face in &self.faces {
+            if bounds_distance_squared(p,face.bounds)>best.map_or(reach*reach,|b|b.0)+1e-8 {continue;}
+            let (d2,_)=face.nearest(p);if d2>reach*reach {continue;}
+            let [a,b,c]=face.points;let ab=(b-a).truncate();let ac=(c-a).truncate();let q=p-a.truncate();
+            let det=ab.perp_dot(ac);let z=a.z+q.perp_dot(ac)/det*(b.z-a.z)+ab.perp_dot(q)/det*(c.z-a.z);
+            if best.is_none_or(|v|d2<v.0-1e-8||((d2-v.0).abs()<=1e-8&&z<v.1)){best=Some((d2,z));}
+        }
+        best
+    }
+
     fn nearest(&self, p: DVec2, reach: f64) -> Option<(f64, f64)> {
         let mut best: Option<(f64, f64)> = None;
         for face in &self.faces {
@@ -1155,7 +1532,8 @@ fn terrain_plan(bed: &Roadbed, before: &HashMap<(i32, i32), omsi_map::Terrain>, 
         for iy in 0..n {
             for ix in 0..n {
                 let p = o + DVec2::new(ix as f64 * cell, iy as f64 * cell);
-                let Some((d2, road_height)) = bed.nearest(p, guard + shoulder) else { continue };
+                let hit=if shoulder==0.0 && guard>0.0 {bed.support_height(p,guard)} else {bed.nearest(p,guard+shoulder)};
+                let Some((d2, road_height)) = hit else { continue };
                 let fade = if shoulder == 0.0 { 0.0 } else { ((d2.sqrt() - guard) / shoulder).clamp(0.0, 1.0) };
                 let weight = 1.0 - fade * fade * (3.0 - 2.0 * fade);
                 let h = &mut t.heights[iy * n + ix];
@@ -1618,6 +1996,101 @@ fn fit_connection_endpoint(source_tile: (i32, i32), source: &MapSpline, source_e
 fn deleted_junction_neighbor(link:i64,junction:i64,matches:&[MapSpline])->bool{
     link!=0&&link!=junction&&matches.len()==1&&matches[0].id==link&&matches[0].deleted
 }
+fn junction_layer_near_end(a:Key,road:&MapSpline,b:Key,layer:&MapSpline)->bool {
+    if road.file==layer.file || layer.deleted || !valid_spline(layer) {return false;}
+    let r=curve(a.0,road);let m=curve(b.0,layer);
+    let angle=((road.heading-layer.heading+180.0).rem_euclid(360.0)-180.0).abs();
+    if angle>5.0 {return false;}
+    // A common far endpoint with differing subdivision is a potential damaged
+    // pair, not permission to reshape a longer marking or neighbouring segment.
+    r.end_point().distance(m.end_point())<1.0
+}
+
+fn junction_layers_match(a:Key,road:&MapSpline,b:Key,layer:&MapSpline)->bool {
+    if road.file==layer.file || layer.deleted || !valid_spline(layer) {return false;}
+    let r=curve(a.0,road);let m=curve(b.0,layer);
+    // Also recognize already connected layers when updating the same junction.
+    (road.length-layer.length).abs()<0.5 && (0..=4).all(|i| {
+        let p=r.point_at(road.length*i as f64/4.0);let q=m.point_at(layer.length*i as f64/4.0);
+        p.truncate().distance(q.truncate())<0.5 && (p.z-q.z).abs()<0.25
+    })
+}
+
+/// Selected asphalt must form one directed, reciprocal chain. Ordering never
+/// depends on click order and cannot silently cross an unselected gap or branch.
+fn marking_chain_order(roads:&[(Key,MapSpline)])->Result<Vec<usize>,String> {
+    let error=||"Select one continuous asphalt chain without gaps".to_string();
+    if roads.len()==1 {return Ok(vec![0]);}
+    let ids=roads.iter().map(|(_,s)|s.id).collect::<HashSet<_>>();
+    if ids.len()!=roads.len(){return Err(error());}
+    let starts=roads.iter().enumerate().filter(|(_,(_,s))|!ids.contains(&s.prev_id)).map(|(i,_)|i).collect::<Vec<_>>();
+    if starts.len()!=1{return Err(error());}
+    let mut result=Vec::new();let mut i=starts[0];
+    loop {
+        if result.contains(&i){return Err(error());}result.push(i);
+        let (k,s)=&roads[i];
+        let Some(j)=roads.iter().position(|(_,p)|p.id==s.next_id) else{break;};
+        let (nk,n)=&roads[j];
+        if n.prev_id!=s.id || curve(k.0,s).end_point().distance(curve(nk.0,n).point_at(0.0))>0.25 {return Err(error());}
+        i=j;
+    }
+    if result.len()!=roads.len(){return Err(error());}Ok(result)
+}
+
+/// Require a compatible transverse profile rather than silently burying paint
+/// in a crown/kerb. The reference supplies all longitudinal surface transitions.
+fn aligned_marking(rk:Key,road:&MapSpline,rd:&omsi_scenery::Spline,mk:Key,mark:&MapSpline,md:&omsi_scenery::Spline)->Result<MapSpline,String> {
+    let height=|x:f64|rd.profiles.iter().flat_map(|p|p.points.windows(2)).filter_map(|p|{
+        let a=if road.mirror {-(p[0].x as f64)} else {p[0].x as f64};
+        let b=if road.mirror {-(p[1].x as f64)} else {p[1].x as f64};
+        if (a-b).abs()<1e-8 || x<a.min(b)-1e-6 || x>a.max(b)+1e-6 {None}
+        else {Some(p[0].z as f64+(p[1].z-p[0].z) as f64*(x-a)/(b-a))}
+    }).max_by(f64::total_cmp);
+    let mut offsets=Vec::new();
+    for p in md.profiles.iter().flat_map(|p|&p.points) {
+        let x=if mark.mirror {-(p.x as f64)} else {p.x as f64};
+        let z=height(x).ok_or("Marking extends beyond the asphalt profile")?;
+        offsets.push(z+0.005-p.z as f64);
+    }
+    let lo=offsets.iter().copied().reduce(f64::min).ok_or("Road profile missing")?;
+    let hi=offsets.iter().copied().reduce(f64::max).unwrap();
+    if hi-lo>0.002 {return Err("Marking and asphalt cross-sections differ; nothing changed".into());}
+    let mut fitted=fit_junction_layer(rk,road,road,mk,mark,End::Finish,mark.next_id);
+    // Discard the old, possibly edited vertical offset. Keep a small paint
+    // clearance supplied by the actual two profiles instead.
+    fitted.pos[2]=road.pos[2]+(lo+hi)*0.5;
+    Ok(fitted)
+}
+
+fn fit_junction_layer(base_key:Key,base:&MapSpline,fitted:&MapSpline,key:Key,layer:&MapSpline,end:End,id:i64)->MapSpline {
+    let mut result=fitted.clone();
+    result.id=layer.id;result.file=layer.file.clone();result.mirror=layer.mirror;
+    result.tex_offset=layer.tex_offset;result.map_chain_offset=layer.map_chain_offset;
+    result.rules=layer.rules.clone();result.prev_id=layer.prev_id;result.next_id=layer.next_id;
+    result.terrain_align=layer.terrain_align;result.terrain_align_flag=layer.terrain_align_flag;
+    let delta=origin(base_key.0)-origin(key.0);result.pos[0]+=delta.x;result.pos[1]+=delta.y;
+    // Share height, cant and transitions. The SLI profiles retain their intrinsic
+    // paint clearance (e.g. 0.105 m versus 0.100 m asphalt).
+    result.pos[2]+=layer.pos[2]-base.pos[2];
+    end.set_link(&mut result,id);
+    result
+}
+
+fn preserve_layer_far_end(tile:(i32,i32),old:&MapSpline,fitted:&mut MapSpline,def:&omsi_scenery::Spline,connected:End) {
+    let far=if connected==End::Start {End::Finish}else{End::Start};
+    if far.link(old)==0 {return;}
+    let index=if far==End::Start {0}else{1};
+    let wanted=edge_points(tile,old,def,far);
+    fitted.profile_transitions[index]=None;
+    let actual=edge_points(tile,fitted,def,far);let c=curve(tile,fitted);
+    let forward=SplineCurve::dir(far.heading(&c));let right=DVec2::new(forward.y,-forward.x);
+    let offsets=[0,1].map(|i|{let d=wanted[i]-actual[i];[d.truncate().dot(right),d.truncate().dot(forward),d.z]});
+    if offsets.iter().flatten().any(|v|v.abs()>1e-8) {
+        let edges=physical_edges(def,fitted.mirror);
+        fitted.profile_transitions[index]=Some(omsi_map::ProfileTransition {station:if index==0{0.0}else{fitted.length},span:(fitted.length*0.5).min(10.0),x:[edges[0].0,edges[1].0],offsets});
+    }
+}
+
 fn junction_end(source:&MapSpline,c:&SplineCurve,id:i64,point:DVec3)->End {
     if source.prev_id==id {End::Start} else if source.next_id==id {End::Finish}
     else if c.start.distance(point)<c.end_point().distance(point){End::Start}else{End::Finish}
@@ -1724,6 +2197,122 @@ fn between(file: &str, id: i64, tile: (i32, i32), start: DVec3, end: DVec3, offs
         heading: d.x.atan2(d.y).to_degrees().rem_euclid(360.0), length,
         grad_start: grade, grad_end: grade, delta_h: Some(d.z), is_h: true,
         tex_offset: offset, map_chain_offset: Some(offset), ..Default::default() }
+}
+
+// Saved tombstones are deliberately excluded from collect_editor_splines. Resolve
+// a cache miss from the source tile, while always preferring current in-memory edits.
+fn deleted_spline_link_in_world(world: &World, owner: (i32,i32), id: i64) -> bool {
+    if id==0 {return false;}
+    // Deleted records do not enter the render cache. A continuation can belong to
+    // the adjacent tile, and old split records can share an ID. Only accept it as
+    // free when every locally relevant record is explicitly deleted.
+    let edits=world.spline_edits.lock();
+    let cached=edits.originals.keys().chain(edits.changed.keys()).chain(edits.added.keys())
+        .filter(|k|k.1==id).copied().collect::<HashSet<_>>();
+    if cached.iter().any(|k|edits.current(*k).is_some_and(|s|!s.deleted)) {return false;}
+    drop(edits);
+    let mut found=!cached.is_empty();
+    for dx in -1..=1 {for dy in -1..=1 {
+        let key=(owner.0+dx,owner.1+dy);
+        let Some(path)=world.tile_source(key.0,key.1) else {continue;};
+        let Some(mut tile)=omsi_world::map_index::read_tile(&path,&world.chrono_dirs()) else {return false;};
+        world.spline_edits.lock().overlay(key,&mut tile);
+        for s in tile.splines.iter().filter(|s|s.id==id) {
+            found=true;if !s.deleted {return false;}
+        }
+    }}
+    found
+}
+
+/// A deleted neighbour no longer occupies an endpoint. Unknown/ambiguous IDs stay blocked.
+#[cfg(test)]
+fn deleted_spline_link(edits: &Edits, id: i64) -> bool {
+    if id==0 {return false;}
+    let keys: HashSet<_>=edits.originals.keys().chain(edits.changed.keys()).chain(edits.added.keys())
+        .filter(|key|key.1==id).copied().collect();
+    keys.len()==1 && keys.into_iter().next().and_then(|key|edits.current(key)).is_some_and(|s|s.deleted)
+}
+
+fn group_shape_blocker(s: &MapSpline) -> Option<String> {
+    if !valid_spline(s) || s.deleted {return Some("Ungültiger oder gelöschter Abschnitt; nichts geändert".into());}
+    if s.next_id!=0 {return Some(format!("Ende bereits mit Spline {} verbunden. Freien Endabschnitt auswählen; nichts geändert",s.next_id));}
+    if s.profile_transitions.iter().any(Option::is_some) {return Some("Enthält einen Profilübergang; freien Abschnitt ohne Übergang auswählen. Nichts geändert".into());}
+    if s.skew_start.abs()>1e-8 || s.skew_end.abs()>1e-8 {return Some("Hat ein schräges Anschlussende; nichts geändert".into());}
+    None
+}
+
+/// Parallel splines need concentric radii and different arc lengths, not identical radii.
+/// Keep their start positions and height differences; this does not project onto a road surface.
+fn shaped_group(before: &[(Key,MapSpline)], action: &Action) -> Result<Vec<(Key,MapSpline)>, &'static str> {
+    let (reference_key, reference)=before.first().ok_or("Select existing splines first")?;
+    if before.iter().any(|(_,s)| !valid_spline(s) || s.deleted || s.next_id!=0
+        || s.profile_transitions.iter().any(Option::is_some) || s.skew_start.abs()>1e-8 || s.skew_end.abs()>1e-8) {
+        return Err("Group shaping needs free ends without profile transitions; nothing changed");
+    }
+    let old_curve=curve(reference_key.0,reference);
+    let direction=SplineCurve::dir(reference.heading);
+    let right=DVec2::new(direction.y,-direction.x);
+    let old_k=if reference.radius==0.0 {0.0} else {1.0/reference.radius};
+    let mut target=reference.clone();
+    match action {
+        Action::Length(d)=>target.length=(target.length+d).clamp(0.5,500.0),
+        Action::Curvature(d)=>{let k=(old_k+d).clamp(-0.05,0.05);target.radius=if k.abs()<1e-9 {0.0}else{1.0/k};},
+        Action::Straight=>target.radius=0.0,
+        Action::Grade(d)=>{
+            target.grad_start=(reference.grad_start+d).clamp(-20.0,20.0);
+            target.grad_end=target.grad_start;
+            target.delta_h=Some(target.length*target.grad_start/100.0);
+        },
+        Action::Turn(d)=>{
+            if before.iter().any(|(_,s)|s.prev_id!=0) {return Err("Connected group starts cannot rotate; use curvature instead");}
+            target.heading=(target.heading+d).rem_euclid(360.0);
+        },
+        _=>return Err("Unsupported group shaping action"),
+    }
+    if matches!(action,Action::Length(_)) {
+        target.delta_h=target.delta_h.map(|h|h*target.length/reference.length);
+    }
+    let new_curve=curve(reference_key.0,&target);
+    let k=if target.radius==0.0 {0.0}else{1.0/target.radius};
+    let new_dir=SplineCurve::dir(target.heading);
+    let new_right=DVec2::new(new_dir.y,-new_dir.x);
+    let old_rise=old_curve.height_at(reference.length)-old_curve.start.z;
+    let new_rise=new_curve.height_at(target.length)-new_curve.start.z;
+    let mut after=Vec::new();
+    for (key,s) in before {
+        let c=curve(key.0,s);
+        let delta=c.start.truncate()-old_curve.start.truncate();
+        let x=delta.dot(right);
+        let heading_error=((s.heading-reference.heading+180.0).rem_euclid(360.0)-180.0).abs();
+        let member_k=if s.radius==0.0 {0.0}else{1.0/s.radius};
+        // Layered road assets can be translated copies rather than exact parallel arcs.
+        // Preserve that small authored offset instead of rejecting or snapping the layer.
+        let translated_layer=delta.length()<=0.5 && (s.length-reference.length).abs()<=0.05
+            && (old_k-member_k).abs()<=1e-6;
+        let lateral=if translated_layer {0.0}else{x};
+        let old_factor=1.0-old_k*lateral;
+        let factor=1.0-k*lateral;
+        let expected_k=old_k/old_factor;
+        if (!translated_layer && delta.dot(direction).abs()>0.05) || heading_error>0.05 || old_factor<=0.1
+            || (s.length-reference.length*old_factor).abs()>0.05 || (expected_k-member_k).abs()>1e-6 {
+            return Err("Select parallel sections with matching starts and ends; nothing changed");
+        }
+        if factor<=0.1 {return Err("Group curve is too tight; nothing changed");}
+        let mut part=s.clone();
+        part.length=target.length*factor;
+        if !(0.5..=500.0).contains(&part.length) {return Err("Group length outside valid range; nothing changed");}
+        part.radius=if k==0.0 {0.0}else{1.0/k-lateral};
+        part.heading=target.heading;
+        let pos=old_curve.start.truncate()+new_right*x+new_dir*delta.dot(direction);
+        let local=pos-origin(key.0);part.pos[0]=local.x;part.pos[1]=local.y;
+        // Preserve each member's vertical profile relative to the reference at equal progress.
+        part.grad_start=(c.slope_at(0.0)*s.length+new_curve.slope_at(0.0)*target.length-old_curve.slope_at(0.0)*reference.length)/part.length*100.0;
+        part.grad_end=(c.slope_at(s.length)*s.length+new_curve.slope_at(target.length)*target.length-old_curve.slope_at(reference.length)*reference.length)/part.length*100.0;
+        part.delta_h=Some(c.height_at(s.length)-c.start.z+new_rise-old_rise);part.is_h=true;
+        if !valid_spline(&part) {return Err("Invalid group geometry; nothing changed");}
+        after.push((*key,part));
+    }
+    Ok(after)
 }
 
 fn valid_spline(s: &MapSpline) -> bool {
@@ -1835,556 +2424,8 @@ pub fn rewrite(text: &str, edits: &HashMap<i64, MapSpline>, added: &[i64]) -> Re
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn parsed(text: &str) -> Tile {
-        Tile::parse(&omsi_cfg::CfgFile::from_str("test.map", text))
-    }
-
-    #[test]
-    fn group_selection_toggles_preserves_drag_target_and_clears_on_empty_click() {
-        let a=((0,0),1); let b=((1,0),2); let mut editor=SplineEditor::default();
-        editor.update_group(vec![a],Some(b),true);
-        assert_eq!(editor.selection_keys(),vec![a,b]);
-        editor.update_group(editor.selection_keys(),Some(a),false);
-        assert_eq!(editor.selection_keys(),vec![a,b]);
-        editor.update_group(editor.selection_keys(),Some(a),true);
-        assert_eq!(editor.selection_keys(),vec![b]);
-        editor.update_group(editor.selection_keys(),None,true);
-        assert_eq!(editor.selection_keys(),vec![b]);
-        editor.update_group(editor.selection_keys(),None,false);
-        assert!(editor.selection_keys().is_empty());
-    }
-
-    #[test]
-    fn group_move_drag_undo_boundary_rejection_and_save_cover_multiple_tiles() {
-        let stamp=std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos();
-        let dir=std::env::temp_dir().join(format!("omsi-spline-group-{stamp}"));
-        let original=dir.join("original");let map=original.join("maps/Test");let content=dir.join("mod");
-        std::fs::create_dir_all(&map).unwrap();
-        std::fs::write(map.join("global.cfg"),"[map]\n0\n0\ntile_0_0.map\n[map]\n1\n0\ntile_1_0.map\n").unwrap();
-        let a=((0,0),1);let b=((1,0),2);
-        let first=MapSpline{id:1,pos:[100.0,20.0,3.0],length:20.0,file:"road.sli".into(),..Default::default()};
-        let second=MapSpline{id:2,pos:[110.0,30.0,4.0],..first.clone()};
-        for (key,spline) in [(a,&first),(b,&second)] {
-            std::fs::write(map.join(format!("tile_{}_0.map",key.0.0)),format!("[version]\n14\n{}",record(spline,"0","\n"))).unwrap();
-        }
-        let world=World::open(&original,&map.join("global.cfg"),20000101).unwrap();
-        world.spline_edits.lock().originals.extend([(a,first.clone()),(b,second.clone())]);
-        let mut editor=SplineEditor{selected:Some(a),group:vec![a,b],..Default::default()};
-        editor.apply(&world,&Action::Move(DVec3::new(2.0,3.0,4.0))).unwrap();
-        assert_eq!(world.spline_edits.lock().current(a).unwrap().pos,[102.0,23.0,7.0]);
-        assert_eq!(world.spline_edits.lock().current(b).unwrap().pos,[112.0,33.0,8.0]);
-        assert_eq!(world.spline_edits.lock().dirty_tiles.len(),2);
-        assert_eq!(editor.undo.len(),1);editor.undo(&world);
-        assert_eq!(world.spline_edits.lock().current(a).unwrap(),first);
-        assert_eq!(world.spline_edits.lock().current(b).unwrap(),second);
-        let undo_count=editor.undo.len();
-        assert!(editor.move_group(&world,DVec3::new(1000.0,0.0,0.0)).unwrap().contains("nothing moved"));
-        assert_eq!(editor.undo.len(),undo_count);
-        assert_eq!(world.spline_edits.lock().current(a).unwrap(),first);
-        assert_eq!(world.spline_edits.lock().current(b).unwrap(),second);
-        let ground=curve(a.0,&first).point_at(0.0);
-        editor.begin_drag(&world,ground);
-        editor.drag_to(&world,ground+DVec3::new(2.0,0.0,0.0)).unwrap();
-        editor.drag_to(&world,ground+DVec3::new(5.0,0.0,0.0)).unwrap();
-        editor.finish_drag();assert_eq!(editor.undo.len(),undo_count+1);
-        assert_eq!(world.spline_edits.lock().current(b).unwrap().pos[0],115.0);
-        crate::editor::Editor::default().save(&world,"maps/Test/global.cfg",&content,&original).unwrap();
-        for (key,old) in [(a,&first),(b,&second)] {
-            let saved=Tile::load(&content.join(format!("maps/Test/tile_{}_0.map",key.0.0))).unwrap();
-            assert_eq!(saved.splines[0].pos[0],old.pos[0]+5.0);
-            assert_eq!(saved.splines[0].id,old.id);
-            assert_eq!(Tile::load(&map.join(format!("tile_{}_0.map",key.0.0))).unwrap().splines[0].pos[0],old.pos[0]);
-        }
-        editor.undo(&world);
-        assert_eq!(world.spline_edits.lock().current(a).unwrap(),first);
-        assert_eq!(world.spline_edits.lock().current(b).unwrap(),second);
-        std::fs::remove_dir_all(dir).unwrap();
-    }
-
-    #[test]
-    fn selection_categories_prefer_paths_and_keep_unknown_assets_accessible() {
-        let mut def = omsi_scenery::Spline::default();
-        assert_eq!(selection_category("Splines/Markierungen/road.sli", Some(&def)), SelectionFilter::Other);
-        assert_eq!(selection_category("Splines/markierung_weiss.sli", Some(&def)), SelectionFilter::Markings);
-        assert_eq!(selection_category("Splines/Marktplatz.sli", Some(&def)), SelectionFilter::Other);
-        for name in ["BS_StrMarkierung_WeissGestrichelt_M.sli", "BS_StrMarkierung_Weiss_S.sli", "BS_StrMarkierung_WeissGestrichelt_S.sli"] {
-            assert_eq!(selection_category(name, Some(&def)), SelectionFilter::Markings);
-        }
-        assert_eq!(selection_category("Splines/StrMarkierung/terrain.sli", Some(&def)), SelectionFilter::Other);
-        def.paths.push(omsi_scenery::PathDef { kind: 1, ..Default::default() });
-        assert_eq!(selection_category("road.sli", Some(&def)), SelectionFilter::Sidewalks);
-        def.paths.push(omsi_scenery::PathDef { kind: 0, ..Default::default() });
-        assert_eq!(selection_category("markierung_road.sli", Some(&def)), SelectionFilter::Roads);
-        assert_eq!(selection_category("road.sli", None), SelectionFilter::Other);
-        for category in [SelectionFilter::Roads, SelectionFilter::Sidewalks, SelectionFilter::Markings, SelectionFilter::Other] {
-            assert!(SelectionFilter::All.accepts(category));
-        }
-    }
-
-    #[test]
-    fn filtered_pick_and_tab_exclude_overlaid_marking_without_changing_records() {
-        let keys = [((0,0),1), ((0,0),2)];
-        let road = between("road.sli",1,(0,0),DVec3::new(100.0,100.0,0.0),DVec3::new(100.0,120.0,0.0),0.0);
-        let mut marking = road.clone(); marking.id=2; marking.file="markierung.sli".into();
-        let cache = parking_lot::Mutex::new(Edits { originals: HashMap::from([(keys[0],road),(keys[1],marking)]), ..Default::default() });
-        let mut editor=SplineEditor::default();
-        editor.selected=Some(keys[1]); editor.candidates=keys.to_vec();
-        editor.cycle_selection_filter();
-        assert_eq!(editor.selected,Some(keys[1])); assert!(editor.candidates.is_empty());
-        let edges=HashMap::from([(keys[0],Vec::new())]);
-        assert_eq!(editor.pick_loaded(&cache,&[(0,0)],DVec3::new(100.0,110.0,10.0),-Vec3::Z,&edges),Some(1));
-        assert_eq!(editor.next_pick(),Some(1));
-        assert!(!cache.lock().dirty);
-        editor.selection_filter=SelectionFilter::All;
-        editor.pick_loaded(&cache,&[(0,0)],DVec3::new(100.0,110.0,10.0),-Vec3::Z,&edges);
-        assert_eq!(editor.candidates.len(),2);
-        editor.selection_filter=SelectionFilter::Other;
-        assert_eq!(editor.pick_loaded(&cache,&[(0,0)],DVec3::new(100.0,110.0,10.0),-Vec3::Z,&HashMap::new()),None);
-    }
-
-    #[test]
-    fn second_connection_pick_releases_the_cache_before_preview_reads_it() {
-        let source_key = ((0, 0), 1);
-        let target_key = ((0, 0), 2);
-        let source = between("road.sli", 1, (0, 0), DVec3::new(100.0, 100.0, 0.0), DVec3::new(100.0, 110.0, 0.0), 0.0);
-        let target = between("road.sli", 2, (0, 0), DVec3::new(100.0, 111.0, 0.0), DVec3::new(100.0, 120.0, 0.0), 0.0);
-        let cache = parking_lot::Mutex::new(Edits { originals: HashMap::from([(source_key, source), (target_key, target)]), ..Default::default() });
-        let mut editor = SplineEditor::default();
-        assert_eq!(editor.pick_loaded(&cache, &[(0, 0)], DVec3::new(100.0, 100.0, 10.0), -Vec3::Z, &HashMap::new()), Some(1));
-        assert!(cache.try_lock().is_some());
-        editor.connection = Some(Connection { source: source_key, target: None, preview: None, error: None, replace_links: false, occupied: false, allow_transition: false });
-        assert_eq!(editor.pick_loaded(&cache, &[(0, 0)], DVec3::new(100.0, 120.0, 10.0), -Vec3::Z, &HashMap::new()), Some(2));
-        assert_eq!(editor.connection.as_ref().unwrap().source, source_key);
-        // try_lock makes a lock-lifetime regression fail immediately rather than
-        // hanging the test runner, just as the old second-click path hung the UI.
-        let (source, target) = {
-            let edits = cache.try_lock().expect("second pick retained the spline cache lock");
-            (edits.current(source_key).unwrap(), edits.current(target_key).unwrap())
-        };
-        assert!(connection_geometry((0, 0), &source, (0, 0), &target).is_ok());
-        assert!(cache.try_lock().is_some());
-    }
-
-    #[test]
-    fn generated_spline_roundtrips_axes_and_height() {
-        let start = DVec3::new(223.5745, 269.2551, 42.26);
-        let end = DVec3::new(240.0, 255.0, 41.36);
-        let s = between("Splines\\road.sli", 9852695, (0, 0), start, end, 0.0);
-        let tile = parsed(&record(&s, "0", "\r\n"));
-        assert_eq!(tile.splines.len(), 1);
-        let r = &tile.splines[0];
-        assert!((curve((0, 0), r).end_point() - end).length() < 1e-8);
-        assert_eq!(r.pos, s.pos);
-        assert!((r.delta_h.unwrap() + 0.9).abs() < 1e-10);
-        assert_eq!(record(&s, "0", "\n").lines().count(), 20);
-    }
-
-    #[test]
-    fn generated_ai_rules_survive_map_save_and_reload() {
-        let settings=crate::traffic_editor::Settings {forward_bus:true,..Default::default()};
-        let source=MapSpline {id:1,length:20.0,cant_start:3.0,cant_end:7.0,skew_start:0.2,skew_end:-0.1,profile_transitions:[None,Some(omsi_map::ProfileTransition {station:20.0,span:5.0,x:[-4.0,4.0],offsets:[[0.5,-0.05,-0.1],[-0.5,0.05,-0.1]]})],..Default::default()};
-        let mut plan=crate::traffic_editor::build(&[(((0,0),1),source,false)],&settings).unwrap();
-        let s=&mut plan.pieces[0].1;s.id=2;
-        let edits=HashMap::from([(2,s.clone())]);
-        let (text,n)=rewrite("[version]\n14\n",&edits,&[2]).unwrap();assert_eq!(n,1);
-        let tile=parsed(&text);assert_eq!(tile.splines.len(),1);
-        assert_eq!(tile.splines[0].rules,s.rules);
-        assert_eq!(tile.splines[0].cant_start,s.cant_start);assert_eq!(tile.splines[0].cant_end,s.cant_end);
-        assert_eq!(tile.splines[0].skew_start,s.skew_start);assert_eq!(tile.splines[0].skew_end,s.skew_end);
-        assert_eq!(tile.splines[0].profile_transitions,s.profile_transitions);
-        assert_eq!(rewrite(&text,&edits,&[2]).unwrap().0,text);
-    }
-
-    #[test]
-    fn rewrites_preserve_order_rules_and_are_idempotent() {
-        let a = between("Splines\\road.sli", 1, (0, 0), DVec3::new(10.0, 20.0, 5.0), DVec3::new(10.0, 50.0, 6.0), 0.0);
-        let mut b = a.clone(); b.id = 2; b.is_h = false; b.delta_h = None;
-        let text = format!("[version]\r\n14\r\n\r\n{}\r\n[rule]\r\n0\r\nspeedlimit\r\n30\r\n0\r\n\r\n{}\r\n[terrain]\r\n", record(&a, "2", "\r\n"), record(&b, "0", "\r\n"));
-        let mut changed = a.clone(); changed.pos[0] += 1.0;
-        let mut new = a.clone(); new.id = 3;
-        let edits = HashMap::from([(1, changed), (3, new)]);
-        let (out, n) = rewrite(&text, &edits, &[3]).unwrap();
-        assert_eq!(n, 2);
-        assert!(out.contains("[rule]\r\n0\r\nspeedlimit\r\n30\r\n0\r\n"));
-        assert!(out.contains(&record(&b, "0", "\r\n")));
-        let t = parsed(&out);
-        assert_eq!(t.splines.iter().map(|s| s.id).collect::<Vec<_>>(), vec![1, 2, 3]);
-        assert_eq!(t.splines[0].rules.len(), 1);
-        assert_eq!(rewrite(&out, &edits, &[3]).unwrap().0, out);
-    }
-
-    #[test]
-    fn missing_ids_and_old_tiles_are_rejected() {
-        let s = between("Splines\\road.sli", 9, (0, 0), DVec3::new(1.0, 1.0, 0.0), DVec3::new(1.0, 5.0, 0.0), 0.0);
-        let e = HashMap::from([(9, s)]);
-        assert!(rewrite("[version]\n14\n", &e, &[]).is_err());
-        assert!(rewrite("[version]\n11\n", &e, &[9]).is_err());
-        let (out, _) = rewrite("[version]\n14\n", &e, &[9]).unwrap();
-        assert_eq!(parsed(&out).splines[0].id, 9);
-    }
-
-    #[test]
-    fn overlay_keeps_attachment_indices_and_never_appends_twice() {
-        let s = between("Splines\\road.sli", 9, (0, 0), DVec3::new(1.0, 1.0, 0.0), DVec3::new(1.0, 5.0, 0.0), 0.0);
-        let mut e = Edits::default();
-        e.added.insert(((0, 0), 9), s);
-        let mut t = Tile::default();
-        e.overlay((0, 0), &mut t); e.overlay((0, 0), &mut t);
-        assert_eq!(t.splines.len(), 1);
-    }
-
-    #[test]
-    fn deletion_and_restoration_keep_indices_rules_and_line_endings() {
-        let mut a = between("road.sli", 11, (0, 0), DVec3::new(10.0, 10.0, 2.0), DVec3::new(10.0, 40.0, 3.0), 0.0);
-        let mut b = a.clone(); b.id = 12;
-        let text = format!("[version]\r\n14\r\n{}[rule]\r\n0\r\nspeedlimit\r\n30\r\n0\r\n{}[splineAttachement]\r\n0\r\nlamp.sco\r\n50\r\n1\r\n0\r\n0\r\n0\r\n0\r\n0\r\n0\r\n10\r\n100\r\n0\r\n0\r\n", record(&a, "0", "\r\n"), record(&b, "0", "\r\n"));
-        a.deleted = true;
-        let edits = HashMap::from([(11, a.clone())]);
-        let deleted = rewrite(&text, &edits, &[]).unwrap().0;
-        let tile = parsed(&deleted);
-        assert_eq!(tile.splines.iter().map(|s| s.id).collect::<Vec<_>>(), vec![11, 12]);
-        assert!(tile.splines[0].deleted && !tile.splines[1].deleted);
-        assert_eq!(tile.splines[0].rules.len(), 1);
-        assert_eq!(tile.spline_attachments[0].spline_index, 1);
-        assert_eq!(rewrite(&deleted, &edits, &[]).unwrap().0, deleted);
-        a.deleted = false;
-        assert_eq!(rewrite(&deleted, &HashMap::from([(11, a)]), &[]).unwrap().0, text);
-    }
-
-    #[test]
-    fn subdividing_a_curve_preserves_its_shape_height_and_texture_distance() {
-        let mut s = between("road.sli", 1, (0, 0), DVec3::new(100.0, 100.0, 2.0), DVec3::new(100.0, 160.0, 8.0), 12.0);
-        s.radius = -80.0; s.grad_start = 3.0; s.grad_end = 7.0;
-        let c = curve((0, 0), &s);
-        let part = curve_part(&s, 23.0, 37.0);
-        let p = curve((0, 0), &part);
-        for i in 0..=20 {
-            let d = part.length * i as f64 / 20.0;
-            assert!((p.point_at(d) - c.point_at(d + 23.0)).length() < 1e-8);
-            assert!((p.slope_at(d) - c.slope_at(d + 23.0)).abs() < 1e-10);
-        }
-        assert_eq!(part.tex_offset, 35.0);
-    }
-
-    #[test]
-    fn terrain_fit_follows_a_hill_without_overshooting_between_samples() {
-        let mut s = between("road.sli", 1, (0, 0), DVec3::new(100.0, 100.0, 0.0), DVec3::new(100.0, 120.0, 0.0), 0.0);
-        s.radius = 60.0;
-        let heights = [0.05, 1.05, 2.05, 1.05, 0.05];
-        let parts = terrain_parts(&s, &heights);
-        let original = curve((0, 0), &s);
-        for (i, part) in parts.iter().enumerate() {
-            let c = curve((0, 0), part);
-            assert!((c.start.z - heights[i]).abs() < 1e-10);
-            assert!((c.end_point().z - heights[i + 1]).abs() < 1e-10);
-            for n in 0..=20 {
-                let d = part.length * n as f64 / 20.0;
-                let p = c.point_at(d);
-                assert!(p.z >= heights[i].min(heights[i + 1]) - 1e-9 && p.z <= heights[i].max(heights[i + 1]) + 1e-9);
-                assert!((p.truncate() - original.point_at(i as f64 * 5.0 + d).truncate()).length() < 1e-8);
-            }
-        }
-    }
-
-    #[test]
-    fn snap_arc_hits_targets_on_both_sides_and_on_a_straight() {
-        let s = between("road.sli", 1, (0, 0), DVec3::new(100.0, 100.0, 2.0), DVec3::new(100.0, 110.0, 2.0), 0.0);
-        for target in [DVec3::new(110.0, 140.0, 7.0), DVec3::new(90.0, 140.0, -1.0), DVec3::new(100.0, 140.0, 2.0)] {
-            let snapped = arc_to(&s, (0, 0), target).unwrap();
-            assert!((curve((0, 0), &snapped).end_point() - target).length() < 1e-8);
-            assert_eq!(snapped.pos, s.pos);
-            assert_eq!(snapped.heading, s.heading);
-        }
-    }
-
-    #[test]
-    fn generated_lines_split_at_grid_edges_in_negative_coordinates() {
-        let size = omsi_map::tile_size();
-        let start = DVec3::new(-size - 10.0, 50.0, 1.0);
-        let end = DVec3::new(-size + 30.0, 50.0, 3.0);
-        let cuts = straight_tile_cuts(start, end);
-        assert_eq!(cuts, vec![0.0, 0.25, 1.0]);
-        for pair in cuts.windows(2) {
-            let a = start.lerp(end, pair[0]);
-            let b = start.lerp(end, pair[1]);
-            let tile = tile_at((a + b) * 0.5);
-            let part = between("road.sli", 1, tile, a, b, 0.0);
-            assert!(inside_tile(&part));
-            assert!((curve(tile, &part).end_point() - b).length() < 1e-8);
-        }
-    }
-
-    #[test]
-    fn connects_the_start_of_a_short_spline_across_a_tile_edge() {
-        let size = omsi_map::tile_size();
-        let source_tile = (1, 0);
-        let target_tile = (0, 0);
-        let source = between("terrain.sli", 239, source_tile, DVec3::new(size + 0.4, 80.0, 0.05), DVec3::new(size + 7.34, 80.0, 0.05), 0.0);
-        let target = between("terrain.sli", 238, target_tile, DVec3::new(size - 20.0, 80.0, 0.05), DVec3::new(size - 0.2, 80.0, 0.05), 10.0);
-        let joined = connection_geometry(source_tile, &source, target_tile, &target).unwrap();
-        assert_eq!((joined.source_end, joined.target_end), (End::Start, End::Finish));
-        assert!((curve(source_tile, &joined.source).start - curve(target_tile, &target).end_point()).length() < 1e-8);
-        assert!((curve(source_tile, &joined.source).end_point() - curve(source_tile, &source).end_point()).length() < 1e-8);
-        assert!((joined.source.length - 7.54).abs() < 1e-8);
-        assert!(joined.source.pos[0] < 0.0 && !inside_tile(&joined.source));
-        assert_eq!((joined.source.prev_id, joined.target.next_id), (238, 239));
-        assert_eq!(joined.source.id, source.id);
-        let tiles = connection_tiles((source_tile, source.id), (target_tile, target.id), &joined.source);
-        assert!(tiles.contains(&source_tile) && tiles.contains(&target_tile));
-        // Save the out-of-tile start without moving its record or attachment index.
-        let base = format!("[version]\n14\n{}", record(&source, "0", "\n"));
-        let edits = HashMap::from([(source.id, joined.source.clone())]);
-        let written = rewrite(&base, &edits, &[]).unwrap().0;
-        let read = parsed(&written);
-        assert_eq!(read.splines.len(), 1);
-        assert!((curve(source_tile, &read.splines[0]).start - curve(target_tile, &target).end_point()).length() < 1e-8);
-        assert_eq!(rewrite(&written, &edits, &[]).unwrap().0, written);
-    }
-
-    #[test]
-    fn connects_all_endpoint_orientations_and_preserves_the_far_anchor() {
-        let source = between("road.sli", 1, (0, 0), DVec3::new(50.0, 50.0, 2.0), DVec3::new(50.0, 60.0, 2.2), 0.0);
-        let targets = [
-            (End::Finish, End::Start, DVec3::new(50.0, 60.3, 2.3), DVec3::new(50.0, 80.0, 3.0)),
-            (End::Finish, End::Finish, DVec3::new(50.0, 80.0, 3.0), DVec3::new(50.0, 60.3, 2.3)),
-            (End::Start, End::Finish, DVec3::new(50.0, 30.0, 1.0), DVec3::new(50.0, 49.7, 1.8)),
-            (End::Start, End::Start, DVec3::new(50.0, 49.7, 1.8), DVec3::new(50.0, 30.0, 1.0)),
-        ];
-        for (source_end, target_end, from, to) in targets {
-            let target = between("road.sli", 2, (0, 0), from, to, 10.0);
-            let joined = connection_geometry((0, 0), &source, (0, 0), &target).unwrap();
-            assert_eq!((joined.source_end, joined.target_end), (source_end, target_end));
-            let c = curve((0, 0), &joined.source);
-            assert!((source_end.point(&c) - target_end.point(&curve((0, 0), &target))).length() < 1e-8);
-            let fixed = if source_end == End::Start { End::Finish } else { End::Start };
-            assert!((fixed.point(&c) - fixed.point(&curve((0, 0), &source))).length() < 1e-8);
-            assert_eq!(source_end.link(&joined.source), 2);
-            assert_eq!(target_end.link(&joined.target), 1);
-            assert_eq!(joined.target.pos, target.pos);
-            assert_eq!(joined.target.heading, target.heading);
-        }
-    }
-
-    #[test]
-    fn connection_rejects_occupied_ends_and_bad_direction_without_changing_records() {
-        let mut source = between("road.sli", 1, (0, 0), DVec3::new(50.0, 50.0, 0.0), DVec3::new(50.0, 60.0, 0.0), 0.0);
-        let target = between("road.sli", 2, (0, 0), DVec3::new(50.0, 60.3, 0.0), DVec3::new(50.0, 80.0, 0.0), 0.0);
-        source.next_id = 99;
-        assert!(connection_geometry((0, 0), &source, (0, 0), &target).unwrap_err().contains("occupied"));
-        source.next_id = 0;
-        let side = between("road.sli", 3, (0, 0), DVec3::new(50.0, 60.3, 0.0), DVec3::new(70.0, 60.3, 0.0), 0.0);
-        assert!(connection_geometry((0, 0), &source, (0, 0), &side).unwrap_err().contains("End directions"));
-        assert_eq!(source.next_id, 0);
-        assert_eq!(target.prev_id, 0);
-    }
-
-    fn road_patch(x0: f64, x1: f64, y0: f64, y1: f64, height: f64, grade: f64, cant: f64) -> Roadbed {
-        let z = |x: f64, y: f64| height + (y - y0) * grade + (x - x0) * cant;
-        let mesh = omsi_geometry::MeshData {
-            positions: [(x0, y0), (x1, y0), (x1, y1), (x0, y1)].map(|(x, y)| DVec3::new(x, y, z(x, y)).as_vec3()).to_vec(),
-            indices: vec![0, 1, 2, 0, 2, 3], ..Default::default()
-        };
-        let mut bed = Roadbed::default(); bed.add_mesh(&mesh, DVec3::ZERO); bed
-    }
-
-    #[test]
-    fn terrain_to_road_only_changes_samples_inside_surface_and_preserves_undo() {
-        let bed = road_patch(142.0, 150.0, 50.0, 90.0, 3.0, 0.04, -0.02);
-        for initial in [-5.0, 12.0] {
-            let mut terrain = omsi_map::Terrain::flat(); terrain.heights.fill(initial);
-            let original = HashMap::from([((0,0), terrain.clone())]);
-            let plan = terrain_plan(&bed, &original, 0.0, 0.0);
-            assert_eq!(plan.before, vec![((0,0), terrain.clone())]);
-            let result = &plan.after[0].1;
-            let cell = omsi_map::tile_size() / terrain.cells as f64;
-            let mut changed = 0;
-            for y in 0..terrain.samples() { for x in 0..terrain.samples() {
-                let index = y * terrain.samples() + x;
-                let p = DVec2::new(x as f64 * cell, y as f64 * cell);
-                if let Some((_, height)) = bed.nearest(p, 0.0) {
-                    assert!((result.heights[index] as f64 - (height - ROAD_CLEARANCE)).abs() < 1e-5);
-                    changed += 1;
-                } else { assert_eq!(result.heights[index], terrain.heights[index]); }
-                assert!(result.heights[index].is_finite());
-            }}
-            assert!(changed > 0);
-            assert!(terrain_plan(&bed,&HashMap::from([((0,0), result.clone())]),0.0,0.0).after.is_empty());
-        }
-    }
-
-    #[test]
-    fn terrain_to_road_crosses_tile_boundary_and_undo_restores_both_tiles() {
-        let size = omsi_map::tile_size();
-        let bed = road_patch(size-12.0,size+12.0,40.0,90.0,2.0,0.03,0.01);
-        let mut terrain = omsi_map::Terrain::flat(); terrain.heights.fill(9.0);
-        let original = HashMap::from([((0,0),terrain.clone()),((1,0),terrain)]);
-        let plan = terrain_plan(&bed,&original,0.0,0.0);
-        assert_eq!(plan.after.len(),2);
-        let mut after: HashMap<_,_> = plan.after.iter().cloned().collect();
-        let left=&after[&(0,0)]; let right=&after[&(1,0)];
-        for y in 0..left.samples() {
-            assert_eq!(left.height_at(left.samples()-1,y),right.height_at(0,y));
-        }
-        assert_eq!(left.height_at(0,0),9.0);
-        assert_eq!(right.height_at(right.samples()-1,0),9.0);
-        let undo=Undo{splines:Vec::new(),terrain:plan.before,terrain_after:plan.after};
-        undo.restore_terrain(&mut after); assert_eq!(after,original);
-    }
-
-    #[test]
-    fn narrow_road_without_grid_samples_does_not_modify_surrounding_terrain() {
-        let bed=road_patch(147.0,147.1,51.0,89.0,0.2,0.0,0.0);
-        let mut terrain=omsi_map::Terrain::flat();terrain.heights.fill(8.0);
-        let plan=terrain_plan(&bed,&HashMap::from([((0,0),terrain)]),0.0,0.0);
-        assert!(plan.after.is_empty());
-    }
-
-    #[test]
-    fn smoothing_clears_both_road_edges_and_leaves_distant_ground_unchanged() {
-        let bed = road_patch(142.0, 150.0, 50.0, 90.0, 0.2, 0.015, -0.02);
-        let mut terrain = omsi_map::Terrain::flat(); terrain.heights.fill(6.0);
-        let original = HashMap::from([((0, 0), terrain.clone())]);
-        let guard = omsi_map::tile_size() / terrain.cells as f64 * std::f64::consts::SQRT_2;
-        let plan = terrain_plan(&bed, &original, guard, 2.0);
-        assert_eq!(plan.after.len(), 1);
-        let t = &plan.after[0].1;
-        for x in [142.001, 145.0, 149.999] {
-            for y in [50.01, 55.0, 69.3, 89.99] {
-                let road = 0.2 + (y - 50.0) * 0.015 - (x - 142.0) * 0.02;
-                assert!(t.sample(x as f32, y as f32) as f64 <= road - ROAD_CLEARANCE + 0.001);
-            }
-        }
-        assert_eq!(t.height_at(0, 0), terrain.height_at(0, 0));
-        assert_eq!(original[&(0, 0)], terrain);
-        assert_eq!(plan.before[0].1, terrain);
-    }
-
-    #[test]
-    fn fitting_a_raised_profile_does_not_add_its_height_on_every_fit() {
-        let profile = road_patch(140.0, 150.0, 50.0, 90.0, 1.2, 0.0, 0.0);
-        let fitted = fitted_height(0.15, DVec3::new(145.0, 70.0, 1.0), &profile);
-        assert!(fitted.abs() < 1e-6);
-        let after = road_patch(140.0, 150.0, 50.0, 90.0, fitted + 0.2, 0.0, 0.0);
-        let repeated = fitted_height(0.15, DVec3::new(145.0, 70.0, fitted), &after);
-        assert!((repeated - fitted).abs() < 1e-6);
-    }
-
-    #[test]
-    fn narrow_road_clears_terrain_triangles_even_without_a_vertex_inside_its_width() {
-        let bed = road_patch(147.0, 148.0, 51.0, 89.0, 0.2, 0.0, 0.0);
-        let mut terrain = omsi_map::Terrain::flat(); terrain.heights.fill(8.0);
-        let plan = terrain_plan(&bed, &HashMap::from([((0, 0), terrain)]), 0.0, 2.0);
-        let t = &plan.after[0].1;
-        for x in [147.001, 147.5, 147.999] {
-            for y in [51.001, 52.4, 62.7, 75.9, 88.999] {
-                assert!(t.sample(x, y) <= 0.151, "ground still covers the road at {x}/{y}");
-            }
-        }
-    }
-
-    #[test]
-    fn road_smoothing_matches_changed_nodes_on_both_sides_of_a_tile_border() {
-        let size = omsi_map::tile_size();
-        let bed = road_patch(size - 8.0, size + 8.0, 50.0, 90.0, 0.2, 0.01, 0.0);
-        let mut a = omsi_map::Terrain::flat(); a.heights.fill(5.0);
-        let mut b = a.clone(); b.heights.fill(6.0);
-        let originals = HashMap::from([((0, 0), a.clone()), ((1, 0), b.clone())]);
-        let plan = terrain_plan(&bed, &originals, size / a.cells as f64 * std::f64::consts::SQRT_2, 2.0);
-        let changed: HashMap<_, _> = plan.after.into_iter().collect();
-        for iy in 0..a.samples() {
-            let left = changed[&(0, 0)].height_at(a.cells, iy);
-            let right = changed[&(1, 0)].height_at(0, iy);
-            if left != a.height_at(a.cells, iy) || right != b.height_at(0, iy) { assert_eq!(left, right); }
-        }
-        assert_eq!(changed[&(0, 0)].height_at(0, 0), 5.0);
-        assert_eq!(changed[&(1, 0)].height_at(b.cells, 0), 6.0);
-    }
-
-    #[test]
-    fn smoothing_undo_restores_original_terrain_even_after_edited_bytes_were_saved() {
-        let bed = road_patch(142.0, 150.0, 50.0, 90.0, 0.2, 0.0, 0.0);
-        let mut t = omsi_map::Terrain::flat(); t.heights.fill(6.0);
-        let plan = terrain_plan(&bed, &HashMap::from([((0, 0), t.clone())]), 8.0, 2.0);
-        let mut editor = SplineEditor::default(); editor.remember_with_terrain(Vec::new(), plan.before);
-        let mut saved: HashMap<_, _> = plan.after.into_iter().map(|(key, t)| (key, omsi_map::Terrain::parse(&t.to_bytes()).unwrap())).collect();
-        assert_ne!(saved[&(0, 0)], t);
-        editor.undo.pop().unwrap().restore_terrain(&mut saved);
-        assert_eq!(saved[&(0, 0)], t);
-        assert_eq!(omsi_map::Terrain::parse(&saved[&(0, 0)].to_bytes()).unwrap(), t);
-    }
-
-    fn replacement_fixture() -> Edits {
-        let mut source = between("road.sli", 1, (0, 0), DVec3::new(50.0, 50.0, 0.0), DVec3::new(50.0, 60.0, 0.0), 0.0);
-        let mut target = between("road.sli", 2, (0, 0), DVec3::new(50.0, 60.3, 0.0), DVec3::new(50.0, 80.0, 0.0), 0.0);
-        source.prev_id = 8; source.next_id = 9;
-        target.prev_id = 10; target.next_id = 11;
-        let mut old_source_neighbor = source.clone(); old_source_neighbor.id = 9;
-        old_source_neighbor.prev_id = 1; old_source_neighbor.next_id = 12;
-        let mut old_target_neighbor = target.clone(); old_target_neighbor.id = 10;
-        old_target_neighbor.prev_id = 13; old_target_neighbor.next_id = 2;
-        Edits { originals: HashMap::from([
-            (((0, 0), 1), source), (((0, 0), 2), target),
-            (((0, 0), 9), old_source_neighbor), (((0, 0), 10), old_target_neighbor),
-        ]), ..Default::default() }
-    }
-
-    #[test]
-    fn replacement_previews_both_reciprocal_links_without_mutating_the_map() {
-        let edits = replacement_fixture();
-        assert!(connection_plan(&edits, &[(0, 0)], None, ((0, 0), 1), ((0, 0), 2), false, false).unwrap_err().contains("occupied by 9"));
-        let preview = connection_plan(&edits, &[(0, 0)], None, ((0, 0), 1), ((0, 0), 2), true, false).unwrap();
-        assert_eq!((preview.source.prev_id, preview.source.next_id), (8, 2));
-        assert_eq!((preview.target.prev_id, preview.target.next_id), (1, 11));
-        assert_eq!(preview.neighbors.len(), 2);
-        assert_eq!((preview.neighbors[0].1.prev_id, preview.neighbors[0].1.next_id), (0, 12));
-        assert_eq!((preview.neighbors[1].1.prev_id, preview.neighbors[1].1.next_id), (13, 0));
-        assert_eq!(edits.current(((0, 0), 1)).unwrap().next_id, 9);
-        assert_eq!(edits.current(((0, 0), 9)).unwrap().prev_id, 1);
-        assert!(edits.changed.is_empty());
-        let mut changed = HashMap::from([(1, preview.source), (2, preview.target)]);
-        for (_, neighbor) in preview.neighbors { changed.insert(neighbor.id, neighbor); }
-        let original = format!("[version]\n14\n{}", [1, 2, 9, 10].map(|id| record(&edits.current(((0, 0), id)).unwrap(), "0", "\n")).join("\n"));
-        let saved = rewrite(&original, &changed, &[]).unwrap().0;
-        let tile = parsed(&saved);
-        assert_eq!(tile.splines.iter().map(|s| (s.id, s.prev_id, s.next_id)).collect::<Vec<_>>(),
-            vec![(1, 8, 2), (2, 1, 11), (9, 0, 12), (10, 13, 0)]);
-    }
-
-    #[test]
-    fn replacement_distinguishes_missing_neighbors_from_unloaded_or_unread_tiles() {
-        let mut edits = replacement_fixture();
-        edits.originals.get_mut(&((0, 0), 1)).unwrap().next_id = 99;
-        edits.originals.get_mut(&((0, 0), 2)).unwrap().prev_id = 0;
-        let mut index = crate::tiles::MapIndex::default();
-        index.splines.insert(99, crate::tiles::IndexedSpline { length: 10.0, map_chain_offset: None, prev: 1, next: 0 });
-        assert!(connection_plan(&edits, &[(0, 0)], Some(&index), ((0, 0), 1), ((0, 0), 2), true, false).unwrap_err().contains("99 for editing first"));
-        index.splines.remove(&99);
-        let preview = connection_plan(&edits, &[(0, 0)], Some(&index), ((0, 0), 1), ((0, 0), 2), true, false).unwrap();
-        assert_eq!(preview.source.next_id, 2);
-        assert!(preview.neighbors.is_empty());
-        index.tiles_failed = 1;
-        assert!(connection_plan(&edits, &[(0, 0)], Some(&index), ((0, 0), 1), ((0, 0), 2), true, false).unwrap_err().contains("not fully"));
-        let mut neighbor = edits.current(((0, 0), 9)).unwrap(); neighbor.id = 99;
-        edits.originals.insert(((1, 0), 99), neighbor);
-        assert!(connection_plan(&edits, &[(0, 0)], Some(&index), ((0, 0), 1), ((0, 0), 2), true, false).unwrap_err().contains("99 first"));
-        assert_eq!(edits.current(((0, 0), 1)).unwrap().next_id, 99);
-    }
-
-    #[test]
-    fn replacement_merges_two_detachments_from_the_same_old_neighbor() {
-        let mut edits = replacement_fixture();
-        edits.originals.get_mut(&((0, 0), 2)).unwrap().prev_id = 9;
-        edits.originals.get_mut(&((0, 0), 9)).unwrap().next_id = 2;
-        let preview = connection_plan(&edits, &[(0, 0)], None, ((0, 0), 1), ((0, 0), 2), true, false).unwrap();
-        assert_eq!(preview.neighbors.len(), 1);
-        assert_eq!((preview.neighbors[0].1.prev_id, preview.neighbors[0].1.next_id), (0, 0));
-        let old = edits.current(((0, 0), 9)).unwrap();
-        assert_eq!((old.prev_id, old.next_id), (1, 2));
-    }
-}
+#[path = "spline_editor/tests.rs"]
+mod tests;
 
 #[cfg(test)]
 mod edge_connector_tests {

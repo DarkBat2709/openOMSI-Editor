@@ -220,9 +220,9 @@ fn junction_roads_at(ed:&crate::editor::Editor,world:&crate::scene::World,id:i64
     }
     if let Some((key,arm))=pending{assigned.insert(key,arm);}
     let mut occupied=std::collections::HashSet::new();let mut result=Vec::new();
-    for(key,arm)in assigned{if !occupied.insert(arm){return Err("Junction arm is already connected to another road".into());}
+    for(key,arm)in assigned{if result.iter().any(|(k,_)|*k==key){continue;}if !occupied.insert(arm){return Err("Junction arm is already connected to another road".into());}
         let(point,direction,def)=crate::junction_builder::port(project,arm)?;
-        result.push((key,ed.splines.junction_plan(world,key,id,after.port(point,direction)?,&def)?));
+        result.extend(ed.splines.junction_layer_plan(world,key,id,after.port(point,direction)?,&def)?);
     }Ok(result)
 }
 

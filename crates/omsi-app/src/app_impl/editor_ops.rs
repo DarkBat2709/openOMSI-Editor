@@ -108,10 +108,9 @@ impl App {
         if self.menus.editor.is_none() { return false; }
         if self.menus.editor.as_ref().is_some_and(|ed| ed.spline_mode && ed.splines.multiple_selected())
             && matches!(action, crate::editor::Action::Connect | crate::editor::Action::ReplaceConnection
-                | crate::editor::Action::TerrainToRoad | crate::editor::Action::FitTerrain | crate::editor::Action::SmoothRoad(_)
                 | crate::editor::Action::Branch(_) | crate::editor::Action::SnapEnd | crate::editor::Action::Split
                 | crate::editor::Action::ConstructionWindow | crate::editor::Action::RoadsideWindow | crate::editor::Action::SidewalkWindow) {
-            self.service_msg = Some(("Select one spline for this tool; groups support moving and height changes".into(), 5.0));
+            self.service_msg = Some(("Select one spline for this tool; groups support moving, shaping and continuation (C)".into(), 5.0));
             return true;
         }
         if let crate::editor::Action::Workspace(mode) = action {
@@ -132,7 +131,7 @@ impl App {
             |crate::editor::Action::Paste|crate::editor::Action::RepeatObject) {
             self.editor_terrain_finish();
         }
-        if matches!(action, crate::editor::Action::TerrainToRoad | crate::editor::Action::FitTerrain | crate::editor::Action::SmoothRoad(_)) { self.menus.editor_drag = false; }
+        if matches!(action, crate::editor::Action::MarkingToRoad | crate::editor::Action::TerrainToRoad | crate::editor::Action::FitTerrain | crate::editor::Action::SmoothRoad(_)) { self.menus.editor_drag = false; }
         if self.menus.editor.as_ref().is_some_and(|ed| ed.spline_mode && ed.splines.connection_active())
             && !matches!(&action, crate::editor::Action::Connect | crate::editor::Action::ReplaceConnection | crate::editor::Action::Generate
                 | crate::editor::Action::SnapEnd | crate::editor::Action::Pick | crate::editor::Action::NextPick
@@ -215,7 +214,7 @@ impl App {
                 if ed.spline_mode { ed.splines.replace_connection(&world) }
                 else { "T for splines, then G to connect".into() }
             }
-            a @ (crate::editor::Action::TerrainToRoad | crate::editor::Action::FitTerrain | crate::editor::Action::SmoothRoad(_) | crate::editor::Action::Branch(_) | crate::editor::Action::SnapEnd | crate::editor::Action::SplineUndo | crate::editor::Action::Split) => {
+            a @ (crate::editor::Action::MarkingToRoad | crate::editor::Action::TerrainToRoad | crate::editor::Action::FitTerrain | crate::editor::Action::SmoothRoad(_) | crate::editor::Action::Branch(_) | crate::editor::Action::SnapEnd | crate::editor::Action::SplineUndo | crate::editor::Action::Split) => {
                 let at = crate::editor::Editor::aim(&world, eye, fwd);
                 let ed = self.menus.editor.as_mut().unwrap();
                 if !ed.spline_mode { "This function requires spline mode (T)".into() }
@@ -223,6 +222,7 @@ impl App {
                     ed.splines.finish_drag();
                     match a {
                         crate::editor::Action::TerrainToRoad => ed.splines.terrain_to_road(&world),
+                        crate::editor::Action::MarkingToRoad => ed.splines.marking_to_road(&world),
                         crate::editor::Action::FitTerrain => ed.splines.fit_terrain(&world),
                         crate::editor::Action::SmoothRoad(wide) => ed.splines.smooth_road(&world, wide),
                         crate::editor::Action::Branch(side) => ed.splines.branch(&world, at, side),
@@ -254,7 +254,10 @@ impl App {
             }
             crate::editor::Action::NextPick => {
                 let ed = self.menus.editor.as_mut().unwrap();
-                ed.next_pick();
+                let additive = self.input.keys.contains(&KeyCode::ControlLeft) || self.input.keys.contains(&KeyCode::ControlRight);
+                if ed.spline_mode && additive && !ed.splines.connection_active() {
+                    ed.splines.add_next_pick();
+                } else { ed.next_pick(); }
                 ed.splines.refresh_connection(&world);
                 ed.describe(&world)
             }

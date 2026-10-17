@@ -29,20 +29,21 @@ impl Default for Project {
 }
 
 #[derive(Clone,Copy,Debug,PartialEq,Eq)]
-pub enum Field {IslandRadius,RingWidth,IslandHeight,Name,Width,Length,Angle,Bend,Sidewalk,Corner,TextureMetres,UStart,UEnd,TextureWidth}
+pub enum Field {LineLeft,LineRight,LineWidth,IslandRadius,RingWidth,IslandHeight,Name,Width,Length,Angle,Bend,Sidewalk,Corner,TextureMetres,UStart,UEnd,TextureWidth}
 impl Field {
-    pub fn title(self)->&'static str {match self {Self::IslandRadius=>"Island radius (m)",Self::RingWidth=>"Ring road width (m)",Self::IslandHeight=>"Island height (m)",Self::Name=>"Name",Self::Width=>"Road width (m)",Self::Length=>"Length from centre (m)",
+    pub fn title(self)->&'static str {match self {Self::LineLeft=>"Left line inset (m)",Self::LineRight=>"Right line inset (m)",Self::LineWidth=>"Line width (m)",Self::IslandRadius=>"Island radius (m)",Self::RingWidth=>"Ring road width (m)",Self::IslandHeight=>"Island height (m)",Self::Name=>"Name",Self::Width=>"Road width (m)",Self::Length=>"Length from centre (m)",
         Self::Angle=>"Direction (°)",Self::Bend=>"Bend at end (°)",Self::Sidewalk=>"Sidewalk per side (m)",Self::Corner=>"Corner radius (m)",Self::TextureWidth=>"Texture width (m)",Self::UStart=>"Crop U from",Self::UEnd=>"Crop U to",Self::TextureMetres=>"Texture length (m)"}}
     pub fn texture_index(self)->Option<usize> {match self {Self::UStart=>Some(0),Self::UEnd=>Some(1),Self::TextureWidth=>Some(2),_=>None}}
-    fn limits(self)->(f64,f64) {match self {Self::IslandRadius=>(5.0,60.0),Self::RingWidth=>(4.0,12.0),Self::IslandHeight=>(0.05,1.0),Self::Width=>(4.0,30.0),Self::Length=>(8.0,150.0),Self::Angle=>(0.0,360.0),
+    fn limits(self)->(f64,f64) {match self {Self::LineLeft|Self::LineRight=>(0.05,3.0),Self::LineWidth=>(0.05,0.5),Self::IslandRadius=>(5.0,60.0),Self::RingWidth=>(4.0,12.0),Self::IslandHeight=>(0.05,1.0),Self::Width=>(4.0,30.0),Self::Length=>(8.0,150.0),Self::Angle=>(0.0,360.0),
         Self::Bend=>(-35.0,35.0),Self::Sidewalk=>(0.0,6.0),Self::Corner=>(0.0,20.0),Self::TextureMetres=>(0.25,100.0),Self::TextureWidth=>(0.25,100.0),Self::UStart|Self::UEnd=>(-16.0,16.0),Self::Name=>(0.0,0.0)}}
 }
 #[derive(Clone,Copy)]
-pub enum Command {Close,Shape(bool),Arm(usize),Edit(Field),Digit(Field,i32),Step(Field,f64),Adjust(Field,f64),RoadTexture,WalkTexture,Markings,
+pub enum Command {DashedEntries,OuterLine,LineSettings,Close,Shape(bool),Arm(usize),Edit(Field),Digit(Field,i32),Step(Field,f64),Adjust(Field,f64),RoadTexture,WalkTexture,Markings,
     ShowPaths,Rotate,Undo,Redo,Export,Load,UseSpline,ConnectRoad}
 
 pub struct Input {pub field:Field,pub text:String,pub replace:bool}
 pub struct Window {
+    pub line_settings:bool,
     pub texture_digits:[usize;3],pub texture_steps:[i32;3],pub texture_focus:Option<Field>,
     pub existing_preview:Vec<[DVec3;2]>,pub arm_links:[Option<i64>;4],pub source_label:String,pub road_preview:Vec<[DVec3;2]>,pub pending:Option<(((i32,i32),i64),usize)>,pub target:Option<i64>,pub placed_project:Option<Project>,pub project:Project,pub arm:usize,pub input:Option<Input>,pub message:String,pub rects:Vec<([f32;4],Command)>,
     pub arm_labels:Vec<(usize,Vec2)>,pub preview:Option<omsi_texture::Image>,pub preview_id:u64,pub show_paths:bool,pub view:u8,
@@ -50,7 +51,7 @@ pub struct Window {
 }
 
 impl Window {
-    pub fn new(left_hand:bool)->Self {let project=Project {left_hand,..Default::default()};Self {texture_digits:[4;3],texture_steps:[-4;3],texture_focus:None,existing_preview:Vec::new(),arm_links:[None;4],source_label:String::new(),road_preview:Vec::new(),pending:None,target:None,placed_project:None,project,arm:0,input:None,
+    pub fn new(left_hand:bool)->Self {let project=Project {left_hand,..Default::default()};Self {line_settings:false,texture_digits:[4;3],texture_steps:[-4;3],texture_focus:None,existing_preview:Vec::new(),arm_links:[None;4],source_label:String::new(),road_preview:Vec::new(),pending:None,target:None,placed_project:None,project,arm:0,input:None,
         message:"Choose arm, adjust dimensions, then Save & place. Blue = AI paths.".into(),rects:Vec::new(),arm_labels:Vec::new(),preview:None,
         preview_id:0,show_paths:true,view:0,error:None,undo:Vec::new(),redo:Vec::new(),dirty:true}}
     pub fn new_roundabout(left_hand:bool)->Self {
@@ -66,6 +67,9 @@ impl Window {
     pub fn hit(&self,p:(f32,f32))->Option<Command> {self.rects.iter().rev().find(|(r,_)|
         p.0>=r[0]&&p.0<=r[2]&&p.1>=r[1]&&p.1<=r[3]).map(|(_,c)|*c)}
     pub fn value(&self,field:Field)->f64 {let arm=&self.project.arms[self.arm];match field {
+        Field::LineLeft=>self.project.roundabout.as_ref().map_or(0.25,|r|r.line_insets[self.arm][0]),
+        Field::LineRight=>self.project.roundabout.as_ref().map_or(0.25,|r|r.line_insets[self.arm][1]),
+        Field::LineWidth=>self.project.roundabout.as_ref().map_or(0.12,|r|r.line_width),
         Field::IslandRadius=>self.project.roundabout.as_ref().map_or(12.0,|r|r.island_radius),
         Field::RingWidth=>self.project.roundabout.as_ref().map_or(6.0,|r|r.road_width),
         Field::IslandHeight=>self.project.roundabout.as_ref().map_or(0.15,|r|r.island_height),
@@ -112,6 +116,8 @@ impl Window {
     pub fn set(&mut self,field:Field,value:f64) {let (lo,hi)=field.limits();let value=value.clamp(lo,hi);
         if !value.is_finite() || field==Field::Name || (self.value(field)-value).abs()<1e-8 {return;}
         self.remember();let arm=&mut self.project.arms[self.arm];match field {
+            Field::LineLeft|Field::LineRight=>{if let Some(r)=self.project.roundabout.as_mut(){r.line_insets[self.arm][if field==Field::LineLeft{0}else{1}]=value;}},
+            Field::LineWidth=>{if let Some(r)=self.project.roundabout.as_mut(){r.line_width=value;}},
             Field::IslandRadius=>{if let Some(r)=self.project.roundabout.as_mut(){r.island_radius=value;}},
             Field::RingWidth=>{if let Some(r)=self.project.roundabout.as_mut(){r.road_width=value;}},
             Field::IslandHeight=>{if let Some(r)=self.project.roundabout.as_mut(){r.island_height=value;}},
@@ -142,6 +148,9 @@ impl Window {
     }
     pub fn command(&mut self,command:Command) {
         match command {
+            Command::DashedEntries=>{if self.commit() && self.project.roundabout.is_some() {self.remember();let r=self.project.roundabout.as_mut().unwrap();r.dashed_entries=!r.dashed_entries;self.changed();}},
+            Command::OuterLine=>{if self.commit() && self.project.roundabout.is_some() {self.remember();let r=self.project.roundabout.as_mut().unwrap();r.outer_line=!r.outer_line;self.changed();}},
+            Command::LineSettings=>{if self.commit() {self.line_settings=!self.line_settings;}},
             Command::Step(f,d)=>self.step_texture(f,d),
             Command::Digit(f,power)=>{
                 if let Some(i)=f.texture_index() {if self.commit() {
