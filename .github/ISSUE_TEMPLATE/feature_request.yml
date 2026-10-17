@@ -1,68 +1,68 @@
-name: Feature Request
-description: Suggest an idea or improvement
+name: Wunsch / Feature request
+description: Verbesserung für den Editor vorschlagen – Deutsch oder Englisch. / Suggest an editor improvement in German or English.
 labels: ["enhancement"]
 body:
   - type: markdown
     attributes:
       value: |
-        Thanks for the suggestion! Please **write in English** - issues in other languages are closed until they are translated, and a translator such as DeepL or Google Translate is fine. One idea per issue, please.
+        **Deutsch und Englisch sind willkommen. Eine Sprache reicht!**
+        **German and English are welcome. One language is enough!**
+
+        Bitte eine Idee pro Meldung. / Please submit one idea per issue.
 
   - type: checkboxes
     id: checks
     attributes:
-      label: Before you start
+      label: Vorher prüfen / Before submitting
       options:
-        - label: I wrote this request in English.
-          required: true
-        - label: I searched the [open and closed issues](https://github.com/openOMSI-org/openOMSI/issues?q=is%3Aissue) and nobody has asked for this yet.
+        - label: Ich habe nach [vorhandenen Wünschen](https://github.com/DarkBat2709/openOMSI-Editor/issues?q=is%3Aissue) gesucht. / I searched the existing issues.
           required: true
 
   - type: dropdown
     id: area
     attributes:
-      label: What is it about?
+      label: Bereich / Area
       options:
-        - Passengers, doors, tickets and money
-        - Driving, controls, input devices and cameras
-        - AI traffic, timetable and navigation
-        - Multiplayer or dedicated server
-        - Graphics, weather and effects
-        - Sound
-        - Launcher, menus and HUD
-        - Modding (vehicle, map and script features)
-        - A new platform or game mode (VR, mobile, trams...)
-        - Something else
+        - Objekte und Szenerie / Objects and scenery
+        - Straßen und Splines / Roads and splines
+        - Kreuzungen und Kreisverkehre / Junctions and roundabouts
+        - Gelände / Terrain
+        - KI und Verkehrspfade / AI and traffic paths
+        - Speichern und Laden / Saving and loading
+        - Grafik und Leistung / Graphics and performance
+        - Bedienung und Menüs / Controls and menus
+        - Sonstiges / Other
     validations:
-      required: true
+      required: false
 
   - type: textarea
     id: problem
     attributes:
-      label: What problem does this solve?
-      description: What is missing or annoying today, and when do you run into it?
+      label: Was fehlt oder stört? / What is missing or difficult?
+      description: Beschreibe kurz die Situation. / Briefly describe the situation.
     validations:
       required: true
 
   - type: textarea
     id: solution
     attributes:
-      label: What would you like to see?
-      description: Describe the feature or change you're proposing. Mock-ups and screenshots help.
+      label: Dein Vorschlag / Your suggestion
+      description: Was soll der Editor können? Bilder kannst du hier anhängen. / What should the editor do? You can attach images here.
     validations:
       required: true
 
   - type: textarea
     id: omsi2
     attributes:
-      label: How does OMSI 2 do it?
-      description: If OMSI 2 or one of its add-ons already has this, how does it work there?
+      label: Beispiel aus OMSI 2 oder anderen Editoren / Example from OMSI 2 or other editors
+      description: Falls vorhanden, beschreibe ein Beispiel oder füge einen Link hinzu. / Describe an example or add a link, if available.
     validations:
       required: false
 
   - type: textarea
     id: alternatives
     attributes:
-      label: Alternatives considered
-      description: Any workarounds or other approaches you've thought about.
+      label: Andere Lösungen / Alternatives
+      description: Hast du andere Lösungen ausprobiert? / Have you tried other solutions?
     validations:
       required: false
