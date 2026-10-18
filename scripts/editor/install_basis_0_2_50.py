@@ -10,7 +10,7 @@ import subprocess
 import sys
 import tempfile
 
-VERSION = '0.8.5-pre'
+VERSION = '0.8.6-pre'
 ROOT = Path(__file__).resolve().parents[2]
 
 
@@ -118,5 +118,5 @@ if __name__ == '__main__':
     try:
         main()
     except (ValueError, OSError, subprocess.CalledProcessError) as exc:
-        print(f'\nAbgebrochen: {exc}\nBitte update-0.8.5-pre.log schicken.', file=sys.stderr)
+        print(f'\nAbgebrochen: {exc}\nBitte update-0.8.6-pre.log schicken.', file=sys.stderr)
         sys.exit(1)

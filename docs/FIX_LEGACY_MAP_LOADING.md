@@ -49,4 +49,5 @@ zusätzlich als Einstiegspunkte erfasst.
 - Tests von Karten-, Welt-, Launcher- und Editor-Bibliotheken sowie Architektur-
   und Größenprüfungen.
 
-Ein praktischer Sichttest auf einer betroffenen alten Karte steht noch aus.
+Am 18. Oktober 2026 hat Chris die vorgeschlagenen praktischen Tests als erfolgreich
+bestätigt. Welche einzelne ältere Karte dabei verwendet wurde, wurde nicht dokumentiert.
