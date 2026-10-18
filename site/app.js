@@ -98,7 +98,8 @@ async function latestBeta() {
 }
 
 function slug(text) {
-  return text.toLowerCase().replace(/<[^>]+>/g, "").replace(/[^\w\- ]+/g, "").trim().replace(/\s+/g, "-");
+  // Input is heading.textContent, not HTML; only anchor-safe characters may remain.
+  return text.toLowerCase().replace(/[^\w\- ]+/g, "").trim().replace(/\s+/g, "-");
 }
 
 function showTemplate(id) {
