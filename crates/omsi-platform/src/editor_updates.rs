@@ -93,7 +93,7 @@ impl ManagedUpdate {
                 );
                 let json = serde_json::from_str(&updater::fetch_text(&url)?)?;
                 match channel {
-                    Channel::Game => updater::parse_release(&json, &current),
+                    Channel::Game => updater::parse_release(&json, &current, false),
                     Channel::Editor => editor_release(&json, &current),
                 }
             })();
@@ -712,13 +712,13 @@ mod tests {
     fn official_channel_uses_the_separate_game_version() {
         let v = json!({"tag_name":"v0.2.38","draft":false,"prerelease":false,"assets":[{"name":updater::asset_name("0.2.38").unwrap(),"browser_download_url":"https://github.com/openOMSI-org/openOMSI/releases/download/v0.2.38/openOMSI-0.2.38-linux-x64.zip","size":123,"digest":format!("sha256:{}","b".repeat(64))}]});
         assert_eq!(
-            updater::parse_release(&v, "0.2.27")
+            updater::parse_release(&v, "0.2.27", false)
                 .unwrap()
                 .unwrap()
                 .version,
             "0.2.38"
         );
-        assert!(updater::parse_release(&v, "0.2.38").unwrap().is_none());
+        assert!(updater::parse_release(&v, "0.2.38", false).unwrap().is_none());
     }
     #[test]
     fn the_game_channel_cannot_replace_the_editor() {

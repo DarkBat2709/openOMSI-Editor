@@ -99,7 +99,7 @@ impl App {
         let mut scene=renderer.new_scene();
         setup_sky(&self.args,&renderer,&mut scene,self.session.envir.as_ref(),self.session.weather.as_ref(), &mut self.session.sky.clouds);
         world.set_fast_texture_loads(true);
-        world.set_texture_budget(texture_budget(&self.settings));
+        world.set_texture_budget(texture_budget());
         let distance=self.args.view_distance.or_else(settings::view_distance).unwrap_or(1200.0).max(omsi_map::tile_size());
         let streamer=tiles::Streamer::new(world.clone(),&crate::app::start_centers(&self.args,&cam,Some(&world)),distance,700.0);
         // Every owner of scene-local GPU IDs must go with the old scene.

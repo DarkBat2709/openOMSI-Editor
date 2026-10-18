@@ -1,23 +1,10 @@
 //! Old tiles place linked splines relative to the preceding road's end.
-use glam::DVec2;
-use omsi_geometry::SplineCurve;
 use omsi_map::Tile;
 
 /// Resolve each file before merging chrono patches and scaling to the world grid.
 /// Modern records already contain explicit positions; version 0 means modern too.
-pub(crate) fn resolve(tile: &mut Tile) {
-    if !(1..11).contains(&tile.version) { return; }
-    for i in 1..tile.splines.len() {
-        let (before, after) = tile.splines.split_at_mut(i);
-        let previous = &before[i - 1];
-        let current = &mut after[0];
-        // The old-format parser creates both links only for the continuation flag.
-        if current.prev_id != previous.id || previous.next_id != current.id { continue; }
-        let curve = SplineCurve::from_map(previous, DVec2::ZERO);
-        current.pos = curve.end_point().to_array();
-        current.heading = curve.heading_at(previous.length).rem_euclid(360.0);
-    }
-}
+#[cfg(test)]
+fn resolve(tile: &mut Tile) { crate::map_index::chain_linked_splines(tile); }
 
 #[cfg(test)]
 mod tests {
@@ -29,9 +16,9 @@ mod tests {
         let first = MapSpline { id: 1, next_id: 2, pos: [10.0, 20.0, 3.0], heading: 0.0,
             length: std::f64::consts::FRAC_PI_2 * 20.0, radius: 20.0,
             is_h: true, delta_h: Some(4.0), ..Default::default() };
-        let second = MapSpline { id: 2, prev_id: 1, next_id: 3, length: 10.0,
+        let second = MapSpline { id: 2, prev_id: 1, linked: true, next_id: 3, length: 10.0,
             grad_start: 10.0, grad_end: 10.0, ..Default::default() };
-        let third = MapSpline { id: 3, prev_id: 2, ..Default::default() };
+        let third = MapSpline { id: 3, prev_id: 2, linked: true, ..Default::default() };
         let separate = MapSpline { id: 4, pos: [90.0, 80.0, 2.0], ..Default::default() };
         let mut tile = Tile { version: 7, splines: vec![first, second, third, separate.clone()], ..Default::default() };
         resolve(&mut tile);

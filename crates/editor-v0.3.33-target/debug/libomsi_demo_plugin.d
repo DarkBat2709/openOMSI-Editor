@@ -1,0 +1,1 @@
+/home/chris/Dokumente/ChatGPT/Private\ Space/editor-v0.3.33-work/crates/omsi-plugin/../editor-v0.3.33-target/debug/libomsi_demo_plugin.so: /home/chris/Dokumente/ChatGPT/Private\ Space/editor-v0.3.33-work/crates/omsi-plugin/demo/src/lib.rs

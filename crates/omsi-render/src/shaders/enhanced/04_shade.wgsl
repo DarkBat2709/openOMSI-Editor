@@ -234,6 +234,7 @@ fn shade_enhanced(in: FsIn, puddle_weight: ptr<function, vec2<f32>>, capture: bo
     var metal = 0.0;
     var f0 = vec3<f32>(0.04);
     var rough = 0.8;
+    let probe_only = camera.clouds.w < 1.5;
     if (terrain) {
         rough = 0.92;
         f0 = vec3<f32>(0.03);
@@ -254,7 +255,7 @@ fn shade_enhanced(in: FsIn, puddle_weight: ptr<function, vec2<f32>>, capture: bo
         // the pane mirrors as much as there and rises towards grazing as glass does; 4 to
         // 12 % at the normal, and three quarters of that, left the windows showing the
         // saloon where the vanilla picture shows the street.
-        let share = clamp(alpha * min(material.params2.y, 1.0), 0.0, 1.0);
+        let share = clamp(alpha * min(material.params2.y, 1.0), 0.0, 1.0) * camera.cam_pos.w;
         f0 = vec3<f32>(clamp((share - 1.0 / 21.0) * 21.0 / 20.0, 0.04, 0.9));
     } else if (reflective_env) {
         // Paint reflects its few per cent through a smooth clear coat; much more than a few
@@ -283,7 +284,12 @@ fn shade_enhanced(in: FsIn, puddle_weight: ptr<function, vec2<f32>>, capture: bo
         // up to a share of a half they came out matte, #2067; smooth from 4 %, a body meant
         // to mirror barely shone like glass against the light, #2474), and where the mask
         // says nothing reflects - a tyre or a seal - the rough rubber or plastic it is.
-        let coat_rough = clamp(0.06 + (0.087 - refl) * 11.9, 0.06, 0.8);
+        // Between those and chrome, the share says how much the paint mirrors, not how
+        // sharply: Omsi.exe lays a soft sphere map over it, a blurred sheen of the sky. Taken
+        // as polished glass from 8.7 % on (0.2.42), the many mod bodies whose texture alpha
+        // holds a tenth to a half mirrored the grey sky like chrome - silver buses and AI
+        // cars that glowed (#2563, #2301). Only a share near the whole is a sharp mirror.
+        let coat_rough = max(clamp(0.06 + (0.087 - refl) * 11.9, 0.06, 0.8), mix(0.3, 0.06, smoothstep(0.5, 0.95, refl)));
         // Where the model says how much it mirrors - a [matl_envmap_mask], or the texture's
         // alpha under a [matl_transmap] (most mod bodies) - Omsi.exe lays the sphere map
         // over the paint by that share at every angle (shader.wgsl's environment stage):
@@ -419,6 +425,8 @@ fn shade_enhanced(in: FsIn, puddle_weight: ptr<function, vec2<f32>>, capture: bo
         let spread = min((dot(dndx, dndx) + dot(dndy, dndy)) * 2.0, 0.4);
         rough = sqrt(min(rough * rough + spread, 1.0));
     }
+    let env_share = select(1.0, camera.cam_pos.w, reflective_env && !glass);
+    metal = metal * env_share;
     var sf: Surface;
     sf.albedo = albedo * (1.0 - metal);
     ambient_albedo = ambient_albedo * (1.0 - metal);
@@ -530,7 +538,7 @@ fn shade_enhanced(in: FsIn, puddle_weight: ptr<function, vec2<f32>>, capture: bo
     let avg_e = enh.fog_color.rgb * (PI / 0.9);
     let cab_e = vec3<f32>(dot(avg_e, vec3<f32>(0.2126, 0.7152, 0.0722))) * vec3<f32>(1.0, 0.98, 0.95);
     let e_amb = mix(sh_irradiance(n), cab_e * CAB_AMBIENT, 0.6 * in_cab) * ao_bounce(ao, ambient_albedo);
-    var ambient = e_amb * ambient_albedo / PI * (vec3<f32>(1.0) - fr * (1.0 - rough));
+    var ambient = e_amb * ambient_albedo / PI * (vec3<f32>(1.0) - fr * (1.0 - rough) * env_share);
     // --- reflections: the sky probe, as sharp as the surface is smooth
     var r = reflect(-v, n);
     // a reflection pointing into the surface would show the probe's ground: bend it up
@@ -551,7 +559,7 @@ fn shade_enhanced(in: FsIn, puddle_weight: ptr<function, vec2<f32>>, capture: bo
     // surface wore a milky sheen of the bright horizon, strongest against a low sun)
     let surround = enh.fog_color.rgb * (0.25 / 0.9);
     let open = smoothstep(-0.05, 0.35, r.z);
-    env = mix(surround, env, mix(open, 1.0, select(0.25, 0.5, reflective_env)));
+    env = mix(surround, env, mix(open, 1.0, select(0.25, 0.5, reflective_env && !(glass && probe_only))));
     // the cabin reflects the cabin, not the sky - and so does the bus's own glass seen
     // from the driver's seat
     let cab_view = max(in_cab, near_player_vehicle(in.world) * inside_vehicle(camera.cam_pos.xyz));
@@ -600,7 +608,7 @@ fn shade_enhanced(in: FsIn, puddle_weight: ptr<function, vec2<f32>>, capture: bo
         // (the photo's own contrast, as the vanilla picture shows it, held only off black
         // and off a blinding white; clamped to 0.35 .. 2 and laid on at two thirds, the
         // windows mirrored a flat grey where the vanilla ones mirror trees and sky)
-        let ratio = clamp(photo / lum_avg, vec3<f32>(0.12), vec3<f32>(3.5));
+        let ratio = clamp(photo / lum_avg, vec3<f32>(0.12), vec3<f32>(select(3.5, 1.0, glass && probe_only)));
         let band = 1.0 - smoothstep(0.25, 0.7, abs(r.z));
         // Only a smooth surface mirrors the photo; a satin one a quarter of its contrast.
         // (A car's bonnet is a handful of triangles: the photo's mip level by its footprint
@@ -633,6 +641,7 @@ fn shade_enhanced(in: FsIn, puddle_weight: ptr<function, vec2<f32>>, capture: bo
         // viewpoint; opaque paint must never receive this boost.
         refl_f = refl_f * (1.0 - 0.85 * own_pane);
     }
+    refl_f = refl_f * env_share;
     var reflection = select(vec3<f32>(0.0), env * refl_f, reflects);
     // Enhanced+: traced instead (rough surfaces keep the probe, which is as good as a
     // ray there): the windows, the chrome and the paint's clear coat mirror the real street

@@ -1,6 +1,6 @@
 import importlib.util,os,tempfile,hashlib,json,subprocess
 from pathlib import Path
-p=Path(__file__).with_name('install_basis_0_2_50.py')
+p=Path(__file__).with_name('install_basis_0_3_33.py')
 s=importlib.util.spec_from_file_location('candidate',p);m=importlib.util.module_from_spec(s);s.loader.exec_module(m)
 with tempfile.TemporaryDirectory(prefix='Editor Port Test ') as tmp:
  d=Path(tmp);src=d/'source';target=d/'build';dest=d/'editor';old=d/'old';old.mkdir();(old/'openomsi').write_bytes(b'untouched')
@@ -11,7 +11,7 @@ with tempfile.TemporaryDirectory(prefix='Editor Port Test ') as tmp:
  (src/'LICENSE').write_bytes(b'license');(src/'README.md').write_bytes(b'readme')
  (src/'SOURCE-SHA256.json').write_text(json.dumps({'version':m.VERSION,'files':{'assets/test':hashlib.sha256(b'asset').hexdigest()}}))
  m.verify_package(src);os.environ['CARGO_TARGET_DIR']=str(target);m.install(src,dest)
- assert 'openOMSI-Basis 0.2.50' in (dest/'VERSION-EDITOR.txt').read_text()
+ assert 'openOMSI-Basis 0.3.33' in (dest/'VERSION-EDITOR.txt').read_text()
  assert (dest/'docs/LICENSE').read_bytes()==b'license'
  assert (dest/'docs/README.md').read_bytes()==b'readme'
  assert not (dest/'LICENSE').exists() and not (dest/'README.md').exists()
