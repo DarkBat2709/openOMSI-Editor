@@ -169,7 +169,9 @@ impl GlobalCfg {
 
     pub fn load(path: &Path) -> Result<GlobalCfg, omsi_cfg::CfgError> {
         let f = CfgFile::read(path)?;
-        Ok(Self::parse(&f))
+        let mut global = Self::parse(&f);
+        crate::legacy_entries::discover(&mut global);
+        Ok(global)
     }
 
     pub fn dir(&self) -> &Path {

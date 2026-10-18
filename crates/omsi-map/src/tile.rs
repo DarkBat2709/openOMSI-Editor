@@ -437,14 +437,15 @@ impl Tile {
                     }
                 }
                 "spline_terrain_align" => {
-                    if let Some(s) = t.splines.last_mut() {
-                        s.terrain_align_flag = true;
+                    // An attachment's flag must not modify an earlier road record.
+                    if matches!(last, Last::Spline) {
+                        if let Some(s) = t.splines.last_mut() { s.terrain_align_flag = true; }
                     }
                 }
                 "spline_terrain_align_2" => {
                     let v = r.f64();
-                    if let Some(s) = t.splines.last_mut() {
-                        s.terrain_align = Some(v);
+                    if matches!(last, Last::Spline) {
+                        if let Some(s) = t.splines.last_mut() { s.terrain_align = Some(v); }
                     }
                 }
                 "rule" | "kill_rule" => {
@@ -922,5 +923,27 @@ mod profile_transition_tests {
         assert!(t.valid());
         t.offsets[0][0] = f64::NAN; assert!(!t.valid());
         t.offsets[0][0] = 0.0; t.x[1] = t.x[0]; assert!(!t.valid());
+    }
+}
+
+#[cfg(test)]
+mod terrain_record_scope_tests {
+    use super::*;
+    const ROAD: &str = "[spline]\n0\nSplines\\road.sli\n100\n0\n0\n10\n30\n20\n0\n50\n0\n0\n0\n0\n0\n0\n0\n0\n";
+    fn parse(body: &str) -> Tile { Tile::parse(&omsi_cfg::CfgFile::from_str("tile.map", &format!("[version]\n14\n{body}"))) }
+    #[test]
+    fn attachment_flags_do_not_align_the_previous_bridge() {
+        for header in ["[splineAttachement]\n0", "[splineAttachement_repeater]\n0\n0\n2"] {
+            let body = format!("{ROAD}{header}\nSceneryobjects\\pole.sco\n200\n0\n4\n0\n20\n0\n0\n0\n50\n200\n0\n0\n[spline_terrain_align]\n[spline_terrain_align_2]\n8\n");
+            let t = parse(&body); assert_eq!(t.spline_attachments.len(), 1);
+            assert_eq!(t.splines[0].pos[2], 30.0);
+            assert!(!t.splines[0].terrain_align_flag); assert_eq!(t.splines[0].terrain_align, None);
+        }
+    }
+    #[test]
+    fn road_flags_still_apply_and_object_flags_do_not_overwrite_them() {
+        let body = format!("{ROAD}[spline_terrain_align]\n[spline_terrain_align_2]\n3.5\n[object]\n0\nSceneryobjects\\tree.sco\n7\n5\n6\n0\n0\n0\n0\n0\n[spline_terrain_align_2]\n99\n");
+        let t = parse(&body); assert_eq!(t.objects.len(), 1);
+        assert!(t.splines[0].terrain_align_flag); assert_eq!(t.splines[0].terrain_align, Some(3.5));
     }
 }

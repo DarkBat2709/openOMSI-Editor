@@ -460,6 +460,7 @@ pub fn read_tile(path: &Path, chrono_dirs: &[PathBuf]) -> Option<Tile> {
             return None;
         }
     };
+    crate::legacy_splines::resolve(&mut tile);
     if let Some(name) = path.file_name() {
         for c in chrono_dirs {
             let p = omsi_cfg::resolve_path(c, &name.to_string_lossy());
@@ -467,7 +468,8 @@ pub fn read_tile(path: &Path, chrono_dirs: &[PathBuf]) -> Option<Tile> {
                 continue;
             }
             match Tile::load(&p) {
-                Ok(patch) => {
+                Ok(mut patch) => {
+                    crate::legacy_splines::resolve(&mut patch);
                     // (a chrono event that reshapes the ground - a cutting, a tunnel's
                     // portal, a lake let down for a new road - saves the tile's terrain and
                     // water with its patch: read from the map's own files, the old ground
