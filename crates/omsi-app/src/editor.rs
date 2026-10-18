@@ -19,6 +19,8 @@
 //! Shift), F flattens it to the height at the middle, [ and ] make the brush smaller and
 //! larger.
 
+mod placement_save;
+
 use crate::scene::{ObjectEdit, World};
 use glam::{DVec3, Mat4, Vec3};
 use hashbrown::{HashMap, HashSet};
@@ -97,6 +99,8 @@ pub struct Editor {
     /// The map source before this session first saved a tile. The VFS reads our saved
     /// overlay on the next save; applying relative moves again would accumulate them.
     saved_tile_sources: std::sync::Mutex<HashMap<(i32, i32), Vec<u8>>>,
+    /// Every tile written for a new object this session, including intermediate destinations.
+    saved_placement_tiles: std::sync::Mutex<HashMap<i64, hashbrown::HashSet<(i32, i32)>>>,
     /// The candidates of the last pick, nearest first (Tab walks them).
     candidates: Vec<PickCandidate>,
     next: usize,
@@ -918,30 +922,9 @@ impl Editor {
             if let Some(tile) = self.tiles.get(id) { by_tile.entry(*tile).or_default(); }
         }
         let mut copies_by_tile: HashMap<(i32, i32), Vec<NewRecord>> = HashMap::new();
-        let mut placed_by_tile: HashMap<(i32, i32), Vec<PlacedRecord>> = HashMap::new();
-        for a in self.added.iter().filter(|a| a.standalone) {
-            let position = a.base + a.moved;
-            let size = omsi_map::tile_size();
-            let tile = ((position.x / size).floor() as i32, (position.y / size).floor() as i32);
-            if tile != a.tile { return Err("New object must remain in its tile; copy and place it in the target tile".into()); }
-            // Assets may live in another content root (including mounted packs).
-            // Map records keep an OMSI-relative name so a saved map stays portable.
-            let mut roots = omsi_cfg::content_roots(); roots.push(world.root.clone());
-            let file = roots.iter().filter_map(|root| a.sco.strip_prefix(root).ok().map(|p| (root.components().count(), p)))
-                .max_by_key(|(depth, _)| *depth).map(|(_, p)| p).unwrap_or(&a.sco)
-                .to_string_lossy().replace('/', "\\");
-            placed_by_tile.entry(tile).or_default().push(PlacedRecord { id: a.id, file,
-                pos: position - DVec3::new(tile.0 as f64 * size, tile.1 as f64 * size, 0.0),
-                heading: a.base_heading + a.turned, tilt:a.tilt,strings:a.strings.clone(),deleted: a.deleted });
-            if !a.deleted {
-                let ot=world.editor_object_type(&a.sco.to_string_lossy())?;
-                if !ot.sco.absolute_height() {
-                    let ground=world.ground_terrain(position.x,position.y).unwrap_or(a.ground_height);
-                    placed_by_tile.get_mut(&tile).unwrap().last_mut().unwrap().pos.z-=ground;
-                }
-            }
-            by_tile.entry(tile).or_default();
-        }
+        let placement = self.plan_placements(world)?;
+        let placed_by_tile = &placement.records;
+        for tile in placed_by_tile.keys() { by_tile.entry(*tile).or_default(); }
         for a in self.added.iter().filter(|a| !a.deleted && !a.standalone) {
             let file = a.sco.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default();
             let offset = a.base + a.moved - world.edit_objects.lock().get(&a.template).map(|o| o.pos).unwrap_or(a.base);
@@ -956,11 +939,7 @@ impl Editor {
         }
         for id in self.path_edits.changes.keys() {by_tile.entry(id.key.tile).or_default();}
         let map_dir = Path::new(map_rel).parent().unwrap_or(Path::new(""));
-        let mut roundabout_rules:HashMap<(i32,i32),Vec<(i64,Option<String>)>>=HashMap::new();
-        for a in self.added.iter().filter(|a|a.standalone) {
-            let rules=if a.deleted {None}else{crate::junction_builder::roundabout_rules(&a.sco)?};
-            roundabout_rules.entry(a.tile).or_default().push((a.id,rules));
-        }
+        let roundabout_rules = &placement.rules;
         let mut written = Vec::new();
         for ((tx, ty), edits) in by_tile {
             let src = world.tile_source(tx, ty).ok_or_else(|| format!("tile ({tx}, {ty}) is not in the map"))?;
@@ -1001,7 +980,14 @@ impl Editor {
             let data = encode(&new_text, enc);
             save_copy(&out, &data)?;
             self.saved_tile_sources.lock().unwrap().entry((tx, ty)).or_insert(bytes);
-            for added in self.added.iter().filter(|a| a.tile == (tx, ty)) { world.retain_editor_helper(added.id); }
+            if let Some(records) = placed_by_tile.get(&(tx, ty)) {
+                let mut history = self.saved_placement_tiles.lock().unwrap();
+                for record in records {
+                    history.entry(record.id).or_default().insert((tx, ty));
+                    world.retain_editor_helper(record.id);
+                }
+            }
+            for added in self.added.iter().filter(|a| !a.standalone && a.tile == (tx, ty)) { world.retain_editor_helper(added.id); }
             log::info!("object editor: {} objects of tile ({tx}, {ty}) changed, written to {}", n, out.display());
             written.push(out);
         }
@@ -1077,6 +1063,7 @@ fn template_heading(world: &World, id: i64) -> Option<f64> {
 
 /// A new object for the tile file: a copy of `template`'s record with its own id, another
 /// file name of the same folder (or the same), moved and turned from the template.
+#[derive(Clone)]
 struct PlacedRecord {
     id: i64,
     file: String,

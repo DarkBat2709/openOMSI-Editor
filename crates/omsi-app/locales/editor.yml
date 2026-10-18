@@ -3176,3 +3176,9 @@ _version: 2
 
 "Select one continuous asphalt chain without gaps":
   de: "Eine durchgehend verbundene Asphaltkette ohne Lücken auswählen"
+
+"Object {} has an invalid position":
+  de: "Objekt {} hat eine ungültige Position"
+
+"Object {} is outside the map at tile ({}, {}); move it back or create that tile":
+  de: "Objekt {} liegt außerhalb der Karte auf Kachel ({}, {}); zurückverschieben oder diese Kachel erstellen"
