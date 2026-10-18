@@ -6,9 +6,10 @@ import shutil
 import tempfile
 import zipfile
 
-VERSION = '0.8.4-pre'
+VERSION = '0.8.5-pre'
 NAME = f'openOMSI-Editor-{VERSION}-windows-x64'
 RUNTIME = ('vcruntime140.dll', 'vcruntime140_1.dll', 'msvcp140.dll')
+DXC_FILES = ('dxcompiler.dll', 'dxil.dll', 'LICENCE-MIT.txt', 'LICENSE-LLVM.txt', 'LICENSE-MS.txt')
 GUIDES = ('openOMSI-Editor-Kurzanleitung.pdf', 'openOMSI-Editor-Quick-Guide-EN.pdf')
 START = r'''@echo off
 setlocal
@@ -28,7 +29,7 @@ if errorlevel 1 (
   exit /b 1
 )
 '''
-HELP = '''openOMSI Editor - 0.8.4-pre - Windows x64
+HELP = '''openOMSI Editor - 0.8.5-pre - Windows x64
 
 ENGLISH
 1. Right-click the downloaded ZIP and choose Extract All. Do not run inside the ZIP.
@@ -51,7 +52,7 @@ Troubleshooting: keep all DLLs beside openomsi.exe; extract the whole ZIP again 
 is missing. Do not download individual DLLs from third-party DLL websites.
 A warning about an unknown publisher is possible; this preview is not code-signed.
 Download only from the project release and compare the supplied SHA256 checksum.
-This preview does not yet claim a successful fresh Windows VM gameplay test.
+Windows 11 VM: DirectX 12 software-renderer startup, Grundorf display, camera use and normal exit tested. Full gameplay and affected physical GPUs still need confirmation.
 
 DEUTSCH
 1. Rechtsklick auf die ZIP-Datei, dann Alle extrahieren. Nicht direkt im ZIP starten.
@@ -74,15 +75,16 @@ Bei fehlenden DLLs das komplette ZIP erneut entpacken. Alle DLLs gehoeren neben 
 Keine einzelnen DLLs von fremden Downloadseiten beziehen. Diese Vorabversion ist nicht
 signiert; eine Meldung ueber einen unbekannten Herausgeber ist deshalb moeglich.
 Nur vom Projekt-Release herunterladen und die SHA256-Pruefsumme vergleichen.
-Ein vollstaendiger Spieltest in einer frischen Windows-VM steht noch aus.
+Windows-11-VM: DirectX-12-Softwarestart, Grundorf-Anzeige, Kamera und normales Beenden getestet. Vollstaendiger Spieltest und Bestaetigung auf betroffenen Grafikkarten stehen aus.
 '''
 
 
-def package(source, binary, runtime, output, revision):
-    source, binary, runtime, output = map(Path, (source, binary, runtime, output))
+def package(source, binary, runtime, output, revision, dxc):
+    source, binary, runtime, output, dxc = map(Path, (source, binary, runtime, output, dxc))
     launcher = binary.with_name('openomsi-launcher-app.exe')
     required = [binary, launcher, source/'LICENSE', source/'assets/steam_redist/steam_api64.dll']
     required += [runtime/name for name in RUNTIME]
+    required += [dxc/name for name in DXC_FILES]
     required += [source/'docs'/name for name in GUIDES]
     for path in required:
         if not path.is_file():
@@ -97,6 +99,8 @@ def package(source, binary, runtime, output, revision):
         root.mkdir()
         shutil.copy2(binary, root/'openomsi.exe')
         shutil.copy2(launcher, root/launcher.name)
+        for name in DXC_FILES:
+            shutil.copy2(dxc/name, root/name)
         for name in RUNTIME:
             shutil.copy2(runtime/name, root/name)
         shutil.copy2(source/'assets/steam_redist/steam_api64.dll', root/'steam_api64.dll')
@@ -120,6 +124,6 @@ def package(source, binary, runtime, output, revision):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__)
-    for arg in ('source', 'binary', 'runtime', 'output', 'revision'):
+    for arg in ('source', 'binary', 'runtime', 'output', 'revision', 'dxc'):
         parser.add_argument('--'+arg, required=True)
     package(**vars(parser.parse_args()))

@@ -4,7 +4,7 @@ from pathlib import Path
 import tempfile
 import unittest
 import zipfile
-from package_windows import package, NAME, RUNTIME, GUIDES
+from package_windows import package, NAME, RUNTIME, GUIDES, DXC_FILES
 
 
 class PackageTests(unittest.TestCase):
@@ -14,6 +14,8 @@ class PackageTests(unittest.TestCase):
             source, runtime, out = root/'source', root/'runtime', root/'out'
             files = [source/'openomsi.exe', source/'openomsi-launcher-app.exe', source/'LICENSE', source/'assets/steam_redist/steam_api64.dll']
             files += [runtime/name for name in RUNTIME]
+            dxc = root/'dxc'
+            files += [dxc/name for name in DXC_FILES]
             files += [source/'docs'/name for name in GUIDES]
             for p in files:
                 p.parent.mkdir(parents=True, exist_ok=True)
@@ -21,29 +23,36 @@ class PackageTests(unittest.TestCase):
             launcher = source/'openomsi-launcher-app.exe'
             launcher.unlink()
             with self.assertRaises(ValueError):
-                package(source, source/'openomsi.exe', runtime, out, 'test-sha')
+                package(source, source/'openomsi.exe', runtime, out, 'test-sha', dxc)
             self.assertFalse(out.exists())
             launcher.write_bytes(b'launcher')
             missing = runtime/RUNTIME[0]
             missing.unlink()
             with self.assertRaises(ValueError):
-                package(source, source/'openomsi.exe', runtime, out, 'test-sha')
+                package(source, source/'openomsi.exe', runtime, out, 'test-sha', dxc)
             self.assertFalse(out.exists())
             missing.write_bytes(b'runtime')
-            archive = package(source, source/'openomsi.exe', runtime, out, 'test-sha')
+            for name in DXC_FILES:
+                dependency = dxc/name
+                dependency.unlink()
+                with self.assertRaises(ValueError):
+                    package(source, source/'openomsi.exe', runtime, out, 'test-sha', dxc)
+                self.assertFalse(out.exists())
+                dependency.write_bytes(b'fixture')
+            archive = package(source, source/'openomsi.exe', runtime, out, 'test-sha', dxc)
             self.assertEqual((out/(archive.name+'.sha256')).read_text().split()[0], hashlib.sha256(archive.read_bytes()).hexdigest())
             with zipfile.ZipFile(archive) as z:
                 self.assertIsNone(z.testzip())
                 z.extractall(root/'clean extraction')
             extracted = root/'clean extraction'/NAME
             self.assertIn('test-sha', (extracted/'VERSION-EDITOR.txt').read_text())
-            for name in (*RUNTIME, 'steam_api64.dll', 'openomsi.exe', 'openomsi-launcher-app.exe', 'start-editor.cmd'):
+            for name in (*RUNTIME, *DXC_FILES, 'steam_api64.dll', 'openomsi.exe', 'openomsi-launcher-app.exe', 'start-editor.cmd'):
                 self.assertTrue((extracted/name).is_file(), name)
             self.assertTrue((extracted/'docs'/GUIDES[1]).is_file())
             self.assertIn('"%~dp0openomsi.exe" %*', (extracted/'start-editor.cmd').read_text())
             self.assertNotIn('--launcher', (extracted/'start-editor.cmd').read_text())
             with self.assertRaises(ValueError):
-                package(source, source/'openomsi.exe', runtime, out, 'test-sha')
+                package(source, source/'openomsi.exe', runtime, out, 'test-sha', dxc)
             self.assertEqual((source/'openomsi.exe').read_bytes(), b'fixture')
 
 

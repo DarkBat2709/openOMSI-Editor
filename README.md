@@ -6,7 +6,7 @@ Free, experimental community map editor for openOMSI: edit roads, splines, AI tr
 
 Kostenloser, experimenteller Community-Karteneditor für openOMSI: Straßen, Splines, KI-Fahrwege, Gelände und Objekte direkt im Spiel bearbeiten. Originale OMSI-2-Inhalte werden benötigt.
 
-**[Downloads](https://github.com/DarkBat2709/openOMSI-Editor/releases/tag/v0.8.4-pre)** · **[Video](https://github.com/DarkBat2709/openOMSI-Editor/releases/download/v0.8.0-pre/openOMSI-Editor-Vorstellung-DE.mp4)** · **[English guide](https://github.com/DarkBat2709/openOMSI-Editor/releases/download/v0.8.4-pre/openOMSI-Editor-Quick-Guide-EN.pdf)** · **[Deutsche Anleitung](https://github.com/DarkBat2709/openOMSI-Editor/releases/download/v0.8.4-pre/openOMSI-Editor-Kurzanleitung.pdf)**
+**[Downloads](https://github.com/DarkBat2709/openOMSI-Editor/releases/tag/v0.8.5-pre)** · **[Video](https://github.com/DarkBat2709/openOMSI-Editor/releases/download/v0.8.0-pre/openOMSI-Editor-Vorstellung-DE.mp4)** · **[English guide](https://github.com/DarkBat2709/openOMSI-Editor/releases/download/v0.8.5-pre/openOMSI-Editor-Quick-Guide-EN.pdf)** · **[Deutsche Anleitung](https://github.com/DarkBat2709/openOMSI-Editor/releases/download/v0.8.5-pre/openOMSI-Editor-Kurzanleitung.pdf)**
 
 ## English
 
@@ -14,9 +14,9 @@ Kostenloser, experimenteller Community-Karteneditor für openOMSI: Straßen, Spl
 
 **openOMSI Editor by DarkBat2709** is a free community fork of [openOMSI](https://github.com/openOMSI-org/openOMSI) with extended in-game map-building tools. It combines driving and map editing in the same application. It is an independent community project, not an official openOMSI release.
 
-**New in 0.8.4-pre:** coupled spline editing, marking-to-road fitting, full-width terrain support and roundabout edge lines. [Update notes](docs/UPDATE_0.8.4.md).
+**New in 0.8.5-pre:** Windows startup fix: the portable package now includes the Microsoft DirectX shader compiler. [Update notes](docs/UPDATE_0.8.5.md).
 
-**Current editor release: 0.8.4-pre**, based on **openOMSI 0.2.50**. Information updated: **17 October 2026**.
+**Current editor release: 0.8.5-pre**, based on **openOMSI 0.2.50**. Information updated: **18 October 2026**.
 
 ### What can I build and edit?
 
@@ -34,16 +34,16 @@ Yes. The official [object editor](https://github.com/openOMSI-org/openOMSI/blob/
 
 ### Download and requirements
 
-- **[Windows x64 portable ZIP](https://github.com/DarkBat2709/openOMSI-Editor/releases/download/v0.8.4-pre/openOMSI-Editor-0.8.4-pre-windows-x64.zip)** · [SHA256 checksum](https://github.com/DarkBat2709/openOMSI-Editor/releases/download/v0.8.4-pre/openOMSI-Editor-0.8.4-pre-windows-x64.zip.sha256)
+- **[Windows x64 portable ZIP](https://github.com/DarkBat2709/openOMSI-Editor/releases/download/v0.8.5-pre/openOMSI-Editor-0.8.5-pre-windows-x64.zip)** · [SHA256 checksum](https://github.com/DarkBat2709/openOMSI-Editor/releases/download/v0.8.5-pre/openOMSI-Editor-0.8.5-pre-windows-x64.zip.sha256)
 
 For Windows: extract all files to a new writable folder, double-click `start-editor.cmd`, and configure your original OMSI 2 installation in the launcher. No Python, Rust or administrator rights are required. See `START-HERE.txt` in the ZIP. The package is unsigned; settings and logs may be shared with an existing openOMSI installation.
 
-Ready-to-run **0.8.4-pre packages are available for Linux x64 and Windows x64**. The Linux package requires **glibc 2.39 or newer**. It was built on Linux Mint 22.3. An original OMSI 2 installation with its content is required. OMSI 2, third-party maps and mods are not included.
+Ready-to-run **0.8.5-pre packages are available for Linux x64 and Windows x64**. The Linux package requires **glibc 2.39 or newer**. It was built on Linux Mint 22.3. An original OMSI 2 installation with its content is required. OMSI 2, third-party maps and mods are not included.
 
-- **[Linux x64 editor package](https://github.com/DarkBat2709/openOMSI-Editor/releases/download/v0.8.4-pre/openOMSI-Editor-0.8.4-pre-linux-x64.tar.gz)**
-- **[SHA256 checksum](https://github.com/DarkBat2709/openOMSI-Editor/releases/download/v0.8.4-pre/openOMSI-Editor-0.8.4-pre-linux-x64.tar.gz.sha256)**
-- **[English operating guide (PDF)](https://github.com/DarkBat2709/openOMSI-Editor/releases/download/v0.8.4-pre/openOMSI-Editor-Quick-Guide-EN.pdf)**
-- **[German operating guide (PDF)](https://github.com/DarkBat2709/openOMSI-Editor/releases/download/v0.8.4-pre/openOMSI-Editor-Kurzanleitung.pdf)**
+- **[Linux x64 editor package](https://github.com/DarkBat2709/openOMSI-Editor/releases/download/v0.8.5-pre/openOMSI-Editor-0.8.5-pre-linux-x64.tar.gz)**
+- **[SHA256 checksum](https://github.com/DarkBat2709/openOMSI-Editor/releases/download/v0.8.5-pre/openOMSI-Editor-0.8.5-pre-linux-x64.tar.gz.sha256)**
+- **[English operating guide (PDF)](https://github.com/DarkBat2709/openOMSI-Editor/releases/download/v0.8.5-pre/openOMSI-Editor-Quick-Guide-EN.pdf)**
+- **[German operating guide (PDF)](https://github.com/DarkBat2709/openOMSI-Editor/releases/download/v0.8.5-pre/openOMSI-Editor-Kurzanleitung.pdf)**
 
 On Linux, extract the archive to a separate folder and run:
 
@@ -65,9 +65,9 @@ Linux and Windows CI builds and automated tests passed for the released source. 
 
 Der **openOMSI Editor von DarkBat2709** ist ein kostenloser Community-Fork von [openOMSI](https://github.com/openOMSI-org/openOMSI) mit erweiterten Werkzeugen für den Kartenbau direkt im Spiel. Busfahren und Kartenbearbeitung finden im selben Programm statt. Es handelt sich um ein eigenständiges Community-Projekt, keine offizielle openOMSI-Veröffentlichung.
 
-**Neu in 0.8.4-pre:** gemeinsame Splinebearbeitung, Markierung an Straße, Gelände über die volle Straßenbreite und Kreisverkehr-Randlinien. [Änderungen](docs/UPDATE_0.8.4.md).
+**Neu in 0.8.5-pre:** Windows-Startkorrektur: Das portable Paket enthält jetzt Microsofts DirectX-Shader-Compiler. [Änderungen](docs/UPDATE_0.8.5.md).
 
-**Aktuelle Editor-Version: 0.8.4-pre**, auf Basis von **openOMSI 0.2.50**. Stand dieser Informationen: **17. Oktober 2026**.
+**Aktuelle Editor-Version: 0.8.5-pre**, auf Basis von **openOMSI 0.2.50**. Stand dieser Informationen: **18. Oktober 2026**.
 
 ### Was kann ich bauen und bearbeiten?
 
@@ -85,16 +85,16 @@ Ja. Der offizielle [Objekteditor](https://github.com/openOMSI-org/openOMSI/blob/
 
 ### Download und Voraussetzungen
 
-- **[Windows x64: portables ZIP](https://github.com/DarkBat2709/openOMSI-Editor/releases/download/v0.8.4-pre/openOMSI-Editor-0.8.4-pre-windows-x64.zip)** · [SHA256-Prüfsumme](https://github.com/DarkBat2709/openOMSI-Editor/releases/download/v0.8.4-pre/openOMSI-Editor-0.8.4-pre-windows-x64.zip.sha256)
+- **[Windows x64: portables ZIP](https://github.com/DarkBat2709/openOMSI-Editor/releases/download/v0.8.5-pre/openOMSI-Editor-0.8.5-pre-windows-x64.zip)** · [SHA256-Prüfsumme](https://github.com/DarkBat2709/openOMSI-Editor/releases/download/v0.8.5-pre/openOMSI-Editor-0.8.5-pre-windows-x64.zip.sha256)
 
 Unter Windows: Alle Dateien in einen neuen beschreibbaren Ordner entpacken, `start-editor.cmd` doppelt anklicken und im Launcher die originale OMSI-2-Installation einrichten. Python, Rust und Administratorrechte sind nicht erforderlich. Siehe `START-HERE.txt` im ZIP. Das Paket ist nicht signiert; Einstellungen und Logs können mit einer vorhandenen openOMSI-Installation geteilt werden.
 
-Fertige Pakete von **0.8.4-pre stehen für Linux x64 und Windows x64 bereit**. Das Linux-Paket benötigt **glibc 2.39 oder neuer**. Es wurde auf Linux Mint 22.3 gebaut. Eine originale OMSI-2-Installation mit ihren Inhalten wird benötigt. OMSI 2, fremde Karten und Mods sind nicht im Paket enthalten.
+Fertige Pakete von **0.8.5-pre stehen für Linux x64 und Windows x64 bereit**. Das Linux-Paket benötigt **glibc 2.39 oder neuer**. Es wurde auf Linux Mint 22.3 gebaut. Eine originale OMSI-2-Installation mit ihren Inhalten wird benötigt. OMSI 2, fremde Karten und Mods sind nicht im Paket enthalten.
 
-- **[Linux-x64-Editorpaket](https://github.com/DarkBat2709/openOMSI-Editor/releases/download/v0.8.4-pre/openOMSI-Editor-0.8.4-pre-linux-x64.tar.gz)**
-- **[SHA256-Prüfsumme](https://github.com/DarkBat2709/openOMSI-Editor/releases/download/v0.8.4-pre/openOMSI-Editor-0.8.4-pre-linux-x64.tar.gz.sha256)**
-- **[Englische Bedienungsanleitung (PDF)](https://github.com/DarkBat2709/openOMSI-Editor/releases/download/v0.8.4-pre/openOMSI-Editor-Quick-Guide-EN.pdf)**
-- **[Deutsche Bedienungsanleitung (PDF)](https://github.com/DarkBat2709/openOMSI-Editor/releases/download/v0.8.4-pre/openOMSI-Editor-Kurzanleitung.pdf)**
+- **[Linux-x64-Editorpaket](https://github.com/DarkBat2709/openOMSI-Editor/releases/download/v0.8.5-pre/openOMSI-Editor-0.8.5-pre-linux-x64.tar.gz)**
+- **[SHA256-Prüfsumme](https://github.com/DarkBat2709/openOMSI-Editor/releases/download/v0.8.5-pre/openOMSI-Editor-0.8.5-pre-linux-x64.tar.gz.sha256)**
+- **[Englische Bedienungsanleitung (PDF)](https://github.com/DarkBat2709/openOMSI-Editor/releases/download/v0.8.5-pre/openOMSI-Editor-Quick-Guide-EN.pdf)**
+- **[Deutsche Bedienungsanleitung (PDF)](https://github.com/DarkBat2709/openOMSI-Editor/releases/download/v0.8.5-pre/openOMSI-Editor-Kurzanleitung.pdf)**
 
 Unter Linux das Archiv in einen eigenen Ordner entpacken und starten:
 
@@ -113,7 +113,7 @@ Die automatischen Builds und Tests für Linux und Windows sind für den veröffe
 ## Source code and feedback / Quellcode und Rückmeldungen
 
 - [Windows package source / Quellstand Windows-Paket: 2d684846](https://github.com/DarkBat2709/openOMSI-Editor/tree/2d684846402c10a40e92c727be045c5b63e49545)
-- [Original release source / Ursprünglicher Release-Quellstand: v0.8.4-pre](https://github.com/DarkBat2709/openOMSI-Editor/tree/v0.8.4-pre)
+- [Original release source / Ursprünglicher Release-Quellstand: v0.8.5-pre](https://github.com/DarkBat2709/openOMSI-Editor/tree/v0.8.5-pre)
 - [All releases / Alle Veröffentlichungen](https://github.com/DarkBat2709/openOMSI-Editor/releases)
 - [Report a bug / Fehler melden](https://github.com/DarkBat2709/openOMSI-Editor/issues)
 
