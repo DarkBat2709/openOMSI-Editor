@@ -4,3 +4,4 @@
 //! with what is decided here.
 
 pub mod map_index;
+mod legacy_splines;
