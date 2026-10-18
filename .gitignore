@@ -21,3 +21,6 @@ tools/greenteaspeak-plugin/*.zip
 /launcher/src-tauri/target
 /launcher/src-tauri/gen
 /launcher/mock
+
+# Separate editor build caches, including nested plugin test builds
+**/editor-*-target/
