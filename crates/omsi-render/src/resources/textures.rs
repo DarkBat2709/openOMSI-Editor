@@ -57,17 +57,23 @@ pub(crate) static TEXTURE_OUT_OF_MEMORY: std::sync::atomic::AtomicBool = std::sy
 /// every view, bind group and render bundle made with it afterwards - the whole scene's
 /// main pass among them: a black picture for the rest of the session while the sounds and
 /// the menus went on (#2472). A texture that cannot be made is drawn as a plain stand-in
-/// instead, and the game keeps fewer textures from then on.
+/// instead, and when memory ran short the game keeps fewer textures from then on.
 pub(crate) fn try_create_texture(device: &wgpu::Device, desc: &wgpu::TextureDescriptor) -> Option<wgpu::Texture> {
+    if desc.size.width == 0 || desc.size.height == 0 {
+        log::warn!("texture {}x{}: drawn plain instead", desc.size.width, desc.size.height);
+        return None;
+    }
     let memory = device.push_error_scope(wgpu::ErrorFilter::OutOfMemory);
     let validation = device.push_error_scope(wgpu::ErrorFilter::Validation);
     let texture = device.create_texture(desc);
     let invalid = pollster::block_on(validation.pop());
     let out_of_memory = pollster::block_on(memory.pop());
+    if out_of_memory.is_some() {
+        TEXTURE_OUT_OF_MEMORY.store(true, std::sync::atomic::Ordering::Relaxed);
+    }
     let Some(e) = out_of_memory.or(invalid) else {
         return Some(texture);
     };
-    TEXTURE_OUT_OF_MEMORY.store(true, std::sync::atomic::Ordering::Relaxed);
     static FAILED: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
     let n = FAILED.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
     if n < 5 || n % 1000 == 0 {
@@ -142,6 +148,7 @@ pub fn prepare_texture(
         PixelFormat::Bc1 => wgpu::TextureFormat::Bc1RgbaUnormSrgb,
         PixelFormat::Bc2 => wgpu::TextureFormat::Bc2RgbaUnormSrgb,
         PixelFormat::Bc3 => wgpu::TextureFormat::Bc3RgbaUnormSrgb,
+        PixelFormat::Bc7 => wgpu::TextureFormat::Bc7RgbaUnormSrgb,
     };
     let (w, h) = (data.width.max(1), data.height.max(1));
     if data.levels.is_empty()
@@ -350,14 +357,9 @@ pub fn fit_texture(data: &omsi_texture::TextureData, max: u32) -> Option<omsi_te
         return Some(omsi_texture::TextureData { width: (w >> k).max(1), height: (h >> k).max(1), levels: data.levels[k as usize..].to_vec(), ..data.clone() });
     }
     // one level only: decode it and halve it
-    let mut rgba = match (data.format, data.levels.first()) {
-        (PixelFormat::Rgba8, Some(l)) => l.clone(),
-        (f, Some(l)) => omsi_texture::bc::decode(l, w, h, match f {
-            PixelFormat::Bc1 => omsi_texture::bc::Bc::Bc1 { punch: true },
-            PixelFormat::Bc2 => omsi_texture::bc::Bc::Bc2,
-            _ => omsi_texture::bc::Bc::Bc3,
-        }),
-        _ => return None,
+    let mut rgba = match data.levels.first() {
+        Some(l) => data.format.decode_level(l, w, h, true),
+        None => return None,
     };
     let (mut cw, mut ch) = (w, h);
     for _ in 0..k {
@@ -510,25 +512,14 @@ impl Renderer {
         if let Some(t) = prepare_texture(&self.device, &self.queue, data) {
             return t.0;
         }
-        use omsi_texture::PixelFormat;
         let (w, h) = (data.width.max(1), data.height.max(1));
         let blocks_ok =
             !data.format.is_compressed() || (self.supports_bc() && w % 4 == 0 && h % 4 == 0);
         if !blocks_ok || data.levels.is_empty() {
             // a device without block formats (the loader was told otherwise): decode
-            let rgba = match (data.format, data.levels.first()) {
-                (PixelFormat::Rgba8, Some(l)) => l.clone(),
-                (f, Some(l)) => omsi_texture::bc::decode(
-                    l,
-                    w,
-                    h,
-                    match f {
-                        PixelFormat::Bc1 => omsi_texture::bc::Bc::Bc1 { punch: true },
-                        PixelFormat::Bc2 => omsi_texture::bc::Bc::Bc2,
-                        _ => omsi_texture::bc::Bc::Bc3,
-                    },
-                ),
-                _ => vec![255; (w * h * 4) as usize],
+            let rgba = match data.levels.first() {
+                Some(l) => data.format.decode_level(l, w, h, true),
+                None => vec![255; (w * h * 4) as usize],
             };
             return self.upload_texture_gpu_mips(&omsi_texture::Image {
                 width: w,
@@ -793,6 +784,32 @@ impl Renderer {
             wgpu::Extent3d {
                 width: img.width,
                 height: img.height,
+                depth_or_array_layers: 1,
+            },
+        );
+    }
+
+    pub fn update_texture_rect(&self, scene: &Scene, id: TextureId, img: &omsi_texture::Image, [x, y, w, h]: [u32; 4]) {
+        let Some(gt) = scene.textures.get(id) else { return };
+        if (img.width, img.height) != gt.size || x + w > img.width || y + h > img.height || img.rgba.len() < (img.width * img.height * 4) as usize {
+            return;
+        }
+        self.queue.write_texture(
+            wgpu::TexelCopyTextureInfo {
+                texture: &gt.texture,
+                mip_level: 0,
+                origin: wgpu::Origin3d { x, y, z: 0 },
+                aspect: wgpu::TextureAspect::All,
+            },
+            &img.rgba[((y * img.width + x) * 4) as usize..],
+            wgpu::TexelCopyBufferLayout {
+                offset: 0,
+                bytes_per_row: Some(img.width * 4),
+                rows_per_image: Some(h),
+            },
+            wgpu::Extent3d {
+                width: w,
+                height: h,
                 depth_or_array_layers: 1,
             },
         );

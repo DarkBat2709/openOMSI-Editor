@@ -4,4 +4,5 @@
 //! with what is decided here.
 
 pub mod map_index;
+#[cfg(test)]
 mod legacy_splines;

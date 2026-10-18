@@ -66,7 +66,9 @@ mod tests {
         fn write(&self, path: &str, text: &str) { std::fs::write(self.0.join(path), text).unwrap(); }
         fn global(&self, prefix: &str) -> GlobalCfg {
             self.write("maps/Test/global.cfg", &format!("{prefix}[map]\n-17\n-10\ntile_-17_-10.map\n[map]\n-17\n-10\ntile_-17_-10.map\n[map]\n-16\n-10\ntile_-16_-10.map\n"));
-            GlobalCfg::load(&self.0.join("maps/Test/global.cfg")).unwrap()
+            let mut global = GlobalCfg::load(&self.0.join("maps/Test/global.cfg")).unwrap();
+            global.add_object_entry_points();
+            global
         }
     }
     impl Drop for Fixture { fn drop(&mut self) { let _ = std::fs::remove_dir_all(&self.0); } }

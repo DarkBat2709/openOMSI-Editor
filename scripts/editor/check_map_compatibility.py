@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Read-only inventory of editor extensions unsupported by stock openOMSI 0.2.50.
+"""Read-only inventory of editor extensions unsupported by stock openOMSI 0.3.33.
 
 A clean result concerns these extensions only; it does not certify assets or gameplay.
 """
@@ -34,7 +34,7 @@ def scan_map(root):
         text = raw.decode('utf-16') if raw.startswith((b'\xff\xfe', b'\xfe\xff')) else raw.decode('utf-8-sig', errors='surrogateescape')
         for item in scan_text(text):
             findings.append({'file': path.relative_to(root).as_posix(), **item})
-    return {'stock_version': '0.2.50', 'tiles_checked': len(files), 'findings': findings,
+    return {'stock_version': '0.3.33', 'tiles_checked': len(files), 'findings': findings,
             'scope': 'Known editor extensions only; assets and gameplay need separate tests.'}
 
 if __name__ == '__main__':

@@ -1,11 +1,12 @@
 //! Persistent wetness on the player's glass, cleared by the animated blade's swept area.
 //! A small mask uses the existing transmap binding: no extra draw or offscreen pass.
 
-use omsi_weather::window_drops::Drops;
+use omsi_weather::window_drops::{Canvas, Drops};
 use glam::{Vec2, Vec3};
 use omsi_geometry::MeshData;
 use omsi_render::{MaterialId, Renderer, Scene, TextureId};
 use omsi_sim::VehicleInstance;
+use rayon::prelude::*;
 
 // (the shader reads the mask at this size: `WIPE_MASK_SIZE` in shader.wgsl)
 const SIZE: usize = 128;
@@ -49,7 +50,10 @@ struct Film {
     texture: TextureId,
     drops: Drops,
     drops_texture: TextureId,
-    paint_time: f32,
+    paint_phase: f32,
+    paint_due: bool,
+    painted: bool,
+    pending: Option<std::sync::mpsc::Receiver<(Canvas, bool)>>,
     runoff_time: f32,
     points: Vec<Vec3>,
     // Negative is a recent wipe's residual film; 0..1 droplets; 1..2 the pushed ridge.
@@ -209,7 +213,7 @@ impl WindowWipers {
                         wetness,
                         (mesh * 7919 + slot * 104729 + 1) as u32,
                     );
-                    let drops_texture = renderer.add_data_texture(scene, &drops.image);
+                    let drops_texture = renderer.add_data_texture(scene, &drops.canvas.image);
                     let material = renderer
                         .add_window_wetness_material(scene, base, texture, drops_texture, bounds, false)
                         .unwrap();
@@ -225,7 +229,10 @@ impl WindowWipers {
                         texture,
                         drops,
                         drops_texture,
-                        paint_time: 1.0,
+                        paint_phase: 1.0,
+                        paint_due: false,
+                        painted: false,
+                        pending: None,
                         runoff_time: 0.0,
                         points,
                         wet: vec![wetness; SIZE * SIZE],
@@ -237,6 +244,10 @@ impl WindowWipers {
                     });
                 }
             }
+        }
+        let count = films.len();
+        for (k, film) in films.iter_mut().enumerate() {
+            film.paint_phase = first_paint_phase(k, count);
         }
         log::debug!(
             "window wipers: {} blades, {} wetness masks",
@@ -412,25 +423,14 @@ impl WindowWipers {
             }
             // (painted and uploaded 30 times a second; 15 at a lower rain quality)
             let every = if rain_quality >= 2 { 1.0 / 30.0 } else { 1.0 / 15.0 };
-            film.paint_time += dt;
-            if film.paint_time >= every {
-                film.paint_time %= every;
+            if repaint_due(&mut film.paint_phase, dt, every) {
                 if liquid {
                     // Also discard initial seeds which landed outside the mesh's slot.
-                    let bounds = film.bounds;
-                    film.drops.drops.retain(|d| {
-                        d.pos.cmpge(Vec2::ZERO).all()
-                            && (d.pos * Vec2::new(bounds[2].abs(), bounds[3]))
-                                .cmplt(Vec2::ONE)
-                                .all()
-                            && film.points[drop_pixel(d.pos, bounds)].is_finite()
-                    });
+                    film.drop_strays();
                 } else {
                     film.drops.drops.clear();
                 }
-                if film.drops.paint() {
-                    renderer.update_texture(scene, film.drops_texture, &film.drops.image);
-                }
+                film.paint_due = true;
             }
             let mut changed = false;
             if film.local || previous_wetness != film.unwiped {
@@ -470,10 +470,109 @@ impl WindowWipers {
                 &vehicle.mesh_props[film.mesh].slot_uv,
             );
         }
+        let pool = drops_pool();
+        for film in &mut self.films {
+            film.take_back(renderer, scene, false);
+        }
+        let first = |film: &Film| film.paint_due && (!film.painted || pool.is_none());
+        if self.films.iter().any(first) {
+            let paint = |films: &mut Vec<Film>| -> Vec<bool> {
+                films.par_iter_mut().map(|film| first(film) && film.drops.paint()).collect()
+            };
+            let painted = match pool {
+                Some(pool) => pool.install(|| paint(&mut self.films)),
+                None => paint(&mut self.films),
+            };
+            for (film, painted) in self.films.iter_mut().zip(painted) {
+                if first(film) {
+                    film.paint_due = false;
+                    film.painted = true;
+                    if painted {
+                        renderer.update_texture(scene, film.drops_texture, &film.drops.canvas.image);
+                    }
+                }
+            }
+        }
+        if let Some(pool) = pool {
+            for film in &mut self.films {
+                if !film.paint_due || film.pending.is_some() {
+                    continue;
+                }
+                film.paint_due = false;
+                film.drop_strays();
+                let mut canvas = film.drops.canvas.take();
+                let drops = film.drops.drops.clone();
+                let (done, receiver) = std::sync::mpsc::channel();
+                film.pending = Some(receiver);
+                pool.spawn(move || {
+                    let changed = canvas.paint(&drops);
+                    let _ = done.send((canvas, changed));
+                });
+            }
+        }
         for blade in &mut self.blades {
             blade.previous = blade.current;
         }
     }
+
+    pub fn finish_paints(&mut self, renderer: &Renderer, scene: &mut Scene) {
+        for film in &mut self.films {
+            film.take_back(renderer, scene, true);
+        }
+    }
+}
+
+impl Film {
+    fn drop_strays(&mut self) {
+        let (bounds, points) = (self.bounds, &self.points);
+        self.drops.drops.retain(|d| {
+            d.pos.cmpge(Vec2::ZERO).all()
+                && (d.pos * Vec2::new(bounds[2].abs(), bounds[3])).cmplt(Vec2::ONE).all()
+                && points[drop_pixel(d.pos, bounds)].is_finite()
+        });
+    }
+
+    fn take_back(&mut self, renderer: &Renderer, scene: &mut Scene, wait: bool) {
+        let Some(pending) = &self.pending else { return };
+        let got = if wait { pending.recv().map_err(|_| std::sync::mpsc::TryRecvError::Disconnected) } else { pending.try_recv() };
+        match got {
+            Ok((canvas, changed)) => {
+                self.drops.canvas = canvas;
+                self.pending = None;
+                if changed {
+                    for rect in self.drops.canvas.changed() {
+                        renderer.update_texture_rect(scene, self.drops_texture, &self.drops.canvas.image, rect);
+                    }
+                }
+            }
+            Err(std::sync::mpsc::TryRecvError::Empty) => {}
+            Err(std::sync::mpsc::TryRecvError::Disconnected) => {
+                self.pending = None;
+                self.drops.canvas.reset();
+                self.painted = false;
+                self.paint_due = true;
+            }
+        }
+    }
+}
+
+fn drops_pool() -> Option<&'static rayon::ThreadPool> {
+    static POOL: std::sync::OnceLock<Option<rayon::ThreadPool>> = std::sync::OnceLock::new();
+    POOL.get_or_init(|| rayon::ThreadPoolBuilder::new().num_threads(2).thread_name(|_| "window drops".into()).build().ok())
+        .as_ref()
+}
+
+fn first_paint_phase(k: usize, count: usize) -> f32 {
+    1.0 + k as f32 / count.max(1) as f32
+}
+
+fn repaint_due(phase: &mut f32, dt: f32, every: f32) -> bool {
+    *phase += dt / every;
+    let due = *phase >= 1.0;
+    if due {
+        *phase %= 1.0;
+    }
+    due
 }
 
 // A signed inverse width selects X/Z for the front or Y/Z for a side pane.
@@ -1041,6 +1140,34 @@ impl SweepTriangle {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_panes_are_repainted_in_turn_not_all_in_one_frame() {
+        for (fps, every) in
+            [(144.0, 1.0 / 30.0), (60.0, 1.0 / 30.0), (30.0, 1.0 / 15.0), (60.0, 1.0 / 15.0), (240.0, 1.0 / 15.0)]
+        {
+            let count = 12;
+            let mut phases: Vec<f32> = (0..count).map(|k| first_paint_phase(k, count)).collect();
+            let mut paints = vec![0; count];
+            let mut most = 0;
+            for frame in 0..(fps as usize * 4) {
+                let mut now = 0;
+                for (phase, painted) in phases.iter_mut().zip(&mut paints) {
+                    if repaint_due(phase, 1.0 / fps, every) {
+                        *painted += 1;
+                        now += 1;
+                    }
+                }
+                if frame > 0 {
+                    most = most.max(now);
+                }
+            }
+            let fair = (count as f32 / (fps * every)).ceil() as usize + 1;
+            assert!(most <= fair, "{fps} fps: {most} panes in one frame");
+            let rate = (4.0 / every) as i32;
+            assert!(paints.iter().all(|&n| (n - rate).abs() <= 2), "{fps} fps: {paints:?}");
+        }
+    }
 
     #[test]
     fn sweep_edges_have_partial_coverage_without_a_shared_diagonal_seam() {

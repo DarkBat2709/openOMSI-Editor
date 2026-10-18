@@ -169,9 +169,7 @@ impl GlobalCfg {
 
     pub fn load(path: &Path) -> Result<GlobalCfg, omsi_cfg::CfgError> {
         let f = CfgFile::read(path)?;
-        let mut global = Self::parse(&f);
-        crate::legacy_entries::discover(&mut global);
-        Ok(global)
+        Ok(Self::parse(&f))
     }
 
     pub fn dir(&self) -> &Path {
@@ -263,6 +261,15 @@ impl GlobalCfg {
         }
         g
     }
+
+    /// Discover object-only entry points when the explicit list is empty.
+    /// Uses the map's own scale without changing the active process-wide grid.
+    pub fn add_object_entry_points(&mut self) -> usize {
+        let before = self.entry_points.len();
+        crate::legacy_entries::discover(self);
+        self.entry_points.len() - before
+    }
+
 }
 
 #[cfg(test)]
@@ -298,5 +305,45 @@ mod tests {
         assert_eq!(g.entry_points[0].name, "Depot");
         let g = GlobalCfg::parse(&omsi_cfg::CfgFile::from_str("global.cfg", "[entrypoints]\n1000000000000\n"));
         assert!(g.entry_points.is_empty());
+    }
+
+    /// A map from OMSI 1 (Great Grundorf 2) has no `[entrypoints]`: its entry points are the
+    /// `[entrypoint]` objects of its tiles, in `[map]` order, each named by its first label.
+    /// One the list has already (same tile, same IDCode) is not added twice.
+    #[test]
+    fn entry_points_come_from_the_tiles_entry_objects() {
+        let root = std::env::temp_dir().join(format!("omsi-entry-objects-{}", std::process::id()));
+        let map = root.join("maps").join("Old");
+        std::fs::create_dir_all(&map).unwrap();
+        std::fs::create_dir_all(root.join("Sceneryobjects").join("Generic")).unwrap();
+        std::fs::write(root.join("Sceneryobjects/Generic/entrypoint_bus.sco"), "[entrypoint]\n[onlyeditor]\n").unwrap();
+        std::fs::write(root.join("Sceneryobjects/Generic/tree.sco"), "[mesh]\ntree.o3d\n").unwrap();
+        std::fs::write(map.join("tile_0_0.map"), "[version]\n10\n\n\
+[object]\n0\nSceneryobjects\\Generic\\tree.sco\n5\n1\n2\n0\n0\n0\n\n\
+[object]\n0\nSceneryobjects\\Generic\\entrypoint_bus.sco\n7\n6.5\n225.5\n0.2\n90\n1\nAirport Maintenance Area\n").unwrap();
+        std::fs::write(map.join("tile_1_0.map"), "[version]\n10\n\n\
+[object]\n0\nSceneryobjects\\Generic\\entrypoint_bus.sco\n9\n10\n20\n0\n0\n1\nBauernhof\n").unwrap();
+        std::fs::write(map.join("global.cfg"), "[map]\n0\n0\ntile_0_0.map\n\n[map]\n1\n0\ntile_1_0.map\n").unwrap();
+        omsi_cfg::add_content_root(root.clone());
+        struct Cleanup(std::path::PathBuf);
+        impl Drop for Cleanup {
+            fn drop(&mut self) {
+                omsi_cfg::remove_content_root(&self.0);
+                let _ = std::fs::remove_dir_all(&self.0);
+            }
+        }
+        let _cleanup = Cleanup(root.clone());
+        let mut g = GlobalCfg::load(&map.join("global.cfg")).unwrap();
+        assert_eq!(g.add_object_entry_points(), 2);
+        let names: Vec<_> = g.entry_points.iter().map(|e| (e.name.as_str(), e.group, e.object_id)).collect();
+        assert_eq!(names, vec![("Airport Maintenance Area", 0, 7), ("Bauernhof", 1, 9)]);
+        let e = &g.entry_points[0];
+        // (the object's height is over the terrain: none for the list)
+        assert_eq!((e.pos[0], e.pos[1]), (6.5, 225.5));
+        assert!(e.pos[2].is_nan());
+        // (the quaternion of a 90 degree heading, as `[entrypoints]` writes it)
+        let heading = (2.0 * e.quat[1].atan2(e.quat[3])).to_degrees();
+        assert!((heading - 90.0).abs() < 1e-9);
+        assert_eq!(g.add_object_entry_points(), 0, "listed already");
     }
 }

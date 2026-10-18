@@ -10,7 +10,7 @@ import subprocess
 import sys
 import tempfile
 
-VERSION = '0.8.6-pre'
+VERSION = '0.8.7-pre'
 ROOT = Path(__file__).resolve().parents[2]
 
 
@@ -79,7 +79,7 @@ exec bash "$editor_dir/start-editor.sh" "$@"
 ''', encoding='utf-8')
         (staging / 'start-editor-diagnose.sh').chmod(0o755)
         (staging / 'VERSION-EDITOR.txt').write_text(
-            f'Editor {VERSION}\nopenOMSI-Basis 0.2.50\nQuellpaket SHA256: '
+            f'Editor {VERSION}\nopenOMSI-Basis 0.3.33\nQuellpaket SHA256: '
             + hashlib.sha256((source / 'SOURCE-SHA256.json').read_bytes()).hexdigest()
             + '\nLinux-Vorabversion; Bau- und Fahrtests unter Linux bestanden; VM-Installation noch nicht geprüft.\n', encoding='utf-8')
         if destination.exists():
@@ -89,7 +89,7 @@ exec bash "$editor_dir/start-editor.sh" "$@"
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--install-dir', type=Path, default=ROOT.parent / ('openOMSI-Editor-' + VERSION + '-Basis-0.2.50'))
+    parser.add_argument('--install-dir', type=Path, default=ROOT.parent / ('openOMSI-Editor-' + VERSION + '-Basis-0.3.33'))
     args = parser.parse_args()
     if not sys.platform.startswith('linux') or os.uname().machine != 'x86_64':
         raise ValueError('Dieser Installer ist für Linux x64.')
@@ -100,7 +100,7 @@ def main():
         if shutil.which(name) is None:
             raise ValueError(f'{name} fehlt. Bitte die bisherige Rust-Bauumgebung verwenden.')
     verify_package(ROOT)
-    env = dict(os.environ, OPENOMSI_VERSION='0.2.50-editor-' + VERSION,
+    env = dict(os.environ, OPENOMSI_VERSION='0.3.33-editor-' + VERSION,
                CARGO_TARGET_DIR=os.environ.get('CARGO_TARGET_DIR', str(ROOT / 'target')))
     run('cargo', 'check', '--locked', '-p', 'omsi-app', '--features', 'standalone-editor', env=env)
     for group in ['editor_path_edit', 'editor_reload::tests', 'editor_diagnostics::tests', 'traffic_editor::tests', 'traffic_connector::tests', 'generated_ai', 'arm_labels_keep_identity', 'editor_dock_keeps_catalogue']:
@@ -111,12 +111,12 @@ def main():
     run('cargo', 'build', '--release', '--locked', '--manifest-path', ROOT / 'launcher/src-tauri/Cargo.toml', '--features', 'standalone-editor', env=env)
     install(ROOT, destination)
     print(f'\nFERTIG. Neuer Editor: {destination}\nStartskript: {destination / "start-editor.sh"}')
-    print('Bisherigen Inhaltsordner an das Startskript übergeben. Anleitung: docs/PORTIERUNG_0.2.50.md')
+    print('Bisherigen Inhaltsordner an das Startskript übergeben. Anleitung: docs/PORTIERUNG_0.3.33.md')
 
 
 if __name__ == '__main__':
     try:
         main()
     except (ValueError, OSError, subprocess.CalledProcessError) as exc:
-        print(f'\nAbgebrochen: {exc}\nBitte update-0.8.6-pre.log schicken.', file=sys.stderr)
+        print(f'\nAbgebrochen: {exc}\nBitte update-0.8.7-pre.log schicken.', file=sys.stderr)
         sys.exit(1)

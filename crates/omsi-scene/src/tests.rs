@@ -1074,6 +1074,27 @@ fn a_car_park_picks_its_parklist_by_its_first_string() {
     assert_eq!(parklist_index(&s(&["Taxi"])), 0);
 }
 
+/// A chrono scenario's `parklist_p.txt` stands in for the map's on its dates; a list the
+/// scenario does not have still comes from the map, and the newest scenario wins (#2315).
+#[test]
+fn the_newest_chrono_with_a_parking_list_gives_it() {
+    let map = std::env::temp_dir().join(format!("omsi-scene-parklist-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&map);
+    let (old, euro) = (map.join("Chrono").join("A"), map.join("Chrono").join("B"));
+    for d in [&old, &euro] {
+        std::fs::create_dir_all(d).unwrap();
+    }
+    for d in [&map, &old, &euro] {
+        std::fs::write(d.join("parklist_p.txt"), "x.sco\n").unwrap();
+    }
+    std::fs::write(map.join("parklist_p_1.txt"), "y.sco\n").unwrap();
+    let dirs = vec![old.clone(), euro.clone()];
+    assert_eq!(parklist_file(&map, &dirs, "parklist_p.txt"), Some(euro.join("parklist_p.txt")));
+    assert_eq!(parklist_file(&map, &dirs, "parklist_p_1.txt"), Some(map.join("parklist_p_1.txt")));
+    assert_eq!(parklist_file(&map, &[], "parklist_p.txt"), Some(map.join("parklist_p.txt")));
+    let _ = std::fs::remove_dir_all(&map);
+}
+
 /// A `[terrainmapping]` slot (TH_Wald's Fels01: rock in slot 0, grass top in slot 1)
 /// leaves the object's own mesh and comes back in tile space, where the ground under the
 /// placed object is: turned a quarter, 10 m into a tile whose corner is at 300/600.
@@ -1444,39 +1465,4 @@ fn a_trees_cards_turn_against_its_object_as_in_omsi() {
     let card = terrain_paint::tree_card_turn(30.0).transform_vector3(glam::Vec3::X);
     let (s, c) = 30f32.to_radians().sin_cos();
     assert!((card - glam::Vec3::new(c, s, 0.0)).length() < 1e-5, "{card:?}");
-}
-
-#[test]
-fn editor_keeps_attachment_advertisement_without_editable_object_record() {
-    let dir = std::env::temp_dir().join(format!("editor-advert-{}",std::process::id()));
-    std::fs::create_dir_all(&dir).unwrap();
-    std::fs::write(dir.join("global.cfg"),"[name]\nAdvert regression\n").unwrap();
-    std::fs::write(dir.join("advert.sco"),"[friendlyname]\nAttached advert\n").unwrap();
-    let world = World::open(&dir,&dir.join("global.cfg"),20261012).unwrap();
-    let ty = world.object_type("advert.sco").unwrap();
-    let mut program = omsi_script::Program::default();
-    let advert = program.declare_var("Werbung") as usize;
-    let program = Arc::new(program);
-    let labels = vec!["Hoheneck".to_string()];
-    let make = || omsi_sim::scenery::SceneryInstance::new(program.clone(), &[], omsi_sim::SimClock::default(), &labels);
-    let mut inst = make(); inst.state.vars[advert] = 5.0;
-    world.scripted.lock().push(ScriptedObject {
-        map_labels: labels.clone(), ty: ty.clone(), pos: DVec3::ZERO, xf: Mat4::IDENTITY,
-        instances: vec![0], inst, controller: None, light_index: 0, light_parent: None,
-        map_id: 726561, variants: Vec::new(), sounds: None, tile: (0,0), var_parent: None,
-        texts: Vec::new(), arrivals: false, htmls: Vec::new(), alpha_slots: Vec::new(), alpha_last: Vec::new(),
-    });
-    world.tile_state.lock().entry((0,0)).or_default().gpu.instances.push(0);
-    assert!(world.edit_objects.lock().is_empty(),"spline attachments have no editable-object entry");
-    let mut scenery = omsi_sim::scenery::SceneryState::default();
-    world.scenery_sync(&mut scenery);
-    world.capture_editor_scripts(&scenery, &[(0,0)]);
-    world.hold_editor_gpu((0,0)).unwrap();
-    let saved = world.editor_script_states.lock();
-    let saved = saved.get(&((0,0),726561)).expect("attached advertisement must be captured");
-    let mut rebuilt = make();
-    assert!(saved.restore(&ty.sco.path,&labels,&mut rebuilt));
-    assert_eq!(rebuilt.var("Werbung"),Some(5.0));
-    assert!(!saved.restore(&ty.sco.path,&["changed label".into()],&mut rebuilt));
-    std::fs::remove_dir_all(dir).unwrap();
 }

@@ -250,7 +250,7 @@ impl Renderer {
                 self.options.shadow_size.min(SHADOW_CLOSE_MAX) as f32 / self.options.shadow_size.max(1) as f32,
             ],
             view_proj: vp_mat.to_cols_array_2d(),
-            cam_pos: cam_rel.extend(1.0).to_array(),
+            cam_pos: cam_rel.extend(lighting.reflection_strength.clamp(0.0, 1.0)).to_array(),
             // (modulo the shaders' PATTERN_PERIOD, 1000 m: the patterns repeat with it, and
             // the whole map coordinate has no precision left for them in 32 bits)
             // (zw: the origin modulo CLOUD_ORIGIN_PERIOD for the sky's clouds, which are
@@ -378,7 +378,15 @@ impl Renderer {
         // unless it comes before the window's first frame)
         if enhanced && lead_view {
             let ground = lighting.fog_base.or(lighting.inside.map(|v| v.0.z)).map(|z| (z - scene.render_origin.z) as f32);
-            self.tone.view_lamps = Some(view_lamp_light(&scene.lights, scene.render_origin, cam_rel, camera, aspect, ground));
+            if let Some(s) = self.tone.lamp_sight.as_mut() {
+                s.take();
+            }
+            let sight = self.tone.lamp_sight.as_ref();
+            let seen = |at: DVec3| sight.map_or(1.0, |s| s.seen(at));
+            self.tone.view_lamps = Some(view_lamp_light(&scene.lights, scene.render_origin, cam_rel, camera, aspect, ground, &seen));
+            if let Some(s) = self.tone.lamp_sight.as_mut().filter(|s| s.idle()) {
+                s.candidates = brightest_glare(&scene.lights, scene.render_origin, cam_rel, camera.forward(), vp_mat);
+            }
             if f.env.debug_view_lamps {
                 log::info!("view lamps: {:.6}", self.tone.view_lamps.unwrap_or(0.0));
             }

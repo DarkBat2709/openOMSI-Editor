@@ -6,7 +6,7 @@ import shutil
 import tempfile
 import zipfile
 
-VERSION = '0.8.6-pre'
+VERSION = '0.8.7-pre'
 NAME = f'openOMSI-Editor-{VERSION}-windows-x64'
 RUNTIME = ('vcruntime140.dll', 'vcruntime140_1.dll', 'msvcp140.dll')
 DXC_FILES = ('dxcompiler.dll', 'dxil.dll', 'LICENCE-MIT.txt', 'LICENSE-LLVM.txt', 'LICENSE-MS.txt')
@@ -29,7 +29,7 @@ if errorlevel 1 (
   exit /b 1
 )
 '''
-HELP = '''openOMSI Editor - 0.8.6-pre - Windows x64
+HELP = '''openOMSI Editor - 0.8.7-pre - Windows x64
 
 ENGLISH
 1. Right-click the downloaded ZIP and choose Extract All. Do not run inside the ZIP.
@@ -112,7 +112,7 @@ def package(source, binary, runtime, output, revision, dxc):
         (root/'start-editor.cmd').write_bytes(START.replace('\n', '\r\n').encode('ascii'))
         (root/'START-HERE.txt').write_bytes(HELP.replace('\n', '\r\n').encode('ascii'))
         (root/'VERSION-EDITOR.txt').write_text(
-            f'Editor {VERSION}\nopenOMSI-Basis 0.2.50\nQuellstand: {revision}\nWindows x64 portable preview\n', encoding='utf-8')
+            f'Editor {VERSION}\nopenOMSI-Basis 0.3.33\nQuellstand: {revision}\nWindows x64 portable preview\n', encoding='utf-8')
         with zipfile.ZipFile(archive, 'x', zipfile.ZIP_DEFLATED) as zipout:
             for p in sorted(root.rglob('*')):
                 if p.is_file():

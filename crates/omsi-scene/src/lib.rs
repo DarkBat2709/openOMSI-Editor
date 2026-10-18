@@ -85,6 +85,9 @@ mod surf_map_tests;
 mod tests;
 
 #[cfg(test)]
+mod scripted_editor_tests;
+
+#[cfg(test)]
 mod material_tests;
 
 #[cfg(test)]
