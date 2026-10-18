@@ -112,8 +112,7 @@ Die automatischen Builds und Tests für Linux und Windows sind für den veröffe
 
 ## Source code and feedback / Quellcode und Rückmeldungen
 
-- [Windows package source / Quellstand Windows-Paket: 2d684846](https://github.com/DarkBat2709/openOMSI-Editor/tree/2d684846402c10a40e92c727be045c5b63e49545)
-- [Original release source / Ursprünglicher Release-Quellstand: v0.8.6-pre](https://github.com/DarkBat2709/openOMSI-Editor/tree/v0.8.6-pre)
+- [Release source / Quellstand beider Pakete: v0.8.6-pre](https://github.com/DarkBat2709/openOMSI-Editor/tree/v0.8.6-pre)
 - [All releases / Alle Veröffentlichungen](https://github.com/DarkBat2709/openOMSI-Editor/releases)
 - [Report a bug / Fehler melden](https://github.com/DarkBat2709/openOMSI-Editor/issues)
 
