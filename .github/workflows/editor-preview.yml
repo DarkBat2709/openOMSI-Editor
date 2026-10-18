@@ -2,7 +2,7 @@
 name: Editor preview validation
 on:
   push:
-    branches: [editor-preview, "update/**", "codex/editor-0.8.0-pre", "codex/editor-0.8.4-pre", "codex/editor-building-performance", "codex/editor-basis-0.2.50"]
+    branches: [editor-preview, "update/**", "codex/editor-0.8.0-pre", "codex/editor-0.8.5-pre", "codex/windows-dxc-package-fix", "codex/editor-building-performance", "codex/editor-basis-0.2.50"]
   pull_request:
     branches: [editor-preview]
   workflow_dispatch:
@@ -16,7 +16,7 @@ jobs:
         os: [ubuntu-22.04, windows-latest]
     runs-on: ${{ matrix.os }}
     env:
-      OPENOMSI_VERSION: 0.2.50-editor-0.8.4-pre
+      OPENOMSI_VERSION: 0.2.50-editor-0.8.5-pre
     steps:
       - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
@@ -46,6 +46,31 @@ jobs:
         run: cargo build --release --locked --manifest-path launcher/src-tauri/Cargo.toml --features standalone-editor
       - name: Portable Windows package contracts
         run: python scripts/editor/test_windows_package.py
+      - name: Verified DirectX shader compiler
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $url = 'https://github.com/microsoft/DirectXShaderCompiler/releases/download/v1.9.2609/dxc_2026_09_29.zip'
+          $expected = 'ad31b1fc8443175d204f77a611fdb3ef2ec42759bdc2f1167368de24a4a7e7f1'
+          Invoke-WebRequest -Uri $url -OutFile dxc.zip
+          if ((Get-FileHash dxc.zip -Algorithm SHA256).Hash.ToLowerInvariant() -ne $expected) { throw 'DXC checksum mismatch' }
+          Expand-Archive dxc.zip -DestinationPath dxc-unpacked
+          New-Item -ItemType Directory -Path dxc-runtime | Out-Null
+          Copy-Item dxc-unpacked/bin/x64/dxcompiler.dll, dxc-unpacked/bin/x64/dxil.dll dxc-runtime/
+          Copy-Item dxc-unpacked/LICENCE-MIT.txt, dxc-unpacked/LICENSE-LLVM.txt, dxc-unpacked/LICENSE-MS.txt dxc-runtime/
+      - name: DirectX 12 renderer regression
+        if: runner.os == 'Windows'
+        timeout-minutes: 15
+        shell: pwsh
+        env:
+          WGPU_BACKEND: dx12
+          WGPU_DX12_COMPILER: dynamicdxc
+          OMSI_NO_RT: '1'
+          RUST_MIN_STACK: '33554432'
+        run: |
+          $env:PATH = "$env:GITHUB_WORKSPACE/dxc-runtime;$env:PATH"
+          cargo test --release --locked -p omsi-render --test rt_smoke -- --ignored --nocapture --test-threads=1
+          if ($LASTEXITCODE -ne 0) { throw 'DirectX 12 renderer regression failed' }
       - name: Package Windows editor
         timeout-minutes: 5
         if: runner.os == 'Windows'
@@ -54,7 +79,7 @@ jobs:
           $vs = & "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe" -latest -products * -property installationPath
           $crt = Get-ChildItem "$vs\VC\Redist\MSVC\*\x64\Microsoft.VC*.CRT" -Directory -ErrorAction Stop | Sort-Object FullName | Select-Object -Last 1
           if (-not $crt) { throw 'Visual C++ x64 redistributable runtime is missing' }
-          python scripts/editor/package_windows.py --source . --binary target/release/openomsi.exe --runtime $crt.FullName --output out/editor-windows --revision $env:GITHUB_SHA
+          python scripts/editor/package_windows.py --source . --binary target/release/openomsi.exe --runtime $crt.FullName --dxc dxc-runtime --output out/editor-windows --revision $env:GITHUB_SHA
           if ($LASTEXITCODE -ne 0) { throw 'Windows packaging failed' }
           $zip = Get-Item out/editor-windows/*.zip
           Expand-Archive -LiteralPath $zip.FullName -DestinationPath "${env:RUNNER_TEMP}\Editor clean extraction"
@@ -70,7 +95,7 @@ jobs:
         if: runner.os == 'Windows'
         uses: actions/upload-artifact@v7.0.2
         with:
-          name: openOMSI-Editor-0.8.4-pre-windows-x64
+          name: openOMSI-Editor-0.8.5-pre-windows-x64
           path: out/editor-windows/*
           if-no-files-found: error
           retention-days: 30
