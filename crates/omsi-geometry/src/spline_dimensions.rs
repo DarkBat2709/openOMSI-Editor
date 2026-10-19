@@ -357,3 +357,36 @@ pub fn tile_origin(tile: (i32, i32)) -> DVec2 {
 pub fn map_curve(tile: (i32, i32), s: &MapSpline) -> SplineCurve {
     SplineCurve::from_map(s, tile_origin(tile))
 }
+
+/// Monotone Hermite slopes prevent height overshoot between terrain samples.
+pub fn terrain_parts(s: &MapSpline, heights: &[f64]) -> Vec<MapSpline> {
+    let count = heights.len() - 1;
+    let step = s.length / count as f64;
+    let slopes: Vec<_> = heights.windows(2).map(|h| (h[1] - h[0]) / step).collect();
+    let mut tangent = vec![slopes[0]];
+    for pair in slopes.windows(2) {
+        tangent.push(if pair[0] * pair[1] <= 0.0 { 0.0 } else { 2.0 * pair[0] * pair[1] / (pair[0] + pair[1]) });
+    }
+    tangent.push(*slopes.last().unwrap());
+    let c = map_curve((0, 0), s);
+    (0..count).map(|i| {
+        let distance = i as f64 * step;
+        let p = c.point_at(distance);
+        let mut part = s.clone();
+        part.profile_transitions = sliced_transitions(s, distance, step);
+        part.pos = [p.x, p.y, heights[i]];
+        part.heading = c.heading_at(distance);
+        part.length = step;
+        part.grad_start = tangent[i] * 100.0;
+        part.grad_end = tangent[i + 1] * 100.0;
+        part.delta_h = Some(heights[i + 1] - heights[i]);
+        part.is_h = true;
+        part.cant_start = s.cant_start + (s.cant_end - s.cant_start) * i as f64 / count as f64;
+        part.cant_end = s.cant_start + (s.cant_end - s.cant_start) * (i + 1) as f64 / count as f64;
+        part.skew_start = s.skew_start + (s.skew_end - s.skew_start) * i as f64 / count as f64;
+        part.skew_end = s.skew_start + (s.skew_end - s.skew_start) * (i + 1) as f64 / count as f64;
+        part.tex_offset = s.tex_offset + distance;
+        part.map_chain_offset = Some(part.tex_offset);
+        part
+    }).collect()
+}

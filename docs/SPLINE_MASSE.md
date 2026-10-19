@@ -68,3 +68,11 @@ Existing splines can extend across existing tiles while retaining their ID and a
 linked neighbours do not move automatically. Ctrl+S saves; Ctrl+Z undoes changes.
 Height is absolute; 0 m may be below terrain. After editing angle, length changes keep
 that angle; after editing radius they keep that radius instead.
+
+Auch ohne Maßfenster lassen sich kachelübergreifende Splines mit +/− kürzen und
+verlängern sowie drehen, verschieben und in Radius oder Steigung bearbeiten.
+Mausverschieben, Löschen und Rückgängig aktualisieren alle betroffenen Kacheln.
+
+Cross-tile splines also support the regular keyboard editing tools without the
+dimensions panel, including length, curvature, grade, rotation and movement.
+Dragging, deletion and undo refresh both old and new tile coverage.

@@ -1,7 +1,7 @@
 //! Spline mode of the in-game map editor. Edits stay in World across tile reloads.
 //! Existing records keep their index: attached object rows refer to it, not the ID.
 
-use omsi_geometry::spline_dimensions::{between, valid_spline, inside_tile, curve_part, sliced_transitions, straight_tile_cuts, nearest_station, profile_edges, physical_edges, compatible_sections, tile_origin as origin, map_curve as curve};
+use omsi_geometry::spline_dimensions::{terrain_parts, between, valid_spline, inside_tile, curve_part, straight_tile_cuts, nearest_station, profile_edges, physical_edges, compatible_sections, tile_origin as origin, map_curve as curve};
 use crate::{editor::Action, scene::World};
 use glam::{DVec2, DVec3, Vec3};
 use hashbrown::{HashMap, HashSet};
@@ -150,8 +150,9 @@ impl SplineEditor {
         let after: Vec<_> = before.iter().map(|(key, s)| {
             let mut s = s.clone(); s.pos[0] += delta.x; s.pos[1] += delta.y; s.pos[2] += delta.z; (*key, s)
         }).collect();
-        if after.iter().any(|(_, s)| !inside_tile(s)) {
-            return Some("Group move would cross a tile boundary; nothing moved".into());
+        let mut touched=HashSet::new();
+        for ((key,old),(_,new)) in before.iter().zip(&after) {
+            match Self::edit_tiles(world,*key,old,new){Ok(t)=>touched.extend(t),Err(e)=>return Some(e)}
         }
         if after == before { return Some(self.describe(world)); }
         if self.drag_offset.is_some() {
@@ -163,6 +164,7 @@ impl SplineEditor {
             else { edits.changed.insert(key, s); }
             edits.dirty_tiles.insert(key.0);
         }
+        for tile in touched {edits.dirty_tiles.insert(tile);edits.terrain_cache.remove(&tile);}
         edits.dirty = true; drop(edits);
         Some(self.describe(world))
     }
@@ -518,15 +520,16 @@ impl SplineEditor {
     }
 
     fn set(&mut self, world: &World, key: Key, s: MapSpline) -> Option<String> {
-        if !s.deleted && !inside_tile(&s) { return Some("This edit crosses the tile boundary. G connects ends; Shift+G creates a separate road".into()); }
         let old = world.spline_edits.lock().current(key)?;
         if old == s { return Some(self.describe(world)); }
+        let touched=match Self::edit_tiles(world,key,&old,&s){Ok(t)=>t,Err(e)=>return Some(e)};
         if self.drag_offset.is_none() { self.remember(vec![(key, old)]); }
+        else if let Some(before)=self.drag_before.take(){self.remember(vec![before]);}
         let mut e = world.spline_edits.lock();
         if e.added.contains_key(&key) { e.added.insert(key, s); }
         else { e.changed.insert(key, s); }
         e.dirty = true;
-        e.dirty_tiles.insert(key.0);
+        for tile in touched {e.dirty_tiles.insert(tile);e.terrain_cache.remove(&tile);}
         drop(e);
         Some(self.describe(world))
     }
@@ -534,7 +537,7 @@ impl SplineEditor {
     pub fn apply_height_profile(&mut self, world: &World, key: Key, values: [f64;5]) -> Result<(),String> {
         let s = world.spline_edits.lock().current(key).ok_or("Road no longer exists")?;
         let changed = crate::construction_tools::height_profile(&s,values)?;
-        if !inside_tile(&changed) {return Err("Road crosses a tile boundary; split it first".into());}
+        Self::edit_tiles(world,key,&s,&changed)?;
         self.finish_drag(); self.set(world,key,changed).ok_or("Could not update road")?;
         Ok(())
     }
@@ -1426,13 +1429,9 @@ impl SplineEditor {
             return self.move_group(world, ground + offset - curve(key.0, &current).point_at(0.0));
         }
         let mut s = world.spline_edits.lock().current(key)?;
-        let before_move = s.clone();
         let at = ground + offset;
         let origin = origin(key.0);
         s.pos = [at.x - origin.x, at.y - origin.y, at.z];
-        if s != before_move && inside_tile(&s) {
-            if let Some(before) = self.drag_before.take() { self.remember(vec![before]); }
-        }
         self.set(world, key, s)
     }
 }
@@ -2028,39 +2027,6 @@ fn connection_tiles(source: Key, target: Key, fitted: &MapSpline) -> HashSet<(i3
     // Interior samples avoid requesting a nonexistent tile for a boundary endpoint.
     for n in 0..count { tiles.insert(tile_at(c.point_at(fitted.length * (n as f64 + 0.5) / count as f64))); }
     tiles
-}
-
-/// Monotone Hermite slopes prevent height overshoot between terrain samples.
-fn terrain_parts(s: &MapSpline, heights: &[f64]) -> Vec<MapSpline> {
-    let count = heights.len() - 1;
-    let step = s.length / count as f64;
-    let slopes: Vec<_> = heights.windows(2).map(|h| (h[1] - h[0]) / step).collect();
-    let mut tangent = vec![slopes[0]];
-    for pair in slopes.windows(2) {
-        tangent.push(if pair[0] * pair[1] <= 0.0 { 0.0 } else { 2.0 * pair[0] * pair[1] / (pair[0] + pair[1]) });
-    }
-    tangent.push(*slopes.last().unwrap());
-    let c = curve((0, 0), s);
-    (0..count).map(|i| {
-        let distance = i as f64 * step;
-        let p = c.point_at(distance);
-        let mut part = s.clone();
-        part.profile_transitions = sliced_transitions(s, distance, step);
-        part.pos = [p.x, p.y, heights[i]];
-        part.heading = c.heading_at(distance);
-        part.length = step;
-        part.grad_start = tangent[i] * 100.0;
-        part.grad_end = tangent[i + 1] * 100.0;
-        part.delta_h = Some(heights[i + 1] - heights[i]);
-        part.is_h = true;
-        part.cant_start = s.cant_start + (s.cant_end - s.cant_start) * i as f64 / count as f64;
-        part.cant_end = s.cant_start + (s.cant_end - s.cant_start) * (i + 1) as f64 / count as f64;
-        part.skew_start = s.skew_start + (s.skew_end - s.skew_start) * i as f64 / count as f64;
-        part.skew_end = s.skew_start + (s.skew_end - s.skew_start) * (i + 1) as f64 / count as f64;
-        part.tex_offset = s.tex_offset + distance;
-        part.map_chain_offset = Some(part.tex_offset);
-        part
-    }).collect()
 }
 
 // Saved tombstones are deliberately excluded from collect_editor_splines. Resolve
