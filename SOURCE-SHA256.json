@@ -1465,7 +1465,7 @@
     "launcher/patches/glib/tests/subclass_compiletest/06-no-auto-send-sync-with-non-send-sync-ffi-parent.rs": "a37119bff708de5c84e8a82affa6cc9abe73595b08c9e0539d9cbe33af5e9f7a",
     "launcher/patches/glib/tests/subclass_compiletest/06-no-auto-send-sync-with-non-send-sync-ffi-parent.stderr": "808ac199325749e28e4c5ea6a459463d87c375443dc73c143a8fc1032575895f",
     "launcher/patches/glib/tests/value.rs": "c796ea2b30559e9c8ab6ebbb6c59c575d365a27b461c20f9ca0b1989dbe01d79",
-    "launcher/src-tauri/Cargo.lock": "9f867096afa844249d6367ad3b8ae19693cae6bd353f36226decd29d4d2db263",
+    "launcher/src-tauri/Cargo.lock": "95dee4b15e51266b2c5a6032d818f7ddb43d896bacf696b44ab36b031d9496e7",
     "launcher/src-tauri/Cargo.toml": "a027f32f279bbc3080d17f4fa1bd9e209f22498570590810ab84c55a8d9b559c",
     "launcher/src-tauri/build.rs": "cbf6918d92f1b096ec03302ebfe425afc6c01e9ac41be9015834b4e2f5cc870d",
     "launcher/src-tauri/capabilities/default.json": "539c9bdd11b6ffb84fe59737d8086f7f93022053dd5ae3cb8fba52f650cb6190",
