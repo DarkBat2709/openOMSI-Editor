@@ -1,7 +1,7 @@
 //! Spline mode of the in-game map editor. Edits stay in World across tile reloads.
 //! Existing records keep their index: attached object rows refer to it, not the ID.
 
-use omsi_geometry::spline_dimensions::{between, valid_spline, inside_tile};
+use omsi_geometry::spline_dimensions::{between, valid_spline, inside_tile, curve_part, sliced_transitions};
 use crate::{editor::Action, scene::World};
 use glam::{DVec2, DVec3, Vec3};
 use hashbrown::{HashMap, HashSet};
@@ -1118,6 +1118,7 @@ impl SplineEditor {
         self.catalog_file = Some(file); self.selected = None;
     }
     pub fn generation_started(&self) -> bool { self.start.is_some() }
+    pub fn placement_finished(&self) -> bool { self.start.is_none() && self.dimensions.is_none() }
     pub fn cancel_generation(&mut self) { self.start = None; }
 
     pub(crate) fn junction_plan(&self,world:&World,key:Key,id:i64,port:crate::junction_connections::Port,def:&omsi_scenery::Spline)->Result<MapSpline,String>{
@@ -2162,34 +2163,6 @@ fn terrain_parts(s: &MapSpline, heights: &[f64]) -> Vec<MapSpline> {
         part.map_chain_offset = Some(part.tex_offset);
         part
     }).collect()
-}
-
-fn sliced_transitions(s: &MapSpline, from: f64, length: f64) -> [Option<omsi_map::ProfileTransition>; 2] {
-    s.profile_transitions.map(|t| t.and_then(|mut t| {
-        t.station -= from;
-        (t.station + t.span > 0.0 && t.station - t.span < length).then_some(t)
-    }))
-}
-
-fn curve_part(s: &MapSpline, from: f64, length: f64) -> MapSpline {
-    let c = curve((0, 0), s);
-    let p = c.point_at(from);
-    let mut part = s.clone();
-    part.profile_transitions = sliced_transitions(s, from, length);
-    part.pos = [p.x, p.y, p.z];
-    part.heading = c.heading_at(from);
-    part.length = length;
-    part.grad_start = c.slope_at(from) * 100.0;
-    part.grad_end = c.slope_at(from + length) * 100.0;
-    part.delta_h = Some(c.height_at(from + length) - p.z);
-    part.is_h = true;
-    part.cant_start = c.cant_at(from);
-    part.cant_end = c.cant_at(from + length);
-    part.skew_start = s.skew_start + (s.skew_end - s.skew_start) * from / s.length;
-    part.skew_end = s.skew_start + (s.skew_end - s.skew_start) * (from + length) / s.length;
-    part.tex_offset = s.tex_offset + from;
-    part.map_chain_offset = Some(part.tex_offset);
-    part
 }
 
 // Saved tombstones are deliberately excluded from collect_editor_splines. Resolve

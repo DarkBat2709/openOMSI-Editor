@@ -2,7 +2,6 @@
 //! change only after Apply, through the editor's normal undo/save path.
 use crate::{app::App, editor::Editor};
 use winit::keyboard::KeyCode;
-
 #[derive(Clone, Copy)]
 pub enum Command { Edit(usize), Read, Apply, Preset, Close }
 pub struct Window {
@@ -92,7 +91,6 @@ impl App {
         true
     }
 }
-
 #[cfg(test)]
 mod tests {
     use super::*;

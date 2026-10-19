@@ -910,7 +910,7 @@ impl App {
             let message = if asset.kind == crate::asset_catalog::Kind::Spline {
                 let ed = self.menus.editor.as_mut().unwrap(); let started = ed.splines.generation_started();
                 let message = if ed.construction_plane.is_some() {ed.splines.generate_on_plane(&world,Some(hit))} else {ed.splines.generate(&world,Some(hit))};
-                if started && !ed.splines.generation_started() { ed.placing_asset = None; }
+                if started && ed.splines.placement_finished() { ed.placing_asset = None; }
                 if !started { "Start selected (blue marker) · Now click target · Esc/B cancels".into() } else { message }
             } else {
                 let (Some(r), Some(scene)) = (self.renderer.as_ref(), self.scene.as_mut()) else { return true; };

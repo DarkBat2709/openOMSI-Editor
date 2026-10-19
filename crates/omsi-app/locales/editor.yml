@@ -3242,3 +3242,6 @@ _version: 2
 
 "Length: 0.5–500 m; radius: 0 or ±0.5–100000 m; gradient: ±20%; height: -1000–10000 m":
   de: "Länge: 0,5–500 m; Radius: 0 oder ±0,5–100000 m; Steigung: ±20%; Höhe: -1000–10000 m"
+
+"New spline: exact dimensions · Click next start · Esc to finish · Ctrl+S to save":
+  de: "Neuer Spline mit Maßen · Nächsten Start anklicken · Esc beendet · Strg+S speichert"

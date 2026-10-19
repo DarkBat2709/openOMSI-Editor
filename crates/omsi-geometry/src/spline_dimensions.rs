@@ -138,3 +138,88 @@ pub fn inside_tile(s: &MapSpline) -> bool {
     (0..=128).all(|i| { let p = c.point_at(s.length * i as f64 / 128.0); p.x >= -1e-6 && p.y >= -1e-6 && p.x <= size + 1e-6 && p.y <= size + 1e-6 })
 }
 
+
+pub fn sliced_transitions(s: &MapSpline, from: f64, length: f64) -> [Option<omsi_map::ProfileTransition>; 2] {
+    s.profile_transitions.map(|t| t.and_then(|mut t| {
+        t.station -= from;
+        (t.station + t.span > 0.0 && t.station - t.span < length).then_some(t)
+    }))
+}
+
+pub fn curve_part(s: &MapSpline, from: f64, length: f64) -> MapSpline {
+    let c = SplineCurve::from_map(s, DVec2::ZERO);
+    let p = c.point_at(from);
+    let mut part = s.clone();
+    part.profile_transitions = sliced_transitions(s, from, length);
+    part.pos = [p.x, p.y, p.z];
+    part.heading = c.heading_at(from);
+    part.length = length;
+    part.grad_start = c.slope_at(from) * 100.0;
+    part.grad_end = c.slope_at(from + length) * 100.0;
+    part.delta_h = Some(c.height_at(from + length) - p.z);
+    part.is_h = true;
+    part.cant_start = c.cant_at(from);
+    part.cant_end = c.cant_at(from + length);
+    part.skew_start = s.skew_start + (s.skew_end - s.skew_start) * from / s.length;
+    part.skew_end = s.skew_start + (s.skew_end - s.skew_start) * (from + length) / s.length;
+    part.tex_offset = s.tex_offset + from;
+    part.map_chain_offset = Some(part.tex_offset);
+    part
+}
+
+
+/// Exact tile boundary stations: split into monotone quadrants before root finding.
+/// This also finds curves which leave and re-enter the same tile.
+pub fn tile_sections(owner:(i32,i32), s:&MapSpline)->Vec<((i32,i32),MapSpline)> {
+    let size=omsi_map::tile_size();
+    let origin=DVec2::new(owner.0 as f64,owner.1 as f64)*size;
+    let c=SplineCurve::from_map(s,origin);
+    let mut monotone=vec![0.0,s.length];
+    if s.radius!=0.0 {
+        let a=c.heading_at(0.0);let b=c.heading_at(s.length);
+        for n in (a.min(b)/90.0).floor() as i64..=(a.max(b)/90.0).ceil() as i64 {
+            let u=(n as f64*90.0-a).to_radians()*s.radius;
+            if u>0.0 && u<s.length {monotone.push(u);}
+        }
+    }
+    monotone.sort_by(f64::total_cmp);
+    let mut cuts=vec![0.0,s.length];
+    for interval in monotone.windows(2) {for axis in 0..2 {
+        let a=c.point_at(interval[0])[axis];let b=c.point_at(interval[1])[axis];
+        if (a-b).abs()<1e-10 {continue;}
+        for grid in (a.min(b)/size).ceil() as i64..=(a.max(b)/size).floor() as i64 {
+            let boundary=grid as f64*size;let(mut lo,mut hi)=(interval[0],interval[1]);
+            for _ in 0..55 {let mid=(lo+hi)*0.5;if (c.point_at(mid)[axis]<boundary)==(a<b){lo=mid;}else{hi=mid;}}
+            cuts.push((lo+hi)*0.5);
+        }
+    }}
+    cuts.sort_by(f64::total_cmp);cuts.dedup_by(|a,b|(*a-*b).abs()<1e-8);
+    cuts.windows(2).map(|pair| {
+        let mid=c.point_at((pair[0]+pair[1])*0.5);
+        let tile=((mid.x/size).floor() as i32,(mid.y/size).floor() as i32);
+        let mut part=curve_part(s,pair[0],pair[1]-pair[0]);
+        part.pos[0]+=(owner.0-tile.0) as f64*size;part.pos[1]+=(owner.1-tile.1) as f64*size;
+        (tile,part)
+    }).collect()
+}
+
+#[cfg(test)]
+mod tile_tests {
+    use super::*;
+    #[test]
+    fn tile_cuts_preserve_curves_height_and_texture_in_all_directions() {
+        for radius in [0.0,20.0,-20.0,0.5,-0.5,100000.0] {for heading in [0.0,45.0,90.0,180.0,270.0] {
+            let s=reshape(&MapSpline{length:5.0,pos:[295.0,295.0,12.0],heading,tex_offset:3.0,..Default::default()},[150.0,radius,4.0,12.0]).unwrap();
+            let owner=(-2,-3);let origin=DVec2::new(-600.0,-900.0);let whole=SplineCurve::from_map(&s,origin);
+            let parts=tile_sections(owner,&s);let mut station=0.0;
+            for (tile,part) in parts {
+                let c=SplineCurve::from_map(&part,DVec2::new(tile.0 as f64,tile.1 as f64)*300.0);
+                assert!((part.tex_offset-3.0-station).abs()<1e-8);
+                for i in 0..=20 {let u=part.length*i as f64/20.0;assert!(c.point_at(u).distance(whole.point_at(station+u))<1e-6);}
+                for i in 1..20 {let p=c.point_at(part.length*i as f64/20.0);assert_eq!(((p.x/300.0).floor() as i32,(p.y/300.0).floor() as i32),tile);}
+                station+=part.length;
+            }
+            assert!((station-150.0).abs()<1e-8);
+        }}
+    }
+}
