@@ -712,7 +712,7 @@
     "crates/omsi-net/src/vars.rs": "7e6e3751dc84fb6b979729ffcd3a740623fd078e5834578eaa9bff4d7e07eb7b",
     "crates/omsi-net/src/wire.rs": "5300cdabd5f29553c8a152c007b890590c8322882ccca4380198fbb9ec21e9de",
     "crates/omsi-net/src/world.rs": "ecabd0f32e1acccbd37745c8a6433fc3c02f3864430c9dc6e4eff65ac86cb40b",
-    "crates/omsi-net/src/ws.rs": "e646cb2dc1a96095dc56283902c8e542ca6367cb0e52cbbdf4cc3c9a0cb65efc",
+    "crates/omsi-net/src/ws.rs": "7ca815b4d7edc582a4386efe8611f9f2fbebe83c75d3acb1bb095bc84acb4f0f",
     "crates/omsi-o3d/Cargo.toml": "584c47e75600fae456b5518ad30f1685c4c25e382d20db75c63be0b3aeb8379f",
     "crates/omsi-o3d/examples/bounds.rs": "dab5aabebc7e83c30a285fe0e5e5c5453f695a9c36145a29fa2e9da65a9f6ff6",
     "crates/omsi-o3d/examples/check.rs": "ecfe82a65189e92f473d952ebdccdf64539781c8f2674ccf530055228643e454",
