@@ -29,6 +29,25 @@ pub fn coalesce(lanes:Vec<Lane>,groups:&[(usize,usize)])->Vec<Lane> {
     }
     result
 }
+/// Editor changes address the complete grouped curve by its first native index.
+/// Reassemble before applying them: deleting the first segment beforehand would
+/// expose the remainder, and bending it would break the group's continuity.
+/// Keep legacy edits to interior segments when no whole-curve edit exists.
+pub fn restore(lanes: Vec<Lane>, groups: &[(usize, usize)], rules: &[omsi_map::MapRule]) -> Vec<Lane> {
+    let groups: Vec<_> = groups.iter().copied().filter(|&(start, count)| {
+        let whole = crate::editor_paths::read(rules, start as u16, false)
+            != crate::editor_paths::Change::default();
+        whole || !rules.iter().any(|r| !r.kill
+            && r.kind.starts_with(crate::editor_paths::PREFIX)
+            && r.path_index as i64 > start as i64
+            && (r.path_index as i64) < start.saturating_add(count) as i64
+            && crate::editor_paths::read(rules, r.path_index as u16, false)
+                != crate::editor_paths::Change::default())
+    }).collect();
+    coalesce(lanes, &groups).into_iter().filter_map(|mut lane| {
+        crate::editor_paths::from_rules(&mut lane, rules).then_some(lane)
+    }).collect()
+}
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -42,4 +61,50 @@ mod tests {
         let mut edited=lanes.clone();edited[2].priority=192.0;assert_eq!(coalesce(edited,&[(0,4)]).len(),4);
         let mut gap=lanes;gap[2].points[0].x+=0.1;assert_eq!(coalesce(gap,&[(0,4)]).len(),4);
     }
+    #[test]
+    fn reload_applies_saved_deletion_and_shape_to_whole_curve() {
+        let mut text = "[editor_path_group]\n0\n3\n".to_string();
+        for y in [0,10,20] {text.push_str(&format!("[path]\n0\n{y}\n0\n0\n0\n10\n0\n0\n0\n3\n0\n1\n"));}
+        let sco = omsi_scenery::sco::SceneryObject::parse(&omsi_cfg::CfgFile::from_str("test.sco", &text));
+        let load = |rules: &[omsi_map::MapRule]| crate::lanes::object_lanes(
+            &sco, DVec3::ZERO, [0.;3], None, (0,0), 1, rules);
+        let rule = |path, kind: &str, value| omsi_map::MapRule {
+            path_index: path, kind: kind.into(), value, ..Default::default()
+        };
+        let base = load(&[]); assert_eq!(base.len(), 1); assert_eq!(base[0].length(), 30.);
+        let deletion = rule(0, "editor_lane_deleted_forward", 1.);
+        assert!(load(&[deletion.clone()]).is_empty());
+        // Extra deletions made after a broken reload must not resurrect fragments.
+        assert!(load(&[deletion, rule(1,"editor_lane_deleted_forward",1.)]).is_empty());
+        let shaped = load(&[rule(0,"editor_lane_1_x_forward",4.)]);
+        let mut expected = base[0].clone();
+        crate::editor_paths::apply_shape(&mut expected, [[4.,0.,0.],[0.;3]]);
+        assert_eq!(shaped.len(),1); assert_eq!(shaped[0].points,expected.points);
+        assert!(shaped[0].editor_grouped_path);
+        let legacy = load(&[rule(1,"editor_lane_deleted_forward",1.)]);
+        assert_eq!(legacy.len(),2); assert_eq!(legacy[1].key.unwrap().path,2);
+    }
+
+    #[test]
+    #[ignore = "read-only check of a supplied saved map and generated SCO"]
+    fn saved_roundabout_diagnostic() {
+        let read = |name: &str| {
+            let path = std::env::var(name).expect(name);
+            let bytes = std::fs::read(&path).unwrap();
+            let text = if bytes.starts_with(&[255,254]) {
+                String::from_utf16(&bytes[2..].chunks_exact(2).map(|b|u16::from_le_bytes([b[0],b[1]])).collect::<Vec<_>>()).unwrap()
+            } else {String::from_utf8(bytes).unwrap()};
+            omsi_cfg::CfgFile::from_str(path, &text)
+        };
+        let tile = omsi_map::Tile::parse(&read("DIAG_TILE"));
+        let id: i64 = std::env::var("DIAG_OBJECT").unwrap().parse().unwrap();
+        let object = tile.objects.iter().find(|o|o.id==id).unwrap();
+        let sco = omsi_scenery::sco::SceneryObject::parse(&read("DIAG_SCO"));
+        let load = |rules: &[omsi_map::MapRule]| crate::lanes::object_lanes(&sco,DVec3::ZERO,[0.;3],None,(0,0),id,rules);
+        let original = load(&[]); let saved = load(&object.rules);
+        let deleted = original.iter().filter(|l|crate::editor_paths::read(&object.rules,l.key.unwrap().path,l.reversed).deleted).count();
+        println!("original curves={}, saved deletions={}, restored curves={}",original.len(),deleted,saved.len());
+        assert_eq!(saved.len(),original.len()-deleted);
+    }
+
 }

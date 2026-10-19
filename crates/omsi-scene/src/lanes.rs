@@ -263,7 +263,7 @@ pub fn object_lanes(
                     .filter(|t| *t >= 0)
                     .map(|t| (c, t as usize))
             });
-            if crate::editor_paths::from_rules(&mut l,rules) {out.push(l);}
+            out.push(l);
         };
         match p.direction {
             1 => push(true),
@@ -274,7 +274,7 @@ pub fn object_lanes(
             _ => push(false),
         }
     }
-    crate::junction_lanes::coalesce(out, &sco.editor_path_groups)
+    crate::junction_lanes::restore(out, &sco.editor_path_groups, rules)
 }
 
 /// Resolve the texture name for a scenery object's `[matl_freetex]` slot.
