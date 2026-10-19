@@ -1,7 +1,7 @@
 //! Spline mode of the in-game map editor. Edits stay in World across tile reloads.
 //! Existing records keep their index: attached object rows refer to it, not the ID.
 
-use omsi_geometry::spline_dimensions::{between, valid_spline, inside_tile, curve_part, sliced_transitions, straight_tile_cuts, nearest_station, profile_edges};
+use omsi_geometry::spline_dimensions::{between, valid_spline, inside_tile, curve_part, sliced_transitions, straight_tile_cuts, nearest_station, profile_edges, physical_edges, compatible_sections, tile_origin as origin, map_curve as curve};
 use crate::{editor::Action, scene::World};
 use glam::{DVec2, DVec3, Vec3};
 use hashbrown::{HashMap, HashSet};
@@ -652,6 +652,9 @@ impl SplineEditor {
         let mut edits = world.spline_edits.lock();
         for key in terrain_keys { edits.terrain_cache.remove(&key); edits.dirty_tiles.insert(key); }
         for (key, s) in before.splines {
+            for shape in edits.current(key).into_iter().chain(std::iter::once(s.clone())).filter(valid_spline) {
+                for (tile,_) in omsi_geometry::spline_dimensions::tile_sections(key.0,&shape){edits.dirty_tiles.insert(tile);edits.terrain_cache.remove(&tile);}
+            }
             if edits.added.contains_key(&key) { edits.added.insert(key, s); }
             else { edits.changed.insert(key, s); }
             edits.dirty_tiles.insert(key.0);
@@ -1434,14 +1437,6 @@ impl SplineEditor {
     }
 }
 
-fn origin(tile: (i32, i32)) -> DVec2 {
-    DVec2::new(tile.0 as f64, tile.1 as f64) * omsi_map::tile_size()
-}
-
-fn curve(tile: (i32, i32), s: &MapSpline) -> SplineCurve {
-    SplineCurve::from_map(s, origin(tile))
-}
-
 const ROAD_CLEARANCE: f64 = 0.05;
 
 fn fitted_height(terrain: f64, center: DVec3, profile: &Roadbed) -> f64 {
@@ -1641,12 +1636,6 @@ fn tile_at(p: DVec3) -> (i32, i32) {
     ((p.x / size).floor() as i32, (p.y / size).floor() as i32)
 }
 
-// The renderer and handles must share one geometry path (including skew and mirror).
-fn physical_edges(def: &omsi_scenery::Spline, mirror: bool) -> [(f64, f64); 2] {
-    let (left, right) = profile_edges(def);
-    if mirror { [(-right.0, right.1), (-left.0, left.1)] } else { [left, right] }
-}
-
 fn edge_points(tile: (i32, i32), s: &MapSpline, def: &omsi_scenery::Spline, end: End) -> [DVec3; 2] {
     let station = if end == End::Start { 0.0 } else { s.length };
     let c = curve(tile, s);
@@ -1663,43 +1652,6 @@ fn edge_markers(world: &World, tile: (i32, i32), s: &MapSpline, steps: usize) ->
     let edges = physical_edges(&ty.def, s.mirror);
     (0..=steps).flat_map(|i| edges.map(|(x, z)| omsi_geometry::spline_profile_point(
         &ty.def, &c, false, s.length * i as f64 / steps as f64, x, z))).collect()
-}
-
-/// Keep profiles and materials intact; a width taper may only join compatible
-/// cross-sections. Never pretend that a sidewalk, lane merge or curb was invented.
-fn compatible_sections(a: &omsi_scenery::Spline, am: bool, b: &omsi_scenery::Spline, bm: bool, reverse: bool) -> bool {
-    let ae = physical_edges(a, am);
-    let be = physical_edges(b, bm);
-    let aw = ae[1].0 - ae[0].0;
-    let bw = be[1].0 - be[0].0;
-    if aw <= 0.001 || bw <= 0.001 { return false; }
-    // Compare every surface vertex with the target surface at its normalised width.
-    // The two directions detect extra target curbs/borders too.
-    let check = |from: &omsi_scenery::Spline, fm: bool, to: &omsi_scenery::Spline, tm: bool,
-                 fe: [(f64, f64); 2], te: [(f64, f64); 2]| {
-        from.profiles.iter().filter(|p| p.points.len() >= 2).flat_map(|p| &p.points).all(|p| {
-            let x = p.x as f64 * if fm { -1.0 } else { 1.0 };
-            let t = (x - fe[0].0) / (fe[1].0 - fe[0].0);
-            let u = if reverse { 1.0 - t } else { t };
-            let tx = te[0].0 + u * (te[1].0 - te[0].0);
-            let residual = p.z as f64 - (fe[0].1 * (1.0 - t) + fe[1].1 * t);
-            to.profiles.iter().flat_map(|p| p.points.windows(2)).any(|pair| {
-                let x0 = pair[0].x as f64 * if tm { -1.0 } else { 1.0 };
-                let x1 = pair[1].x as f64 * if tm { -1.0 } else { 1.0 };
-                if tx < x0.min(x1) - 1e-4 || tx > x0.max(x1) + 1e-4 { return false; }
-                let target_base = te[0].1 * (1.0 - u) + te[1].1 * u;
-                if (x1 - x0).abs() < 1e-6 {
-                    let z = residual + target_base;
-                    return z >= (pair[0].z.min(pair[1].z) as f64) - 0.005
-                        && z <= (pair[0].z.max(pair[1].z) as f64) + 0.005;
-                }
-                let f = ((tx - x0) / (x1 - x0)).clamp(0.0, 1.0);
-                let z = pair[0].z as f64 * (1.0 - f) + pair[1].z as f64 * f;
-                (z - target_base - residual).abs() <= 0.005
-            })
-        })
-    };
-    check(a, am, b, bm, ae, be) && check(b, bm, a, am, be, ae)
 }
 
 fn align_connection_edges(source_tile: (i32, i32), original: &MapSpline, source_def: &omsi_scenery::Spline,

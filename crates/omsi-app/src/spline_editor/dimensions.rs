@@ -1,13 +1,25 @@
 use super::*;
 impl SplineEditor {
     pub fn apply_dimensions(&mut self,world:&World,values:[f64;4])->Result<(),String> {
+        self.apply_dimensions_live(world,values,true)
+    }
+    pub(crate) fn apply_dimensions_live(&mut self,world:&World,values:[f64;4],remember:bool)->Result<(),String> {
         if self.multiple_selected(){return Err("Select one spline for numeric dimensions".into());}
         if self.connection_active() || self.generation_started(){return Err("Finish or cancel spline placement first".into());}
         let key=self.selected.ok_or("Select a road first")?;
         let s=world.spline_edits.lock().current(key).ok_or("Road no longer exists")?;
         let changed=crate::spline_dimensions::reshape(&s,values)?;
-        if !inside_tile(&changed){return Err("Road crosses a tile boundary; split it first".into());}
-        self.finish_drag();self.set(world,key,changed).ok_or("Could not update road")?;
+        if world.global.world_coordinates{return Err("Spline editing on world-coordinate maps is not supported yet".into());}
+        let mut touched:HashSet<(i32,i32)>=HashSet::from([key.0]);
+        for (tile,_) in omsi_geometry::spline_dimensions::tile_sections(key.0,&changed) {
+            let path=world.tile_source(tile.0,tile.1).ok_or("The road leaves the map; nothing changed")?;
+            let tile_data=Tile::load(&path).map_err(|_|"Cannot read tile")?;
+            if tile_data.version!=0&&tile_data.version<14{return Err("Spline editing needs a version 14 tile".into());}touched.insert(tile);
+        }
+        touched.extend(omsi_geometry::spline_dimensions::tile_sections(key.0,&s).into_iter().map(|(t,_)|t));
+        if s==changed{return Ok(());}self.finish_drag();if remember{self.remember(vec![(key,s)]);}
+        let mut edits=world.spline_edits.lock();if edits.added.contains_key(&key){edits.added.insert(key,changed);}else{edits.changed.insert(key,changed);}
+        edits.dirty=true;for tile in touched {edits.dirty_tiles.insert(tile);edits.terrain_cache.remove(&tile);}
         Ok(())
     }
     pub(crate) fn add_dimensions(&mut self,world:&World,file:&str,start:DVec3,direction:DVec3,values:[f64;4])->String {
@@ -74,6 +86,17 @@ mod tests {
         let a=Tile::load(&content.join("maps/Test/tile_0_0.map")).unwrap();let b=Tile::load(&content.join("maps/Test/tile_0_1.map")).unwrap();
         let a=a.splines.iter().find(|s|s.next_id!=0).unwrap();let b=b.splines.iter().find(|s|s.prev_id==a.id).unwrap();
         assert_eq!(a.next_id,b.id);assert!((a.length+b.length-20.0).abs()<1e-8);assert!(curve((0,0),a).end_point().distance(curve((0,1),b).start)<1e-8);
+        let key=((0,0),a.id);ed.selected=Some(key);let baseline=world.spline_edits.lock().current(key).unwrap();
+        ed.apply_dimensions_live(&world,[30.0,0.0,4.0,12.0],true).unwrap();ed.apply_dimensions_live(&world,[45.0,0.0,4.0,12.0],false).unwrap();
+        assert_eq!(world.spline_edits.lock().current(key).unwrap().length,45.0);assert!(world.spline_edits.lock().dirty_tiles.contains(&(0,1)));
+        crate::editor::Editor::default().save(&world,"maps/Test/global.cfg",&content,&root).unwrap();
+        let reloaded=Tile::load(&content.join("maps/Test/tile_0_0.map")).unwrap();let saved=reloaded.splines.iter().find(|s|s.id==key.1).unwrap();assert_eq!(saved.length,45.0);assert_eq!(saved.next_id,baseline.next_id);
+        assert!(ed.apply_dimensions_live(&world,[500.0,0.0,4.0,12.0],false).is_err());assert_eq!(world.spline_edits.lock().current(key).unwrap().length,45.0);
+        ed.undo(&world);assert_eq!(world.spline_edits.lock().current(key).unwrap(),baseline);
+        let mut ui=crate::editor::Editor::default();ui.spline_mode=true;ui.splines.selected=Some(key);ui.dimensions_window=Some(Default::default());assert!(!crate::spline_dimensions::sync_dimensions(&mut ui,&world));
+        for text in ["25","35"] {ui.dimensions_window.as_mut().unwrap().input=Some((0,text.into(),false));assert!(crate::spline_dimensions::sync_dimensions(&mut ui,&world));assert_eq!(world.spline_edits.lock().current(key).unwrap().length,text.parse::<f64>().unwrap());}
+        ui.splines.undo(&world);ui.dimensions_window.as_mut().unwrap().input=None;ui.dimensions_window.as_mut().unwrap().values=ui.dimensions_window.as_ref().unwrap().applied;crate::spline_dimensions::sync_dimensions(&mut ui,&world);assert_eq!(ui.dimensions_window.as_ref().unwrap().values[0],baseline.length);
+        ui.splines.selected=Some(((0,1),b.id));crate::spline_dimensions::sync_dimensions(&mut ui,&world);assert_eq!(ui.dimensions_window.as_ref().unwrap().target,ui.splines.selected);
         ed.undo(&world);let edits=world.spline_edits.lock();assert!(edits.added.keys().all(|k|edits.current(*k).is_none_or(|s|s.deleted)));drop(edits);
         std::fs::remove_dir_all(root.parent().unwrap()).unwrap();
     }

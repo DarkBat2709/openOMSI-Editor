@@ -306,3 +306,54 @@ pub fn profile_edges(s: &omsi_scenery::Spline) -> ((f64, f64), (f64, f64)) {
     }
     (left, right)
 }
+
+// The renderer and handles must share one geometry path (including skew and mirror).
+pub fn physical_edges(def: &omsi_scenery::Spline, mirror: bool) -> [(f64, f64); 2] {
+    let (left, right) = profile_edges(def);
+    if mirror { [(-right.0, right.1), (-left.0, left.1)] } else { [left, right] }
+}
+
+/// Keep profiles and materials intact; a width taper may only join compatible
+/// cross-sections. Never pretend that a sidewalk, lane merge or curb was invented.
+pub fn compatible_sections(a: &omsi_scenery::Spline, am: bool, b: &omsi_scenery::Spline, bm: bool, reverse: bool) -> bool {
+    let ae = physical_edges(a, am);
+    let be = physical_edges(b, bm);
+    let aw = ae[1].0 - ae[0].0;
+    let bw = be[1].0 - be[0].0;
+    if aw <= 0.001 || bw <= 0.001 { return false; }
+    // Compare every surface vertex with the target surface at its normalised width.
+    // The two directions detect extra target curbs/borders too.
+    let check = |from: &omsi_scenery::Spline, fm: bool, to: &omsi_scenery::Spline, tm: bool,
+                 fe: [(f64, f64); 2], te: [(f64, f64); 2]| {
+        from.profiles.iter().filter(|p| p.points.len() >= 2).flat_map(|p| &p.points).all(|p| {
+            let x = p.x as f64 * if fm { -1.0 } else { 1.0 };
+            let t = (x - fe[0].0) / (fe[1].0 - fe[0].0);
+            let u = if reverse { 1.0 - t } else { t };
+            let tx = te[0].0 + u * (te[1].0 - te[0].0);
+            let residual = p.z as f64 - (fe[0].1 * (1.0 - t) + fe[1].1 * t);
+            to.profiles.iter().flat_map(|p| p.points.windows(2)).any(|pair| {
+                let x0 = pair[0].x as f64 * if tm { -1.0 } else { 1.0 };
+                let x1 = pair[1].x as f64 * if tm { -1.0 } else { 1.0 };
+                if tx < x0.min(x1) - 1e-4 || tx > x0.max(x1) + 1e-4 { return false; }
+                let target_base = te[0].1 * (1.0 - u) + te[1].1 * u;
+                if (x1 - x0).abs() < 1e-6 {
+                    let z = residual + target_base;
+                    return z >= (pair[0].z.min(pair[1].z) as f64) - 0.005
+                        && z <= (pair[0].z.max(pair[1].z) as f64) + 0.005;
+                }
+                let f = ((tx - x0) / (x1 - x0)).clamp(0.0, 1.0);
+                let z = pair[0].z as f64 * (1.0 - f) + pair[1].z as f64 * f;
+                (z - target_base - residual).abs() <= 0.005
+            })
+        })
+    };
+    check(a, am, b, bm, ae, be) && check(b, bm, a, am, be, ae)
+}
+
+pub fn tile_origin(tile: (i32, i32)) -> DVec2 {
+    DVec2::new(tile.0 as f64, tile.1 as f64) * omsi_map::tile_size()
+}
+
+pub fn map_curve(tile: (i32, i32), s: &MapSpline) -> SplineCurve {
+    SplineCurve::from_map(s, tile_origin(tile))
+}

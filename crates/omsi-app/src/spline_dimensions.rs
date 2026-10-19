@@ -6,6 +6,7 @@ use winit::keyboard::KeyCode;
 pub enum Command { Edit(usize), Read, Apply, Preset, Close }
 pub struct Window {
     pub values: [f64;4],
+    pub target:Option<crate::spline_editor::Key>, pub applied:[f64;4], pub undo_started:bool, pub failed:Option<[f64;4]>,
     pub heading:f64, pub anchor:Option<glam::DVec3>, pub angle_mode:bool,
     pub input: Option<(usize,String,bool)>,
     pub rect: Option<[f32;4]>,
@@ -13,7 +14,7 @@ pub struct Window {
     pub message: String,
 }
 impl Default for Window {
-    fn default()->Self { Self { values:[5.0,0.0,0.0,0.0],heading:0.0,anchor:None,angle_mode:false,input:None,rect:None,buttons:Vec::new(),message:String::new() } }
+    fn default()->Self { Self { values:[5.0,0.0,0.0,0.0],target:None,applied:[5.0,0.0,0.0,0.0],undo_started:false,failed:None,heading:0.0,anchor:None,angle_mode:false,input:None,rect:None,buttons:Vec::new(),message:String::new() } }
 }
 pub fn visible(ed:&Editor)->bool {
     ed.spline_mode && ed.catalog.is_none() && ed.junction_window.is_none() && ed.construction_window.is_none()
@@ -48,13 +49,14 @@ impl App {
         ed.dimensions_window=Some(w);
     }
     fn editor_dimensions_command(&mut self,c:Command) {
+        self.spline_dimensions_sync();
         let (Some(ed),Some(world))=(self.menus.editor.as_mut(),self.world.as_ref()) else{return;};
         let Some(w)=ed.dimensions_window.as_mut() else{return;};
         if matches!(c,Command::Close){close(ed);self.input.keys.clear();return;}
         if !w.commit(){return;}
         if ed.splines.dimensions.is_some(){ed.splines.dimensions=Some(w.values);}
         match c {
-            Command::Edit(i)=>{w.input=Some((i,format!("{:.4}",w.value(i)),true));self.input.keys.clear();}
+            Command::Edit(i)=>{w.undo_started=false;w.input=Some((i,format!("{:.4}",w.value(i)),true));self.input.keys.clear();}
             Command::Read=>{
                 if let Some(s)=ed.splines.selected.and_then(|k|world.spline_edits.lock().current(k)) {
                     w.values=[s.length,s.radius,s.grad_start,s.pos[2]];w.heading=s.heading;w.angle_mode=false;w.message="Selected spline values loaded".into();
@@ -71,8 +73,10 @@ impl App {
             Command::Close=>{}
         }
         if ed.splines.dimensions.is_some(){ed.splines.dimensions=Some(w.values);}
+        if matches!(c,Command::Apply){w.applied=w.values;self.editor_reload_splines();}
     }
     pub(crate) fn editor_dimensions_mouse(&mut self,pressed:bool)->bool {
+        if pressed {self.spline_dimensions_sync();}
         let Some(ed)=self.menus.editor.as_mut().filter(|ed|visible(ed)) else{return false;}; let Some(w)=ed.dimensions_window.as_mut() else{return false;};
         if !w.rect.is_some_and(|r|crate::audit_events::contains(r,self.input.cursor)){if pressed {if !w.commit(){return true;}if ed.splines.dimensions.is_some(){ed.splines.dimensions=Some(w.values);}}return false;}
         let cmd=pressed.then(||w.buttons.iter().find(|(r,_)|crate::audit_events::contains(*r,self.input.cursor)).map(|(_,c)|*c)).flatten();
@@ -83,12 +87,13 @@ impl App {
         if self.menus.game_menu.is_some(){return false;}
         let Some(ed)=self.menus.editor.as_mut().filter(|ed|visible(ed)) else{return false;};
         let Some(w)=ed.dimensions_window.as_mut() else{return false;};
-        if matches!(code,Some(KeyCode::KeyW|KeyCode::KeyA|KeyCode::KeyS|KeyCode::KeyD|KeyCode::KeyQ|KeyCode::KeyE)) {w.commit();w.input=None;return false;}
+        if code==Some(KeyCode::KeyZ) && self.input.keys.iter().any(|k|matches!(k,KeyCode::ControlLeft|KeyCode::ControlRight)){w.commit();w.input=None;self.spline_dimensions_sync();return false;}
+        if matches!(code,Some(KeyCode::KeyW|KeyCode::KeyA|KeyCode::KeyS|KeyCode::KeyD|KeyCode::KeyQ|KeyCode::KeyE)) {w.commit();w.input=None;self.spline_dimensions_sync();return false;}
         if w.input.is_none(){if pressed && ed.placing_asset.is_some() && matches!(code,Some(KeyCode::KeyN|KeyCode::KeyM)){w.heading+=if code==Some(KeyCode::KeyN){-5.0}else{5.0};return true;}return false;}
         if let Some(k)=code {self.input.keys.remove(&k);}
         if !pressed{return true;}
         if code==Some(KeyCode::Escape){w.input=None;return true;}
-        if code==Some(KeyCode::Enter){if w.commit() && ed.splines.dimensions.is_some(){ed.splines.dimensions=Some(w.values);}return true;}
+        if code==Some(KeyCode::Enter){if w.commit() && ed.splines.dimensions.is_some(){ed.splines.dimensions=Some(w.values);}self.spline_dimensions_sync();return true;}
         let (_,value,replace)=w.input.as_mut().unwrap();
         if matches!(code,Some(KeyCode::Backspace|KeyCode::Delete)) {
             if *replace || code==Some(KeyCode::Delete){value.clear();}else{value.pop();}*replace=false;
@@ -128,6 +133,8 @@ impl App {
         let source=omsi_map::MapSpline{file,pos:at.to_array(),heading,length:values[0],..Default::default()};reshape(&source,values).ok()
     }
     pub(crate) fn spline_preview_frame(&mut self) {
+        self.spline_dimensions_sync();
+        if self.world.as_ref().is_some_and(|w|w.spline_edits.lock().dirty){self.editor_reload_splines();}
         let proposal=self.spline_preview_proposal();
         if let(Some(world),Some(r),Some(scene))=(self.world.as_ref(),self.renderer.as_ref(),self.scene.as_mut()){omsi_scene::spline_preview::draw(world,r,scene,proposal);}
     }
@@ -153,4 +160,27 @@ mod preview_tests {
         assert!(ed.dimensions_window.is_none()&&ed.placing_asset.is_none()&&ed.splines.dimensions.is_none());
         let keys=[KeyCode::KeyW,KeyCode::KeyQ].into_iter().collect();assert!(crate::editor::camera_key_pressed(&keys,Some(&ed),KeyCode::KeyW));
     }
+}
+
+impl App {
+    fn spline_dimensions_sync(&mut self) {
+        let(Some(ed),Some(world))=(self.menus.editor.as_mut(),self.world.as_ref())else{return;};
+        if sync_dimensions(ed,world){self.editor_reload_splines();}
+    }
+}
+pub(crate) fn sync_dimensions(ed:&mut Editor,world:&crate::scene::World)->bool {
+        if !visible(ed)||ed.placing_asset.is_some(){return false;}let Some(w)=ed.dimensions_window.as_mut()else{return false;};
+        let key=ed.splines.selected;let current=key.and_then(|k|world.spline_edits.lock().current(k)).filter(|s|!s.deleted);
+        let Some(s)=current else{w.target=None;return false;};let values=[s.length,s.radius,s.grad_start,s.pos[2]];
+        if w.target!=key || (w.input.is_none()&&w.values==w.applied) {
+            if w.target!=key || values!=w.applied {w.values=values;w.applied=values;w.heading=s.heading;w.input=None;w.angle_mode=false;w.undo_started=false;w.failed=None;}
+            w.target=key;return false;
+        }
+        let values=match w.live(){Ok(v)=>v,Err(e)=>{w.message=e;return false;}};
+        if values==w.applied || w.failed==Some(values){return false;}
+        match ed.splines.apply_dimensions_live(world,values,!w.undo_started) {
+            Ok(())=>{w.failed=None;w.applied=values;w.undo_started=true;w.message="Selected spline updated automatically · Ctrl+Z undo · Ctrl+S save".into();return true;}
+            Err(e)=>{w.failed=Some(values);w.message=e;}
+        }
+        false
 }

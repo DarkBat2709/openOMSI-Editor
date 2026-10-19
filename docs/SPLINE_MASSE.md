@@ -36,12 +36,20 @@ wird der gesamte Setzvorgang abgewiesen. Die Vorschau selbst verändert keine Ka
 
 ## Vorhandenen Spline ändern
 
-Platzierung mit Esc beenden, einen Spline auswählen und **Auswahl einlesen** drücken.
-Die blaue Vorschau zeigt die geänderte Form über dem vorhandenen Spline.
-Erst **Auf Auswahl anwenden** übernimmt die Änderung. Schließen verwirft die Vorschau.
-Das Höhenprofil wird durch eine gleichmäßige Steigung ersetzt; angrenzende Splines
-und separate Markierungen werden nicht automatisch angepasst.
-Änderungen eines vorhandenen Einzelabschnitts bleiben auf seine Kachel begrenzt.
+Platzierung mit Esc beenden, einen Spline auswählen und Spline-Maße öffnen.
+Gültige Eingaben ändern den ausgewählten Spline automatisch; die blaue Darstellung
+zeigt die neue Form sofort, der sichtbare Straßenaufbau wird nachgeladen.
+Enter bestätigt das Zahlenfeld. Strg+Z macht eine zusammenhängende Feldeingabe
+rückgängig. Strg+S speichert. Schließen beendet die Bearbeitung, bereits automatisch
+übernommene Änderungen bleiben bestehen.
+
+Ein Wechsel der Auswahl lädt deren Maße automatisch. Verschieben, Höhenänderungen
+und Rückgängig werden in den Feldern nachgeführt, solange kein Zahlenfeld aktiv ist.
+Auch beim Verlängern über bestehende Kachelgrenzen bleibt der vorhandene Spline mit
+seiner ID und seinen Objektzuordnungen erhalten. Alle betroffenen Kacheln werden
+aktualisiert. Fehlende Kacheln oder ungültige Werte werden im Fenster gemeldet.
+Angrenzende Splines werden nicht automatisch verschoben; Anschlüsse prüfen.
+Das vorhandene Höhenprofil wird durch eine gleichmäßige Steigung ersetzt.
 Die Fortsetzungsfunktion C ist unverändert.
 
 ## English
@@ -54,7 +62,9 @@ camera and releases numeric input focus. Hovering the panel keeps the preview at
 last position, so dimension edits can be inspected before placement.
 One left click on terrain places the spline; further clicks place more. Esc ends
 placement. Close always exits the preview and placement, including invalid input.
-Existing splines are only changed with Apply to selected spline. Ctrl+S saves; Ctrl+Z
-undoes all sections of a new placement. Cross-tile placement requires existing tiles.
+Existing splines update automatically on valid input. One field edit forms one undo
+step. Closing keeps applied changes. Selection and external edits refresh the fields.
+Existing splines can extend across existing tiles while retaining their ID and attachments;
+linked neighbours do not move automatically. Ctrl+S saves; Ctrl+Z undoes changes.
 Height is absolute; 0 m may be below terrain. After editing angle, length changes keep
 that angle; after editing radius they keep that radius instead.

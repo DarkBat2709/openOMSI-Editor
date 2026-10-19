@@ -3260,3 +3260,9 @@ _version: 2
 
 "Check spline values and point at terrain":
   de: "Spline-Werte prüfen und auf Gelände zeigen"
+
+"Selected spline updated automatically · Ctrl+Z undo · Ctrl+S save":
+  de: "Ausgewählter Spline automatisch geändert · Strg+Z zurück · Strg+S speichert"
+
+"The road leaves the map; nothing changed":
+  de: "Spline verlässt vorhandene Karte; nichts geändert"
