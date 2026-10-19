@@ -1241,3 +1241,7 @@ pub fn editor_path_point(curve:&SplineCurve,nodes:&[(usize,[f64;4])],path:usize,
     let forward=SplineCurve::dir(curve.heading_at(station)).extend(0.0);
     curve.profile_point(station,x,z)+DVec3::new(forward.y,-forward.x,0.0)*delta.x+forward*delta.y+DVec3::Z*delta.z
 }
+
+pub mod junction;
+pub mod roundabout;
+pub mod roundabout_splitters;

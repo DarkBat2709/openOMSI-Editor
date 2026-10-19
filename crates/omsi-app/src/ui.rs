@@ -1785,14 +1785,22 @@ impl Ui {
             let (status,color)=if window.pending.is_some_and(|(_,arm)|arm==i){("prepared".to_string(),[60,180,255,0])}else if let Some(id)=window.arm_links[i]{(format!("ID {id}"),[75,230,110,0])}else{("free".to_string(),MUTED)};
             self.catalog_text(r,scene,&status,(x+(32.0+i as f32*83.0)*s,y+153.0*s),77.0*s,8.0*s,color);
         }
+        if roundabout {buttons.push((rect(650.0,16.0,240.0,32.0),if window.splitter_settings {"Roundabout dimensions"}else{"Traffic islands …"}.into(),Command::SplitterSettings,true,window.splitter_settings));}
+        if roundabout && window.splitter_settings {
+            let island=&window.project.roundabout.as_ref().unwrap().splitters[window.arm];
+            buttons.push((rect(32.0,166.0,158.0,32.0),if island.enabled{"Splitter island: ON"}else{"Splitter island: OFF"}.into(),Command::Splitter,true,island.enabled));
+            buttons.push((rect(200.0,166.0,158.0,32.0),match island.shape {omsi_geometry::roundabout_splitters::Shape::Rounded=>"Rounded",omsi_geometry::roundabout_splitters::Shape::Teardrop=>"Teardrop"}.into(),Command::SplitterShape,true,false));
+        } else {
         let name=window.input.as_ref().filter(|i|i.field==Field::Name).map(|i|format!("{}│",i.text)).unwrap_or_else(||window.project.name.clone());
         buttons.push((rect(32.0,166.0,326.0,32.0),name,Command::Edit(Field::Name),true,window.input.as_ref().is_some_and(|i|i.field==Field::Name)));
-        let fields=if roundabout {[Field::Width,Field::Length,Field::Angle,Field::IslandRadius,Field::RingWidth,Field::IslandHeight,Field::TextureMetres]}
+        }
+        let fields=if roundabout && window.splitter_settings {[Field::SplitterLength,Field::SplitterWidth,Field::SplitterGap,Field::SplitterHeight,Field::Width,Field::Length,Field::Angle]}
+            else if roundabout {[Field::Width,Field::Length,Field::Angle,Field::IslandRadius,Field::RingWidth,Field::IslandHeight,Field::TextureMetres]}
             else {[Field::Width,Field::Length,Field::Angle,Field::Bend,Field::Sidewalk,Field::Corner,Field::TextureMetres]};
         for (i,field) in fields.into_iter().enumerate() {
             let row=208.0+i as f32*36.0;
             self.catalog_text(r,scene,field.title(),(x+32.0*s,y+(row+8.0)*s),168.0*s,12.0*s,SOFT);
-            let step=match field {Field::Angle|Field::Bend=>5.0,Field::IslandHeight=>0.05,_=>0.5};
+            let step=match field {Field::Angle|Field::Bend=>5.0,Field::IslandHeight|Field::SplitterHeight=>0.05,_=>0.5};
             buttons.push((rect(208.0,row,26.0,30.0),"−".into(),Command::Adjust(field,-step),true,false));
             buttons.push((rect(332.0,row,26.0,30.0),"+".into(),Command::Adjust(field,step),true,false));
             let input=window.input.as_ref().filter(|input|input.field==field);

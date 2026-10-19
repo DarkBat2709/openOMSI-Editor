@@ -66,7 +66,7 @@ mod tests {
     #[test]
     fn native_rules_match_exported_paths_and_save_idempotently() {
         for left in [false,true] {for cross in [false,true] {
-            let mut w=Window::new_roundabout(left);w.command(Command::Shape(cross));let b=build(&w.project).unwrap();
+            let mut w=Window::new_roundabout(left);w.command(Command::Shape(cross));w.command(Command::Splitter);let b=build(&w.project).unwrap();
             let rules=priority_rules(&w.project,&b);
             let source="[version]\n14\n[object]\n0\nring.sco\n99\n0\n0\n0\n0\n0\n0\n1\n[openomsi_editor_roundabout_rules]\n[rule]\n0\ntrafficdensity\n0.4\n0\n";
             let targets=vec![(99,Some(rules))];let saved=rewrite(source,&targets).unwrap();

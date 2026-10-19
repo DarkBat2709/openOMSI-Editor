@@ -98,3 +98,43 @@ file is the addendum for the new feature. Further translations are deferred.
 Pos1/Ende und Bild↑/Bild↓ neigen gesetzte Bauteile.
 Home/End and Page Up/Page Down tilt placed objects.
 See [controls and limitations / Bedienung und Grenzen](OBJECT_ANGLES.md).
+
+## Verkehrsinseln je Zufahrt / Splitter islands (0.8.8-pre)
+
+Im Kreisverkehr-Baukasten oben **Verkehrsinseln …** wählen. **Arm A–D** bestimmt,
+welche Zufahrt bearbeitet wird. **Verkehrsinsel: AN/AUS** schaltet nur diese Insel;
+die Formtaste wechselt zwischen **Abgerundet** und **Tropfenform**. Länge, Breite,
+Abstand vom äußeren Kreisfahrbahnrand und Höhe werden in Metern eingestellt.
+Die Vorschau wird nach Bestätigung einer Zahl oder nach +/− neu berechnet.
+**Kreisverkehr-Maße** führt zurück zu den bisherigen Einstellungen.
+
+Die Fahrwege werden um die Insel herumgeführt. Die Anschlussbreite und die
+Fahrweg-Endpunkte am äußeren Ende bleiben erhalten. Die nutzbare Fahrbahnbreite
+neben der Insel wird entsprechend reduziert; mindestens 2,75 m je Richtung sind
+nötig. Zu breite, zu lange oder zu nah am Ring liegende Inseln sperren den Export
+mit einer Meldung. Die Zufahrt kann auf derselben Einstellungsseite verbreitert
+oder verlängert werden. Verbreiterte Zufahrten müssen zur angeschlossenen Straße
+passen; bestehende Anschlüsse werden beim Aktualisieren geprüft.
+
+Die Verkehrsinsel verwendet die gewählte Inseltextur und erhält bei aktivierter
+Inselrandlinie eine eigene umlaufende Markierung. Verwende Asphalt ohne bereits
+aufgemalte Mittellinie: Eine Linie in der Asphalttextur lässt sich nicht entfernen.
+Änderungen sind rückgängig/wiederholbar und werden im Baukastenprojekt gespeichert.
+Alte Projekte starten ohne Verkehrsinseln. Speichern/Platzieren bzw. Aktualisieren,
+Strg+S und erneutes Laden der Karte übernehmen die geänderten KI-Wege und Regeln.
+Fußgängerquerungen, Zebrastreifen und Ampeln sind noch nicht Bestandteil dieser
+Ausbaustufe. Lange Busse müssen zusätzlich im Spiel getestet werden.
+
+Choose **Traffic islands …**, select Arm A–D, then enable its splitter island.
+Choose **Rounded** or **Teardrop** and set length, width, distance from the outer
+ring edge, and height in metres. Confirm numeric input to rebuild the preview.
+**Roundabout dimensions** returns to the original controls. Existing projects
+load with all splitter islands disabled.
+
+Lane centres deflect around the kerbs while the external port width and endpoints
+remain fixed. Each direction needs at least 2.75 m of usable width. Invalid island
+sizes or placement block export. Island texture and island edge marking settings
+also apply to splitters. Use unmarked asphalt. Undo, redo, project export/reload and
+native priority rules include these changes. Save the map and reload for AI.
+Pedestrian crossings and traffic lights remain subsequent development steps;
+vehicle clearance for long buses still requires an in-game driving test.

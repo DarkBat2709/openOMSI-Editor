@@ -3266,3 +3266,48 @@ _version: 2
 
 "The road leaves the map; nothing changed":
   de: "Spline verlässt vorhandene Karte; nichts geändert"
+
+"Traffic islands …":
+  de: "Verkehrsinseln …"
+
+"Roundabout dimensions":
+  de: "Kreisverkehr-Maße"
+
+"Splitter island: ON":
+  de: "Verkehrsinsel: AN"
+
+"Splitter island: OFF":
+  de: "Verkehrsinsel: AUS"
+
+"Rounded":
+  de: "Abgerundet"
+
+"Teardrop":
+  de: "Tropfenform"
+
+"Splitter length (m)":
+  de: "Insellänge (m)"
+
+"Splitter width (m)":
+  de: "Inselbreite (m)"
+
+"Distance from ring (m)":
+  de: "Abstand zum Ring (m)"
+
+"Splitter height (m)":
+  de: "Höhe Verkehrsinsel (m)"
+
+"Invalid splitter island dimensions":
+  de: "Ungültige Maße der Verkehrsinsel"
+
+"Invalid roundabout dimensions":
+  de: "Ungültige Kreisverkehr-Maße"
+
+"Splitter island needs at least 2.75 m of road on each side; reduce island width or widen the arm":
+  de: "Neben der Insel sind je 2,75 m Fahrbahn nötig. Insel schmaler oder Zufahrt breiter einstellen."
+
+"Splitter island is too close to the ring; increase its distance":
+  de: "Verkehrsinsel zu nah am Ring: Abstand vergrößern."
+
+"Splitter island needs more entrance length; shorten the island or lengthen the arm":
+  de: "Zufahrt zu kurz für die Verkehrsinsel: Insel kürzen oder Zufahrt verlängern."

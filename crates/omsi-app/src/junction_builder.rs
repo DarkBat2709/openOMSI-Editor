@@ -5,44 +5,29 @@ pub use rules::rewrite as rewrite_roundabout_rules;
 pub fn roundabout_rules(asset:&Path)->Result<Option<String>,String>{rules::asset_rules(asset)}
 pub use roundabout::Roundabout;
 
-use glam::{DVec2,DVec3,Mat4,Vec2,Vec3};
-use omsi_o3d::{Material,Mesh,Triangle,Vertex};
-use serde::{Deserialize,Serialize};
+use glam::{DVec2,DVec3,Mat4,Vec2};
+use omsi_o3d::{Material,Mesh};
 use std::path::{Path,PathBuf};
 
-#[derive(Clone,Debug,PartialEq,Serialize,Deserialize)]
-pub struct Arm {pub enabled:bool,pub angle:f64,pub width:f64,pub length:f64,pub bend:f64,pub sidewalk:f64}
-#[derive(Clone,Debug,PartialEq,Serialize,Deserialize)]
-pub struct RoadSurface {pub u_start:f64,pub u_end:f64,pub reverse_v:bool,pub width_metres:f64}
-impl Default for RoadSurface {fn default()->Self {Self {u_start:0.0,u_end:1.0,reverse_v:false,width_metres:4.0}}}
-#[derive(Clone,Debug,PartialEq,Serialize,Deserialize)]
-pub struct Project {
-    #[serde(default, skip_serializing_if="Option::is_none")] pub roundabout:Option<Roundabout>,
-    pub format:u32,pub name:String,pub arms:[Arm;4],pub corner:f64,pub texture_metres:f64,
-    #[serde(default)] pub road_surface:Option<RoadSurface>,
-    pub road_texture:String,pub walk_texture:String,pub markings:bool,pub left_hand:bool}
-
-impl Default for Project {
-    fn default()->Self {Self {roundabout:None,format:1,name:"Custom T-junction".into(),arms:std::array::from_fn(|i|Arm {
-        enabled:i!=3,angle:[270.0,90.0,180.0,0.0][i],width:7.0,length:30.0,bend:0.0,sidewalk:0.0}),
-        corner:5.0,texture_metres:4.0,road_surface:Some(RoadSurface::default()),road_texture:String::new(),walk_texture:String::new(),markings:true,left_hand:false}}
-}
+pub use omsi_geometry::junction::{Arm,RoadSurface,Project,Built};
+use omsi_geometry::junction::{direction,right,triangle,quad};
 
 #[derive(Clone,Copy,Debug,PartialEq,Eq)]
-pub enum Field {LineLeft,LineRight,LineWidth,IslandRadius,RingWidth,IslandHeight,Name,Width,Length,Angle,Bend,Sidewalk,Corner,TextureMetres,UStart,UEnd,TextureWidth}
+pub enum Field {SplitterLength,SplitterWidth,SplitterGap,SplitterHeight,LineLeft,LineRight,LineWidth,IslandRadius,RingWidth,IslandHeight,Name,Width,Length,Angle,Bend,Sidewalk,Corner,TextureMetres,UStart,UEnd,TextureWidth}
 impl Field {
-    pub fn title(self)->&'static str {match self {Self::LineLeft=>"Left line inset (m)",Self::LineRight=>"Right line inset (m)",Self::LineWidth=>"Line width (m)",Self::IslandRadius=>"Island radius (m)",Self::RingWidth=>"Ring road width (m)",Self::IslandHeight=>"Island height (m)",Self::Name=>"Name",Self::Width=>"Road width (m)",Self::Length=>"Length from centre (m)",
+    pub fn title(self)->&'static str {match self {Self::SplitterLength=>"Splitter length (m)",Self::SplitterWidth=>"Splitter width (m)",Self::SplitterGap=>"Distance from ring (m)",Self::SplitterHeight=>"Splitter height (m)",Self::LineLeft=>"Left line inset (m)",Self::LineRight=>"Right line inset (m)",Self::LineWidth=>"Line width (m)",Self::IslandRadius=>"Island radius (m)",Self::RingWidth=>"Ring road width (m)",Self::IslandHeight=>"Island height (m)",Self::Name=>"Name",Self::Width=>"Road width (m)",Self::Length=>"Length from centre (m)",
         Self::Angle=>"Direction (°)",Self::Bend=>"Bend at end (°)",Self::Sidewalk=>"Sidewalk per side (m)",Self::Corner=>"Corner radius (m)",Self::TextureWidth=>"Texture width (m)",Self::UStart=>"Crop U from",Self::UEnd=>"Crop U to",Self::TextureMetres=>"Texture length (m)"}}
     pub fn texture_index(self)->Option<usize> {match self {Self::UStart=>Some(0),Self::UEnd=>Some(1),Self::TextureWidth=>Some(2),_=>None}}
-    fn limits(self)->(f64,f64) {match self {Self::LineLeft|Self::LineRight=>(0.05,3.0),Self::LineWidth=>(0.05,0.5),Self::IslandRadius=>(5.0,60.0),Self::RingWidth=>(4.0,12.0),Self::IslandHeight=>(0.05,1.0),Self::Width=>(4.0,30.0),Self::Length=>(8.0,150.0),Self::Angle=>(0.0,360.0),
+    fn limits(self)->(f64,f64) {match self {Self::SplitterLength=>(2.0,30.0),Self::SplitterWidth=>(0.6,4.0),Self::SplitterGap=>(0.0,50.0),Self::SplitterHeight=>(0.05,0.5),Self::LineLeft|Self::LineRight=>(0.05,3.0),Self::LineWidth=>(0.05,0.5),Self::IslandRadius=>(5.0,60.0),Self::RingWidth=>(4.0,12.0),Self::IslandHeight=>(0.05,1.0),Self::Width=>(4.0,30.0),Self::Length=>(8.0,150.0),Self::Angle=>(0.0,360.0),
         Self::Bend=>(-35.0,35.0),Self::Sidewalk=>(0.0,6.0),Self::Corner=>(0.0,20.0),Self::TextureMetres=>(0.25,100.0),Self::TextureWidth=>(0.25,100.0),Self::UStart|Self::UEnd=>(-16.0,16.0),Self::Name=>(0.0,0.0)}}
 }
 #[derive(Clone,Copy)]
-pub enum Command {DashedEntries,OuterLine,LineSettings,Close,Shape(bool),Arm(usize),Edit(Field),Digit(Field,i32),Step(Field,f64),Adjust(Field,f64),RoadTexture,WalkTexture,Markings,
+pub enum Command {SplitterSettings,Splitter,SplitterShape,DashedEntries,OuterLine,LineSettings,Close,Shape(bool),Arm(usize),Edit(Field),Digit(Field,i32),Step(Field,f64),Adjust(Field,f64),RoadTexture,WalkTexture,Markings,
     ShowPaths,Rotate,Undo,Redo,Export,Load,UseSpline,ConnectRoad}
 
 pub struct Input {pub field:Field,pub text:String,pub replace:bool}
 pub struct Window {
+    pub splitter_settings:bool,
     pub line_settings:bool,
     pub texture_digits:[usize;3],pub texture_steps:[i32;3],pub texture_focus:Option<Field>,
     pub existing_preview:Vec<[DVec3;2]>,pub arm_links:[Option<i64>;4],pub source_label:String,pub road_preview:Vec<[DVec3;2]>,pub pending:Option<(((i32,i32),i64),usize)>,pub target:Option<i64>,pub placed_project:Option<Project>,pub project:Project,pub arm:usize,pub input:Option<Input>,pub message:String,pub rects:Vec<([f32;4],Command)>,
@@ -51,7 +36,7 @@ pub struct Window {
 }
 
 impl Window {
-    pub fn new(left_hand:bool)->Self {let project=Project {left_hand,..Default::default()};Self {line_settings:false,texture_digits:[4;3],texture_steps:[-4;3],texture_focus:None,existing_preview:Vec::new(),arm_links:[None;4],source_label:String::new(),road_preview:Vec::new(),pending:None,target:None,placed_project:None,project,arm:0,input:None,
+    pub fn new(left_hand:bool)->Self {let project=Project {left_hand,..Default::default()};Self {splitter_settings:false,line_settings:false,texture_digits:[4;3],texture_steps:[-4;3],texture_focus:None,existing_preview:Vec::new(),arm_links:[None;4],source_label:String::new(),road_preview:Vec::new(),pending:None,target:None,placed_project:None,project,arm:0,input:None,
         message:"Choose arm, adjust dimensions, then Save & place. Blue = AI paths.".into(),rects:Vec::new(),arm_labels:Vec::new(),preview:None,
         preview_id:0,show_paths:true,view:0,error:None,undo:Vec::new(),redo:Vec::new(),dirty:true}}
     pub fn new_roundabout(left_hand:bool)->Self {
@@ -67,6 +52,7 @@ impl Window {
     pub fn hit(&self,p:(f32,f32))->Option<Command> {self.rects.iter().rev().find(|(r,_)|
         p.0>=r[0]&&p.0<=r[2]&&p.1>=r[1]&&p.1<=r[3]).map(|(_,c)|*c)}
     pub fn value(&self,field:Field)->f64 {let arm=&self.project.arms[self.arm];match field {
+        Field::SplitterLength|Field::SplitterWidth|Field::SplitterGap|Field::SplitterHeight=>{let r=self.project.roundabout.as_ref().unwrap();let s=&r.splitters[self.arm];match field {Field::SplitterLength=>s.length,Field::SplitterWidth=>s.width,Field::SplitterGap=>s.gap,_=>s.height}},
         Field::LineLeft=>self.project.roundabout.as_ref().map_or(0.25,|r|r.line_insets[self.arm][0]),
         Field::LineRight=>self.project.roundabout.as_ref().map_or(0.25,|r|r.line_insets[self.arm][1]),
         Field::LineWidth=>self.project.roundabout.as_ref().map_or(0.12,|r|r.line_width),
@@ -116,6 +102,7 @@ impl Window {
     pub fn set(&mut self,field:Field,value:f64) {let (lo,hi)=field.limits();let value=value.clamp(lo,hi);
         if !value.is_finite() || field==Field::Name || (self.value(field)-value).abs()<1e-8 {return;}
         self.remember();let arm=&mut self.project.arms[self.arm];match field {
+            Field::SplitterLength|Field::SplitterWidth|Field::SplitterGap|Field::SplitterHeight=>{if let Some(r)=self.project.roundabout.as_mut(){let s=&mut r.splitters[self.arm];match field {Field::SplitterLength=>s.length=value,Field::SplitterWidth=>s.width=value,Field::SplitterGap=>s.gap=value,_=>s.height=value}}},
             Field::LineLeft|Field::LineRight=>{if let Some(r)=self.project.roundabout.as_mut(){r.line_insets[self.arm][if field==Field::LineLeft{0}else{1}]=value;}},
             Field::LineWidth=>{if let Some(r)=self.project.roundabout.as_mut(){r.line_width=value;}},
             Field::IslandRadius=>{if let Some(r)=self.project.roundabout.as_mut(){r.island_radius=value;}},
@@ -148,6 +135,8 @@ impl Window {
     }
     pub fn command(&mut self,command:Command) {
         match command {
+            Command::SplitterSettings=>{if self.commit(){self.splitter_settings=!self.splitter_settings;}},
+            Command::Splitter|Command::SplitterShape=>{if self.commit() && self.project.roundabout.is_some(){self.remember();let s=&mut self.project.roundabout.as_mut().unwrap().splitters[self.arm];if matches!(command,Command::Splitter){s.enabled=!s.enabled;}else {use omsi_geometry::roundabout_splitters::Shape;s.shape=if s.shape==Shape::Rounded{Shape::Teardrop}else{Shape::Rounded};}self.changed();}},
             Command::DashedEntries=>{if self.commit() && self.project.roundabout.is_some() {self.remember();let r=self.project.roundabout.as_mut().unwrap();r.dashed_entries=!r.dashed_entries;self.changed();}},
             Command::OuterLine=>{if self.commit() && self.project.roundabout.is_some() {self.remember();let r=self.project.roundabout.as_mut().unwrap();r.outer_line=!r.outer_line;self.changed();}},
             Command::LineSettings=>{if self.commit() {self.line_settings=!self.line_settings;}},
@@ -260,9 +249,6 @@ pub fn spline_surface(def:&omsi_scenery::Spline,mirror:bool,length:f64)->Result<
     Ok((slot,surface,metres))
 }
 
-pub struct Built {pub mesh:Mesh,pub paths:Vec<(Vec<DVec3>,f64,i32)>,pub outline:Vec<DVec2>}
-fn direction(angle:f64)->DVec2 {let (s,c)=angle.to_radians().sin_cos();DVec2::new(s,c)}
-fn right(v:DVec2)->DVec2 {DVec2::new(v.y,-v.x)}
 fn point(arm:&Arm,core:f64,s:f64,offset:f64,z:f64)->DVec3 {
     let theta=arm.angle.to_radians();let k=arm.bend.to_radians()/(arm.length-core);
     let d=direction(arm.angle);let xy=if k.abs()<1e-10 {d*(core+s)} else {
@@ -295,20 +281,6 @@ fn corner(a:&Arm,b:&Arm,core:f64)->Vec<DVec2> {
     let c=p+da*s;(0..=12).map(|i|quadratic(p,c,q,i as f64/12.0)).collect()
 }
 
-fn vertex(mesh:&mut Mesh,p:DVec3,normal:DVec3,scale:f64)->u32 {
-    let index=mesh.vertices.len() as u32;
-    mesh.vertices.push(Vertex {position:Vec3::new(p.x as f32,p.z as f32,p.y as f32),normal:Vec3::new(normal.x as f32,normal.z as f32,normal.y as f32),
-        uv:Vec2::new((p.x/scale) as f32,(p.y/scale) as f32)});index
-}
-fn triangle(mesh:&mut Mesh,a:DVec3,b:DVec3,c:DVec3,slot:u16,scale:f64) {
-    let mut points=[a,b,c];if (c-a).cross(b-a).z<0.0 {points.swap(1,2);}
-    let normal=(points[2]-points[0]).cross(points[1]-points[0]).normalize_or_zero();
-    if normal.length_squared()<0.5 {return;}
-    let indices=points.map(|p|vertex(mesh,p,normal,scale));mesh.triangles.push(Triangle {indices,material:slot});
-}
-fn quad(mesh:&mut Mesh,a:DVec3,b:DVec3,c:DVec3,d:DVec3,slot:u16,scale:f64) {
-    triangle(mesh,a,b,c,slot,scale);triangle(mesh,a,c,d,slot,scale);
-}
 fn ribbon(mesh:&mut Mesh,points:&[(DVec3,DVec3)],slot:u16,scale:f64) {
     for w in points.windows(2) {quad(mesh,w[0].0,w[1].0,w[1].1,w[0].1,slot,scale);}
 }
