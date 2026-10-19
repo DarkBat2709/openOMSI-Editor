@@ -26,6 +26,9 @@ mod tests {
             let r=w.rects.iter().find(|(_,c)|matches!(c,Command::Splitter)).unwrap().0;let cursor=((r[0]+r[2])*0.5,(r[1]+r[3])*0.5);
             assert!(!ui.editor_window_drag_press(cursor));w.command(w.hit(cursor).unwrap());assert!(w.project.roundabout.as_ref().unwrap().splitters[0].enabled);
             scene.overlays.clear();ui.draw_junction_window(&renderer,&mut scene,Some(&mut w),Path::new("/tmp"),1.0,[0.0,0.0,width as f32,height as f32],(-1.0,-1.0));
+            let r=w.rects.iter().find(|(_,c)|matches!(c,Command::SplitterTemplate)).unwrap().0;let cursor=((r[0]+r[2])*0.5,(r[1]+r[3])*0.5);
+            assert!(!ui.editor_window_drag_press(cursor));w.command(w.hit(cursor).unwrap());assert_eq!(w.project.roundabout.as_ref().unwrap().splitters[0].shape,omsi_geometry::roundabout_splitters::Shape::Wedge);
+            scene.overlays.clear();ui.draw_junction_window(&renderer,&mut scene,Some(&mut w),Path::new("/tmp"),1.0,[0.0,0.0,width as f32,height as f32],(-1.0,-1.0));
             assert!(w.error.is_none(),"{:?}",w.error);assert!(w.rects.iter().any(|(_,c)|matches!(c,Command::Splitter)));
             for (r,_) in &w.rects {assert!(r[0]>=0.0&&r[1]>=0.0&&r[2]<=width as f32&&r[3]<=height as f32);}
             let rgba=renderer.render_to_image(&mut scene,width,height,&camera,&omsi_render::Lighting{shadows:false,..Default::default()}).unwrap();
@@ -42,10 +45,18 @@ mod tests {
         for _ in 0..3 {w.command(Command::Redo);}assert_eq!(w.project.roundabout.as_ref().unwrap().splitters[0].length,5.0);build(&w.project).unwrap();
     }
     #[test]
+    fn reference_island_preset_preserves_other_arms_and_undo() {
+        let mut w=Window::new_roundabout(false);let original=w.project.clone();w.arm=2;w.command(Command::SplitterTemplate);
+        let r=w.project.roundabout.as_ref().unwrap();assert!(r.splitters[2].enabled);assert!(!r.splitters[0].enabled);
+        assert_eq!((r.splitters[2].gap,r.splitters[2].length),(1.0,9.0));build(&w.project).unwrap();
+        let expected=w.project.clone();w.command(Command::Undo);assert_eq!(w.project,original);w.command(Command::Redo);assert_eq!(w.project,expected);
+        w.command(Command::SplitterShape);assert_eq!(w.project.roundabout.as_ref().unwrap().splitters[2].shape,omsi_geometry::roundabout_splitters::Shape::Rounded);
+    }
+    #[test]
     #[ignore = "Writes splitter island visual QA previews"]
     fn render_splitter_preview() {
-        for shape in [omsi_geometry::roundabout_splitters::Shape::Rounded,omsi_geometry::roundabout_splitters::Shape::Teardrop] {
-            let mut w=Window::new_roundabout(false);for s in &mut w.project.roundabout.as_mut().unwrap().splitters {s.enabled=true;s.shape=shape;}
+        for shape in [omsi_geometry::roundabout_splitters::Shape::Rounded,omsi_geometry::roundabout_splitters::Shape::Teardrop,omsi_geometry::roundabout_splitters::Shape::Wedge] {
+            let mut w=Window::new_roundabout(false);for s in &mut w.project.roundabout.as_mut().unwrap().splitters {s.enabled=true;s.shape=shape;if shape==omsi_geometry::roundabout_splitters::Shape::Wedge{s.gap=1.0;s.length=9.0;}}
             w.project.roundabout.as_mut().unwrap().outer_line=true;let mut b=build(&w.project).unwrap();path_overlay(&mut b.mesh,&b.paths);
             let img=crate::asset_catalog::junction_preview(std::path::Path::new("/tmp"),&b.mesh,0,None).unwrap();
             image::RgbaImage::from_raw(img.width,img.height,img.rgba).unwrap().save(format!("/tmp/roundabout-splitter-{shape:?}.png")).unwrap();
@@ -134,7 +145,7 @@ mod tests {
         let stamp=std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos();
         let dir=std::env::temp_dir().join(format!("roundabout-export-{stamp}"));
         let original=dir.join("original");let content=dir.join("content");std::fs::create_dir_all(&original).unwrap();
-        let mut w=Window::new_roundabout(false);w.command(Command::Splitter);w.command(Command::SplitterShape);w.set(Field::SplitterLength,5.0);w.project.road_texture="Texture/asphalt.png".into();
+        let mut w=Window::new_roundabout(false);w.command(Command::SplitterTemplate);w.project.road_texture="Texture/asphalt.png".into();
         std::fs::create_dir_all(original.join("Texture")).unwrap();
         image::RgbaImage::from_pixel(4,4,image::Rgba([50,60,70,255])).save(original.join("Texture/asphalt.png")).unwrap();
         let sco_path=export(&w.project,&original,&content,&original).unwrap();

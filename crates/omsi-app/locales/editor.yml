@@ -3311,3 +3311,9 @@ _version: 2
 
 "Splitter island needs more entrance length; shorten the island or lengthen the arm":
   de: "Zufahrt zu kurz für die Verkehrsinsel: Insel kürzen oder Zufahrt verlängern."
+
+"Rounded wedge":
+  de: "Abgerundeter Keil"
+
+"Reference splitter island":
+  de: "Insel nach Vorlage"

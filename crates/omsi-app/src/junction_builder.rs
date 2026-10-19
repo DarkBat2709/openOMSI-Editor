@@ -22,7 +22,7 @@ impl Field {
         Self::Bend=>(-35.0,35.0),Self::Sidewalk=>(0.0,6.0),Self::Corner=>(0.0,20.0),Self::TextureMetres=>(0.25,100.0),Self::TextureWidth=>(0.25,100.0),Self::UStart|Self::UEnd=>(-16.0,16.0),Self::Name=>(0.0,0.0)}}
 }
 #[derive(Clone,Copy)]
-pub enum Command {SplitterSettings,Splitter,SplitterShape,DashedEntries,OuterLine,LineSettings,Close,Shape(bool),Arm(usize),Edit(Field),Digit(Field,i32),Step(Field,f64),Adjust(Field,f64),RoadTexture,WalkTexture,Markings,
+pub enum Command {SplitterTemplate,SplitterSettings,Splitter,SplitterShape,DashedEntries,OuterLine,LineSettings,Close,Shape(bool),Arm(usize),Edit(Field),Digit(Field,i32),Step(Field,f64),Adjust(Field,f64),RoadTexture,WalkTexture,Markings,
     ShowPaths,Rotate,Undo,Redo,Export,Load,UseSpline,ConnectRoad}
 
 pub struct Input {pub field:Field,pub text:String,pub replace:bool}
@@ -135,8 +135,9 @@ impl Window {
     }
     pub fn command(&mut self,command:Command) {
         match command {
+            Command::SplitterTemplate=>{if self.commit()&&self.project.roundabout.is_some(){self.remember();let s=&mut self.project.roundabout.as_mut().unwrap().splitters[self.arm];s.enabled=true;s.shape=omsi_geometry::roundabout_splitters::Shape::Wedge;s.length=9.0;s.width=1.5;s.gap=1.0;self.changed();}},
             Command::SplitterSettings=>{if self.commit(){self.splitter_settings=!self.splitter_settings;}},
-            Command::Splitter|Command::SplitterShape=>{if self.commit() && self.project.roundabout.is_some(){self.remember();let s=&mut self.project.roundabout.as_mut().unwrap().splitters[self.arm];if matches!(command,Command::Splitter){s.enabled=!s.enabled;}else {use omsi_geometry::roundabout_splitters::Shape;s.shape=if s.shape==Shape::Rounded{Shape::Teardrop}else{Shape::Rounded};}self.changed();}},
+            Command::Splitter|Command::SplitterShape=>{if self.commit() && self.project.roundabout.is_some(){self.remember();let s=&mut self.project.roundabout.as_mut().unwrap().splitters[self.arm];if matches!(command,Command::Splitter){s.enabled=!s.enabled;}else {use omsi_geometry::roundabout_splitters::Shape;s.shape=match s.shape{Shape::Rounded=>Shape::Teardrop,Shape::Teardrop=>Shape::Wedge,Shape::Wedge=>Shape::Rounded};}self.changed();}},
             Command::DashedEntries=>{if self.commit() && self.project.roundabout.is_some() {self.remember();let r=self.project.roundabout.as_mut().unwrap();r.dashed_entries=!r.dashed_entries;self.changed();}},
             Command::OuterLine=>{if self.commit() && self.project.roundabout.is_some() {self.remember();let r=self.project.roundabout.as_mut().unwrap();r.outer_line=!r.outer_line;self.changed();}},
             Command::LineSettings=>{if self.commit() {self.line_settings=!self.line_settings;}},

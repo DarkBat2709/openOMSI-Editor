@@ -200,7 +200,8 @@ pub fn build(p:&Project)->Result<Built,String> {
                 d*along-side*(side_sign*(offset+splitter.deflection(outer,along)))}).collect();
             pts.extend((0..=n).map(|i| {
                 let (sn,cs)=(turn*i as f64/n as f64).sin_cos();
-                centre+DVec3::new(v0.x*cs-v0.y*sn,v0.x*sn+v0.y*cs,0.0)
+                let point=centre+DVec3::new(v0.x*cs-v0.y*sn,v0.x*sn+v0.y*cs,0.0);
+                point-side*(side_sign*splitter.deflection(outer,point.dot(d)))
             }));
             *pts.last_mut().unwrap()=end;pts
         };

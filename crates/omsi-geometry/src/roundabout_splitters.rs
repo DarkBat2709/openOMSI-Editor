@@ -3,7 +3,7 @@ use crate::junction::{Project,Arm,Built,direction,right,triangle,quad};
 use glam::{DVec2,DVec3};
 use serde::{Serialize,Deserialize};
 #[derive(Clone,Copy,Debug,Default,PartialEq,Eq,Serialize,Deserialize)]
-pub enum Shape {#[default] Rounded,Teardrop}
+pub enum Shape {#[default] Rounded,Teardrop,Wedge}
 #[derive(Clone,Debug,PartialEq,Serialize,Deserialize)]
 pub struct Splitter {pub enabled:bool,pub shape:Shape,pub length:f64,pub width:f64,pub gap:f64,pub height:f64}
 impl Default for Splitter {fn default()->Self {Self {enabled:false,shape:Shape::Rounded,length:6.0,width:1.5,gap:7.0,height:0.15}}}
@@ -12,6 +12,13 @@ impl Splitter {
         if !(0.0..=1.0).contains(&t){return 0.0;}
         let r=self.width/2.0;
         match self.shape {
+            Shape::Wedge=>{
+                let along=t*self.length;let tail=r*0.4;
+                if along>=self.length-tail {return (tail*tail-(along-(self.length-tail)).powi(2)).max(0.0).sqrt();}
+                let corner=(r*0.15).min(0.25).min(self.length*0.05);
+                let rounding=if along<corner {corner-(corner*corner-(corner-along).powi(2)).max(0.0).sqrt()}else{0.0};
+                r-(r-tail)*along/(self.length-tail)-rounding
+            },
             Shape::Rounded=>{let end=(t*self.length).min((1.0-t)*self.length);if end>=r {r}else{(r*r-(r-end).powi(2)).max(0.0).sqrt()}},
             // t runs outward from the ring: broad shoulder near the ring, taper towards the road.
             Shape::Teardrop=>r*6.75*t*(1.0-t)*(1.0-t),
@@ -34,7 +41,7 @@ impl Splitter {
             if !v.is_finite() || !(lo..=hi).contains(&v) {return Err("Invalid splitter island dimensions".into());}
         }
         if self.length<self.width || (arm.width-self.width)/2.0<2.75 {return Err("Splitter island needs at least 2.75 m of road on each side; reduce island width or widen the arm".into());}
-        if self.start(outer)<join+2.0 {return Err("Splitter island is too close to the ring; increase its distance".into());}
+        if (self.shape==Shape::Wedge && self.gap<0.75) || (self.shape!=Shape::Wedge && self.start(outer)<join+2.0) {return Err("Splitter island is too close to the ring; increase its distance".into());}
         if self.start(outer)+self.length+2.0>arm.length {return Err("Splitter island needs more entrance length; shorten the island or lengthen the arm".into());}
         Ok(())
     }
@@ -47,8 +54,14 @@ pub fn add_mesh(p:&Project,built:&mut Built) {
     let r=p.roundabout.as_ref().unwrap();let outer=r.island_radius+r.road_width;
     for (a,s) in p.arms.iter().zip(&r.splitters).filter(|(a,s)|a.enabled&&s.enabled) {
         let d=direction(a.angle);let side=right(d);let start=s.start(outer);
-        let mut border:Vec<DVec2>=(0..=64).map(|i|{let t=i as f64/64.0;d*(start+t*s.length)+side*s.half_width(t)}).collect();
-        border.extend((1..64).rev().map(|i|{let t=i as f64/64.0;d*(start+t*s.length)-side*s.half_width(t)}));
+        let mut stations:Vec<_>=(0..=64).map(|i|i as f64/64.0).collect();
+        if s.shape==Shape::Wedge {let corner=(s.width*0.075).min(0.25).min(s.length*0.05);
+            for i in 1..=8 {let t=corner/s.length*i as f64/8.0;stations.extend([t,1.0-s.width*0.2/s.length*i as f64/8.0]);}}
+        stations.sort_by(f64::total_cmp);stations.dedup_by(|a,b|(*a-*b).abs()<1e-10);
+        let mut border:Vec<DVec2>=stations.iter().map(|&t|d*(start+t*s.length)+side*s.half_width(t)).collect();
+        border.extend(stations.iter().rev().map(|&t|d*(start+t*s.length)-side*s.half_width(t)));
+        border.dedup_by(|a,b|a.distance_squared(*b)<1e-16);
+        if border.first().unwrap().distance_squared(*border.last().unwrap())<1e-16 {border.pop();}
         let center=(d*(start+s.length*0.5)).extend(s.height);
         for i in 0..border.len() {
             let (a,b)=(border[i],border[(i+1)%border.len()]);
@@ -70,10 +83,10 @@ mod tests {
     fn project()->Project {let mut p=Project::default();p.format=2;p.roundabout=Some(Roundabout::default());for a in &mut p.arms {a.enabled=true;a.length=35.0;}p}
     #[test]
     fn islands_preserve_ports_and_keep_both_traffic_sides_clear() {
-        for left in [false,true] {for count in [3,4] {for shape in [Shape::Rounded,Shape::Teardrop] {
+        for left in [false,true] {for count in [3,4] {for shape in [Shape::Rounded,Shape::Teardrop,Shape::Wedge] {
             let mut p=project();p.left_hand=left;p.arms[3].enabled=count==4;
             let original=build(&p).unwrap();
-            for s in &mut p.roundabout.as_mut().unwrap().splitters {s.enabled=true;s.shape=shape;}
+            for s in &mut p.roundabout.as_mut().unwrap().splitters {s.enabled=true;s.shape=shape;if shape==Shape::Wedge{s.gap=1.0;s.length=9.0;}}
             let b=build(&p).unwrap();assert_eq!(b.paths.len(),original.paths.len());assert!(b.mesh.triangles.len()>original.mesh.triangles.len());
             for (path,old) in b.paths.iter().zip(&original.paths) {assert_eq!(path.0.first(),old.0.first());assert_eq!(path.0.last(),old.0.last());
                 for pair in path.0.windows(2) {let tangent=(pair[1]-pair[0]).truncate().normalize();let side=right(tangent).extend(0.0)*path.1*0.46;
@@ -96,6 +109,17 @@ mod tests {
             assert!(!contains(&p,(d*(s.start(outer)+s.length*0.75)+lateral).extend(0.0)));
         }
         build(&p).unwrap();
+    }
+    #[test]
+    fn wedge_has_broad_ring_face_and_rounded_narrow_road_end() {
+        let s=Splitter{shape:Shape::Wedge,enabled:true,gap:1.0,length:9.0,..Default::default()};
+        assert!(s.half_width(0.0)>s.half_width(0.9)*1.5);assert_eq!(s.half_width(1.0),0.0);
+        assert!(s.half_width(0.01)>s.half_width(0.0));assert!(s.half_width(0.99)>s.half_width(1.0));
+        let mut p=project();for a in &mut p.arms {a.angle+=17.0;}
+        p.roundabout.as_mut().unwrap().splitters=std::array::from_fn(|_|s.clone());let b=build(&p).unwrap();
+        for a in &p.arms {let d=direction(a.angle);let front=d*19.0;let side=right(d)*s.half_width(0.0);
+            for xy in [front-side,front+side] {assert!(b.mesh.vertices.iter().any(|v|(v.position.x as f64-xy.x).abs()<1e-5&&(v.position.z as f64-xy.y).abs()<1e-5&&(v.position.y as f64-s.height).abs()<1e-5));}}
+        p.roundabout.as_mut().unwrap().splitters[0].gap=0.5;assert!(build(&p).is_err());
     }
     #[test]
     fn rejects_insufficient_space_and_nonfinite_dimensions() {

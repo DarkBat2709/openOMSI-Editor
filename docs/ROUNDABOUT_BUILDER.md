@@ -141,3 +141,26 @@ also apply to splitters. Use unmarked asphalt. Undo, redo, project export/reload
 native priority rules include these changes. Save the map and reload for AI.
 Pedestrian crossings and traffic lights remain subsequent development steps;
 vehicle clearance for long buses still requires an in-game driving test.
+
+## Abgerundeter Keil nach Bildvorlage (0.8.8-pre-islands4)
+
+Die zusätzliche Form **Abgerundeter Keil** hat einen breiten, quer zur Zufahrt
+liegenden Kopf am Kreisverkehr und ein schmaleres, abgerundetes Straßenende.
+Unter **Verkehrsinseln … → Insel nach Vorlage** wird sie für den gewählten Arm
+aktiviert: 9 m Länge, 1,50 m Breite und 1 m Abstand zum äußeren Ringrand. Die
+Inselhöhe bleibt erhalten. Anschließend lassen sich alle Maße weiter ändern.
+Die Vorlage verändert nur den gewählten Arm und lässt sich rückgängig machen.
+
+Bei dieser Form ist ein Abstand ab 0,75 m möglich. Die Fahrwege werden auch im
+Übergang zur Kreisfahrbahn um die Insel geführt; äußere Straßenanschlüsse bleiben
+an ihrer bisherigen Position. Ungültige Kombinationen von Maßen werden weiterhin
+abgelehnt. Die Randlinie folgt auch dem breiten Inselkopf. Fußgängerquerungen,
+Zebrastreifen, Sperrflächen und Ampeln aus den Referenzbildern werden durch diese
+Formauswahl noch nicht erzeugt.
+
+The **Rounded wedge** has a broad head facing the roundabout and a narrower,
+rounded road end. **Traffic islands … → Reference splitter island** enables a
+9 m × 1.5 m island with 1 m ring clearance on the selected arm, keeping its height.
+All dimensions remain editable. This shape allows at least 0.75 m ring clearance;
+lane deflection also follows the curved approach, keeping external ports fixed.
+The preset is undoable. Crossings, hatching and traffic signals are separate features.

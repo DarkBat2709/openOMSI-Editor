@@ -1789,7 +1789,7 @@ impl Ui {
         if roundabout && window.splitter_settings {
             let island=&window.project.roundabout.as_ref().unwrap().splitters[window.arm];
             buttons.push((rect(32.0,166.0,158.0,32.0),if island.enabled{"Splitter island: ON"}else{"Splitter island: OFF"}.into(),Command::Splitter,true,island.enabled));
-            buttons.push((rect(200.0,166.0,158.0,32.0),match island.shape {omsi_geometry::roundabout_splitters::Shape::Rounded=>"Rounded",omsi_geometry::roundabout_splitters::Shape::Teardrop=>"Teardrop"}.into(),Command::SplitterShape,true,false));
+            buttons.push((rect(200.0,166.0,158.0,32.0),match island.shape {omsi_geometry::roundabout_splitters::Shape::Rounded=>"Rounded",omsi_geometry::roundabout_splitters::Shape::Teardrop=>"Teardrop",omsi_geometry::roundabout_splitters::Shape::Wedge=>"Rounded wedge"}.into(),Command::SplitterShape,true,false));
         } else {
         let name=window.input.as_ref().filter(|i|i.field==Field::Name).map(|i|format!("{}│",i.text)).unwrap_or_else(||window.project.name.clone());
         buttons.push((rect(32.0,166.0,326.0,32.0),name,Command::Edit(Field::Name),true,window.input.as_ref().is_some_and(|i|i.field==Field::Name)));
@@ -1808,7 +1808,7 @@ impl Ui {
             buttons.push((rect(240.0,row,86.0,30.0),text,Command::Edit(field),true,input.is_some()));
         }
         buttons.extend([
-            (rect(32.0,468.0,326.0,30.0),"Width / texture from selected spline".into(),Command::UseSpline,true,false),
+            (rect(32.0,468.0,326.0,30.0),if roundabout && window.splitter_settings{"Reference splitter island"}else{"Width / texture from selected spline"}.into(),if roundabout && window.splitter_settings{Command::SplitterTemplate}else{Command::UseSpline},true,false),
             (rect(32.0,511.0,158.0,30.0),"Choose asphalt …".into(),Command::RoadTexture,true,!window.project.road_texture.is_empty()),
             (rect(200.0,511.0,158.0,30.0),if roundabout {"Choose island texture …"}else{"Choose sidewalk …"}.into(),Command::WalkTexture,true,!window.project.walk_texture.is_empty()),
             (rect(32.0,551.0,if roundabout {158.0}else{326.0},28.0),if roundabout {if window.project.markings {"Island edge line: ON"}else{"Island edge line: OFF"}}else if window.project.markings {"Centre lines: ON"} else {"Centre lines: OFF"}.into(),Command::Markings,true,window.project.markings),
