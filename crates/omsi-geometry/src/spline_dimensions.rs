@@ -223,3 +223,31 @@ mod tile_tests {
         }}
     }
 }
+
+/// A signed total turn, rather than a radius in metres.
+pub fn turn_degrees(v:[f64;4])->f64 {if v[1]==0.0 {0.0}else{(v[0]/v[1]).to_degrees()}}
+pub fn edit_dimension(mut v:[f64;4],field:usize,n:f64)->Result<[f64;4],String> {
+    if field==4 {
+        if !n.is_finite() || n.abs()>360.0 {return Err("Curve angle must be between -360 and 360 degrees".into());}
+        v[1]=if n==0.0 {0.0}else{v[0]/n.to_radians()};
+    } else {v[field]=n;}
+    validate(v)?;Ok(v)
+}
+#[cfg(test)]
+mod angle_tests {
+    use super::*;
+    #[test]
+    fn degree_input_produces_a_real_quarter_circle() {
+        for angle in [-90.0,90.0] {
+            let v=edit_dimension([20.0,0.0,0.0,12.0],4,angle).unwrap();
+            assert!((turn_degrees(v)-angle).abs()<1e-10);
+            let s=reshape(&MapSpline{length:20.0,..Default::default()},v).unwrap();
+            let c=SplineCurve::from_map(&s,DVec2::ZERO);
+            assert!((c.heading_at(20.0)-angle).abs()<1e-10);
+            assert!((c.end_point().x.abs()-v[1].abs()).abs()<1e-10);
+            assert!((c.end_point().y-v[1].abs()).abs()<1e-10);
+        }
+        assert_eq!(edit_dimension([20.0,30.0,0.0,0.0],4,0.0).unwrap()[1],0.0);
+        assert!(edit_dimension([20.0,0.0,0.0,0.0],4,f64::NAN).is_err());
+    }
+}

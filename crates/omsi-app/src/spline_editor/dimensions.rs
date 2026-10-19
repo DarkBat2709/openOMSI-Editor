@@ -33,6 +33,7 @@ impl SplineEditor {
             Ok(sections)
         })();
         let sections=match result{Ok(v)=>v,Err(e)=>return e};
+        log::info!("Numeric spline: length={} m, radius={} m, angle={} deg, height={} m, sections={}",values[0],values[1],omsi_geometry::spline_dimensions::turn_degrees(values),values[3],sections.len());
         self.remember(sections.iter().map(|(tile,s)|{let mut absent=s.clone();absent.deleted=true;((*tile,s.id),absent)}).collect());
         let mut edits=world.spline_edits.lock();
         for (tile,s) in sections {let key=(tile,s.id);edits.originals.insert(key,s.clone());edits.added.insert(key,s);edits.dirty_tiles.insert(tile);self.selected=Some(key);}

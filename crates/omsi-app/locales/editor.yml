@@ -3245,3 +3245,9 @@ _version: 2
 
 "New spline: exact dimensions · Click next start · Esc to finish · Ctrl+S to save":
   de: "Neuer Spline mit Maßen · Nächsten Start anklicken · Esc beendet · Strg+S speichert"
+
+"Curve angle (degrees)":
+  de: "Kurvenwinkel (°)"
+
+"Curve angle must be between -360 and 360 degrees":
+  de: "Kurvenwinkel muss zwischen -360 und 360 Grad liegen"

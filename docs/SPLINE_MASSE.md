@@ -53,3 +53,10 @@ checking. Closing the panel keeps a placement preset enabled until switched off.
 New splines cross existing tile boundaries as linked sections, preserving total length,
 curve, height and texture continuity. Missing tiles reject the entire placement.
 Editing an existing section remains limited to its tile. Continuation C is unaffected.
+
+Beispiel: Länge 20 m und Kurvenwinkel 90° ergeben einen Radius von etwa 12,73 m.
+Der zweite Platzierungsklick bestimmt die Richtung am Kurvenanfang.
+
+**Curve angle (degrees)** sets the total signed turn and calculates the radius from
+the current length. Set length first, then angle. Changing length subsequently keeps
+the radius and updates the displayed angle.

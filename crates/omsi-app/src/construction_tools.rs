@@ -481,7 +481,7 @@ mod visual_tests {
                 ui.draw_spline_dimensions(&renderer,&mut scene,Some(&mut editor),1.0,[0.0,0.0,width as f32,height as f32],(-1.0,-1.0));
                 let panel=editor.dimensions_window.as_ref().unwrap().rect.unwrap();
                 assert!(panel[2]<=width as f32 && panel[3]<=height as f32);
-                assert_eq!(editor.dimensions_window.as_ref().unwrap().buttons.len(),8);
+                assert_eq!(editor.dimensions_window.as_ref().unwrap().buttons.len(),9);
                 assert!(ui.editor_window_drag_press((panel[0]+5.0,panel[1]+5.0)));
                 assert!(ui.editor_dock_move((width as f32*0.5,height as f32*0.5)));ui.end_editor_dock_drag();scene.overlays.clear();
                 ui.draw_spline_dimensions(&renderer,&mut scene,Some(&mut editor),1.0,[0.0,0.0,width as f32,height as f32],(-1.0,-1.0));
