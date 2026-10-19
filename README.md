@@ -2,7 +2,7 @@
 
 **[English](#english) · [Deutsch](#deutsch)**
 
-> **Development branch / Entwicklungszweig:** Editor 0.8.7-pre on openOMSI 0.3.33.
+> **Development branch / Entwicklungszweig:** Editor 0.8.8-pre on openOMSI 0.3.33.
 > This migration is under validation; the public download links below still refer to
 > the tested 0.8.6-pre release on 0.2.50. See [migration notes](docs/PORTIERUNG_0.3.33.md).
 > The new base uses AGPL-3.0-only; historical MIT notices are retained in LICENSE.
