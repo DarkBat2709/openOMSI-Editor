@@ -135,6 +135,7 @@ pub fn build(p:&Project)->Result<Built,String> {
         Material {texture:p.road_texture.clone(),diffuse:if p.road_texture.is_empty(){[0.22,0.23,0.24,1.0]}else{[1.0;4]},..Default::default()},
         Material {texture:p.walk_texture.clone(),diffuse:if p.walk_texture.is_empty(){[0.38,0.47,0.24,1.0]}else{[1.0;4]},..Default::default()},
         Material {diffuse:[0.96,0.94,0.84,1.0],..Default::default()},
+        Material {diffuse:[0.65,0.66,0.64,1.0],..Default::default()},
     ],..Default::default()};
     // Include every entrance corner/intersection angle in the mesh. This prevents
     // triangles shaving off the ends of roads or leaving cracks beside the circle.
@@ -162,8 +163,10 @@ pub fn build(p:&Project)->Result<Built,String> {
             }
         }
         let z=DVec3::Z*r.island_height;
-        triangle(&mut mesh,z,polar(r.island_radius,a)+z,polar(r.island_radius,b)+z,1,p.texture_metres);
-        quad(&mut mesh,polar(r.island_radius,a),polar(r.island_radius,b),polar(r.island_radius,b)+z,polar(r.island_radius,a)+z,1,p.texture_metres);
+        let inner=r.island_radius-0.15;
+        triangle(&mut mesh,z,polar(inner,a)+z,polar(inner,b)+z,1,p.texture_metres);
+        // Circle points run clockwise; reverse the edge for an outward-facing wall.
+        island_kerb(&mut mesh,polar(r.island_radius,b).truncate(),polar(r.island_radius,a).truncate(),polar(inner,b).truncate(),polar(inner,a).truncate(),r.island_height);
         if p.markings {
             let h=DVec3::Z*0.012;
             quad(&mut mesh,polar(r.island_radius+0.18,a)+h,polar(r.island_radius+0.30,a)+h,

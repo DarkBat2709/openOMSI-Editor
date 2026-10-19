@@ -39,3 +39,10 @@ pub fn triangle(mesh:&mut Mesh,a:DVec3,b:DVec3,c:DVec3,slot:u16,scale:f64) {
 pub fn quad(mesh:&mut Mesh,a:DVec3,b:DVec3,c:DVec3,d:DVec3,slot:u16,scale:f64) {
     triangle(mesh,a,b,c,slot,scale);triangle(mesh,a,c,d,slot,scale);
 }
+
+/// Concrete kerb stays inside the island footprint, preserving the driving corridor.
+pub fn island_kerb(mesh:&mut Mesh,a:DVec2,b:DVec2,inner_a:DVec2,inner_b:DVec2,height:f64) {
+    let lip=(height-0.02).max(height*0.7);
+    quad(mesh,a.extend(0.0),a.extend(lip),b.extend(lip),b.extend(0.0),3,1.0);
+    quad(mesh,a.extend(lip),inner_a.extend(height),inner_b.extend(height),b.extend(lip),3,1.0);
+}

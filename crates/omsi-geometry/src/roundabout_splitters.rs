@@ -1,5 +1,5 @@
 //! Parametric splitter islands. Ports stay fixed; lane centres deflect around the kerbs.
-use crate::junction::{Project,Arm,Built,direction,right,triangle,quad};
+use crate::junction::{Project,Arm,Built,direction,right,triangle,quad,island_kerb};
 use glam::{DVec2,DVec3};
 use serde::{Serialize,Deserialize};
 #[derive(Clone,Copy,Debug,Default,PartialEq,Eq,Serialize,Deserialize)]
@@ -63,10 +63,13 @@ pub fn add_mesh(p:&Project,built:&mut Built) {
         border.dedup_by(|a,b|a.distance_squared(*b)<1e-16);
         if border.first().unwrap().distance_squared(*border.last().unwrap())<1e-16 {border.pop();}
         let center=(d*(start+s.length*0.5)).extend(s.height);
+        let kerb=0.15_f64.min(s.width*0.2).min(s.length*0.1);
+        let inset=|p:DVec2|{let local=p-center.truncate();center.truncate()+d*(local.dot(d)*(1.0-2.0*kerb/s.length))+side*(local.dot(side)*(1.0-2.0*kerb/s.width))};
         for i in 0..border.len() {
             let (a,b)=(border[i],border[(i+1)%border.len()]);
-            triangle(&mut built.mesh,center,a.extend(s.height),b.extend(s.height),1,p.texture_metres);
-            quad(&mut built.mesh,a.extend(0.0),b.extend(0.0),b.extend(s.height),a.extend(s.height),1,p.texture_metres);
+            let (ia,ib)=(inset(a),inset(b));
+            triangle(&mut built.mesh,center,ia.extend(s.height),ib.extend(s.height),1,p.texture_metres);
+            island_kerb(&mut built.mesh,a,b,ia,ib,s.height);
             if p.markings {
                 let normal=right((b-a).normalize_or_zero());
                 quad(&mut built.mesh,(a+normal*0.12).extend(0.016),(b+normal*0.12).extend(0.016),
@@ -118,8 +121,27 @@ mod tests {
         let mut p=project();for a in &mut p.arms {a.angle+=17.0;}
         p.roundabout.as_mut().unwrap().splitters=std::array::from_fn(|_|s.clone());let b=build(&p).unwrap();
         for a in &p.arms {let d=direction(a.angle);let front=d*19.0;let side=right(d)*s.half_width(0.0);
-            for xy in [front-side,front+side] {assert!(b.mesh.vertices.iter().any(|v|(v.position.x as f64-xy.x).abs()<1e-5&&(v.position.z as f64-xy.y).abs()<1e-5&&(v.position.y as f64-s.height).abs()<1e-5));}}
+            for xy in [front-side,front+side] {assert!(b.mesh.vertices.iter().any(|v|(v.position.x as f64-xy.x).abs()<1e-5&&(v.position.z as f64-xy.y).abs()<1e-5&&(v.position.y as f64-(s.height-0.02)).abs()<1e-5));}}
         p.roundabout.as_mut().unwrap().splitters[0].gap=0.5;assert!(build(&p).is_err());
+    }
+    #[test]
+    fn concrete_kerbs_have_separate_material_and_outward_faces_without_markings() {
+        for shape in [Shape::Rounded,Shape::Teardrop,Shape::Wedge] {
+            let mut p=project();p.markings=false;p.walk_texture="grass.bmp".into();
+            let island=&mut p.roundabout.as_mut().unwrap().splitters[0];island.enabled=true;island.shape=shape;
+            let b=build(&p).unwrap();assert!(b.mesh.materials[3].texture.is_empty());assert_eq!(b.mesh.materials[1].texture,"grass.bmp");
+            let mut ring_walls=0;let mut splitter_walls=0;let mut crowns=0;
+            let center=direction(p.arms[0].angle)*(18.0+7.0+3.0);
+            for tri in b.mesh.triangles.iter().filter(|t|t.material==3) {
+                let v=&b.mesh.vertices[tri.indices[0] as usize];
+                if v.normal.y.abs()<0.01 {
+                    let xy=DVec2::new(v.position.x as f64,v.position.z as f64);let n=DVec2::new(v.normal.x as f64,v.normal.z as f64);
+                    if xy.length()<12.01 {assert!(n.dot(xy)>0.0);ring_walls+=1;}else{assert!(n.dot(xy-center)>-1e-6);splitter_walls+=1;}
+                }else{assert!(v.normal.y>0.0);crowns+=1;}
+            }
+            assert!(ring_walls>100&&splitter_walls>100&&crowns>100);
+            assert!(!b.mesh.triangles.iter().any(|t|t.material==2));
+        }
     }
     #[test]
     fn rejects_insufficient_space_and_nonfinite_dimensions() {

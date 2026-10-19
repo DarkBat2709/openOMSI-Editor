@@ -164,3 +164,17 @@ rounded road end. **Traffic islands … → Reference splitter island** enables 
 All dimensions remain editable. This shape allows at least 0.75 m ring clearance;
 lane deflection also follows the curved approach, keeping external ports fixed.
 The preset is undoable. Crossings, hatching and traffic signals are separate features.
+
+## Bordsteine / Kerbs (0.8.8-pre-islands5)
+
+Die Kreisverkehr-Mittelinsel und alle drei Verkehrsinsel-Formen erhalten einen
+umlaufenden betongrauen Bordstein mit Seitenwand und leicht abgeschrägter Oberkante.
+Die Gras-/Pflastertextur bleibt auf der inneren Inselfläche. Der Bordstein wird auch
+bei ausgeschalteter weißer Inselrandlinie erzeugt und übernimmt die jeweilige
+Inselhöhe. Er liegt innerhalb der bisherigen Kontur; die Fahrwege bleiben erhalten.
+Bereits platzierte Baukastenobjekte im Baukasten aktualisieren und die Karte speichern.
+
+The central island and all splitter shapes have concrete-grey kerbs with vertical
+faces and bevelled crowns, independent of painted edge lines. Island surface textures
+stay on the inset top. Kerbs follow island height and remain inside the existing
+footprint. Update previously placed builder objects and save the map to apply them.
