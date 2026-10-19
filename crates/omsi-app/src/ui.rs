@@ -1767,7 +1767,7 @@ impl Ui {
         if self.junction_image.is_none() {if let Some(img)=&window.preview {self.junction_image=Some((window.preview_id,r.add_texture(scene,img,false)));}}
         let s=scale.max(0.5).min((viewport[2]/1044.0).max(0.1)).min((viewport[3]/764.0).max(0.1));
         let kind=if window.project.roundabout.is_some(){"roundabout"}else{"junction"};
-        let (x,y)=self.editor_window_origin(kind,viewport,[1020.0*s,740.0*s],[viewport[0]+(viewport[2]-1020.0*s)*0.5,viewport[1]+(viewport[3]-740.0*s)*0.5],[896.0*s,52.0*s]);
+        let (x,y)=self.editor_window_origin(kind,viewport,[1020.0*s,740.0*s],[viewport[0]+(viewport[2]-1020.0*s)*0.5,viewport[1]+(viewport[3]-740.0*s)*0.5],[if kind=="roundabout"{640.0*s}else{896.0*s},52.0*s]);
         let rect=|a:f32,b:f32,w:f32,h:f32|[x+a*s,y+b*s,x+(a+w)*s,y+(b+h)*s];
         let flat=self.text.flat;self.text.flat=true;
         self.catalog_plate(r,scene,[0, 0, 0, 150],[viewport[0],viewport[1],viewport[0]+viewport[2],viewport[1]+viewport[3]]);

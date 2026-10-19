@@ -11,9 +11,21 @@ mod tests {
         let instance=crate::graphics_instance();let mut renderer=pollster::block_on(omsi_render::Renderer::new_with(&instance,None,Some(wgpu::TextureFormat::Rgba8UnormSrgb),omsi_render::RenderOptions{msaa:1,ssao:false,fxaa:false,shadow_size:1024,..Default::default()})).unwrap();
         let camera=omsi_render::Camera{position:DVec3::new(0.0,0.0,10.0),yaw:0.0,pitch:0.0,roll:0.0,fov_deg:60.0,near:0.1,far:1000.0};
         for lang in ["DEU","ENG"] {crate::ui_language(lang);for (width,height) in [(1280,800),(800,600)] {
-            let mut w=Window::new_roundabout(false);w.command(Command::SplitterSettings);w.command(Command::Splitter);
+            let mut w=Window::new_roundabout(false);
             let mut scene=renderer.new_scene();let mut ui=crate::ui::Ui::new().unwrap();
             ui.draw_junction_window(&renderer,&mut scene,Some(&mut w),Path::new("/tmp"),1.0,[0.0,0.0,width as f32,height as f32],(-1.0,-1.0));
+            for toggle in [true,false,true] {
+                let r=w.rects.iter().find(|(_,c)|matches!(c,Command::SplitterSettings)).unwrap().0;
+                for cursor in [(r[0]+1.0,r[1]+1.0),((r[0]+r[2])*0.5,(r[1]+r[3])*0.5),(r[2]-1.0,r[3]-1.0)] {
+                    assert!(!ui.editor_window_drag_press(cursor),"island button must not start window dragging");
+                    assert!(matches!(w.hit(cursor),Some(Command::SplitterSettings)));
+                }
+                w.command(w.hit(((r[0]+r[2])*0.5,(r[1]+r[3])*0.5)).unwrap());assert_eq!(w.splitter_settings,toggle);
+                scene.overlays.clear();ui.draw_junction_window(&renderer,&mut scene,Some(&mut w),Path::new("/tmp"),1.0,[0.0,0.0,width as f32,height as f32],(-1.0,-1.0));
+            }
+            let r=w.rects.iter().find(|(_,c)|matches!(c,Command::Splitter)).unwrap().0;let cursor=((r[0]+r[2])*0.5,(r[1]+r[3])*0.5);
+            assert!(!ui.editor_window_drag_press(cursor));w.command(w.hit(cursor).unwrap());assert!(w.project.roundabout.as_ref().unwrap().splitters[0].enabled);
+            scene.overlays.clear();ui.draw_junction_window(&renderer,&mut scene,Some(&mut w),Path::new("/tmp"),1.0,[0.0,0.0,width as f32,height as f32],(-1.0,-1.0));
             assert!(w.error.is_none(),"{:?}",w.error);assert!(w.rects.iter().any(|(_,c)|matches!(c,Command::Splitter)));
             for (r,_) in &w.rects {assert!(r[0]>=0.0&&r[1]>=0.0&&r[2]<=width as f32&&r[3]<=height as f32);}
             let rgba=renderer.render_to_image(&mut scene,width,height,&camera,&omsi_render::Lighting{shadows:false,..Default::default()}).unwrap();
