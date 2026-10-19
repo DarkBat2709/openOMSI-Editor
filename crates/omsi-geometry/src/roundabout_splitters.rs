@@ -13,7 +13,8 @@ impl Splitter {
         let r=self.width/2.0;
         match self.shape {
             Shape::Rounded=>{let end=(t*self.length).min((1.0-t)*self.length);if end>=r {r}else{(r*r-(r-end).powi(2)).max(0.0).sqrt()}},
-            Shape::Teardrop=>r*6.75*t*t*(1.0-t),
+            // t runs outward from the ring: broad shoulder near the ring, taper towards the road.
+            Shape::Teardrop=>r*6.75*t*(1.0-t)*(1.0-t),
         }
     }
     pub fn start(&self,outer:f64)->f64 {outer+self.gap}
@@ -82,6 +83,19 @@ mod tests {
             for i in count*2..count*3 {assert_ne!(b.paths[i].0,original.paths[i].0);}
             assert!(b.mesh.vertices.iter().all(|v|v.position.is_finite()&&v.normal.is_finite()));
         }}}
+    }
+    #[test]
+    fn teardrop_tapers_towards_the_external_road_on_every_arm() {
+        let mut p=project();for a in &mut p.arms {a.angle+=17.0;}
+        for s in &mut p.roundabout.as_mut().unwrap().splitters {s.enabled=true;s.shape=Shape::Teardrop;}
+        let r=p.roundabout.as_ref().unwrap();let outer=r.island_radius+r.road_width;
+        for (a,s) in p.arms.iter().zip(&r.splitters) {
+            assert!(s.half_width(0.25)>s.half_width(0.75));
+            let d=direction(a.angle);let lateral=right(d)*s.width*0.3;
+            assert!(contains(&p,(d*(s.start(outer)+s.length*0.25)+lateral).extend(0.0)));
+            assert!(!contains(&p,(d*(s.start(outer)+s.length*0.75)+lateral).extend(0.0)));
+        }
+        build(&p).unwrap();
     }
     #[test]
     fn rejects_insufficient_space_and_nonfinite_dimensions() {

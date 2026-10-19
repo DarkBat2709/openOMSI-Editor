@@ -103,7 +103,9 @@ See [controls and limitations / Bedienung und Grenzen](OBJECT_ANGLES.md).
 
 Im Kreisverkehr-Baukasten oben **Verkehrsinseln …** wählen. **Arm A–D** bestimmt,
 welche Zufahrt bearbeitet wird. **Verkehrsinsel: AN/AUS** schaltet nur diese Insel;
-die Formtaste wechselt zwischen **Abgerundet** und **Tropfenform**. Länge, Breite,
+die Formtaste wechselt zwischen **Abgerundet** und **Tropfenform**. Bei der
+Tropfenform zeigt die schmale Spitze zur anschließenden Straße, die breitere
+Seite zum Kreisverkehr. Länge, Breite,
 Abstand vom äußeren Kreisfahrbahnrand und Höhe werden in Metern eingestellt.
 Die Vorschau wird nach Bestätigung einer Zahl oder nach +/− neu berechnet.
 **Kreisverkehr-Maße** führt zurück zu den bisherigen Einstellungen.
@@ -126,6 +128,7 @@ Fußgängerquerungen, Zebrastreifen und Ampeln sind noch nicht Bestandteil diese
 Ausbaustufe. Lange Busse müssen zusätzlich im Spiel getestet werden.
 
 Choose **Traffic islands …**, select Arm A–D, then enable its splitter island.
+The teardrop tapers towards the external road, with its wider shoulder near the ring.
 Choose **Rounded** or **Teardrop** and set length, width, distance from the outer
 ring edge, and height in metres. Confirm numeric input to rebuild the preview.
 **Roundabout dimensions** returns to the original controls. Existing projects
