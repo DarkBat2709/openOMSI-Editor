@@ -156,7 +156,7 @@ pub(super) fn traffic_light_program_enabled(sco: &SceneryObject, has_signals: bo
 
 /// Lanes of one placed scenery object: `[path]` arcs in the object frame (x right,
 /// y forward, z up; heading clockwise, radius > 0 right turn) rotated by the object heading.
-pub(super) fn object_lanes(
+pub fn object_lanes(
     sco: &SceneryObject,
     pos: DVec3,
     rot: [f64; 3],
@@ -247,6 +247,7 @@ pub(super) fn object_lanes(
                 l.priority = v;
             }
             l.source = 2;
+            l.editor_exact_path_links = sco.editor_exact_path_links;
             l.key = Some(LaneKey {
                 tile,
                 id,

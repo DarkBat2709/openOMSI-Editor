@@ -203,3 +203,18 @@ Für jede Spur werden eigene KI-Wege erzeugt. Unterschiedliche Spuranzahlen erha
 Unter **4 Ausstattung** schaltet „Spurtrennlinien“ die automatisch erzeugten gestrichelten Spurtrenner im Ring und auf mehrspurigen Armen ein oder aus. Bereits aufgemalte Linien in einer Asphalttextur bleiben unverändert; für diese Funktion unmarkierten Asphalt verwenden. Vorhandene Straßensplines werden durch das Verändern der Spuranzahl nicht automatisch durch ein anderes Straßenprofil ersetzt: Anschlussbreite und Profil der bestehenden Straße müssen weiterhin passen.
 
 Die Spuranzahlen werden im Projekt gespeichert, sind rückgängig machbar und erscheinen nach erneutem Öffnen wieder. Alte Projekte ohne diese Angaben laden mit jeweils einer Spur. Die Abbildungen in den PDF-Handbüchern zeigen noch den vorherigen Teststand islands6.
+
+### KI-Pfadverknüpfung im Teststand lanes2
+
+Erzeugte Kreuzungen tragen jetzt `[editor_exact_path_links]` in ihrer SCO-Datei.
+Innerhalb desselben platzierten Objekts verbindet openOMSI nur gemeinsame
+Pfadendpunkte (2 mm Rundungstoleranz). Die bisherige allgemeine Toleranz von
+1,5 m konnte die 0,25–0,5 m langen Exportsegmente mitten in anderen Kurven
+verknüpfen. Anschlüsse zu Straßen und anderen Objekten behalten ihre Toleranz.
+Dies gilt sowohl beim vollständigen Laden als auch beim Nachladen von Kacheln.
+
+Bereits platzierte Kreisverkehre müssen im Baukasten einmal aktualisiert,
+gespeichert und die Karte neu geladen werden, damit ihre SCO-Datei die neue
+Kennzeichnung enthält. Bestehende OMSI-Objekte ohne Kennzeichnung behalten das
+bisherige Verhalten. Die Korrektur verhindert unbeabsichtigte Verbindungen;
+sie garantiert keine bestimmte Ausfahrt nach einer festen Zahl von Runden.

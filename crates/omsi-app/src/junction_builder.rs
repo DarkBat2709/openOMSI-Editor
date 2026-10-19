@@ -1,6 +1,8 @@
 //! Parameterised T/X junctions and roundabouts with configurable lanes. Mesh, markings and AI paths come from the same arms.
 mod roundabout;
 mod rules;
+#[cfg(test)]
+mod traffic_tests;
 pub use rules::rewrite as rewrite_roundabout_rules;
 pub fn roundabout_rules(asset:&Path)->Result<Option<String>,String>{rules::asset_rules(asset)}
 pub use roundabout::Roundabout;
@@ -451,6 +453,7 @@ fn o3d(mesh:&Mesh)->Result<Vec<u8>,String> {
 
 fn sco(project:&Project,built:&Built)->String {
     let mut text=format!("[friendlyname]\n{}\n\n[groups]\n2\nopenOMSI Editor\nEigene Kreuzungen\n\n[fixed]\n[surface]\n[absheight]\n\n[mesh]\nroad.o3d\n\n[terrainhole]\nroad.o3d\n",project.name);
+    text.push_str("\n[editor_exact_path_links]\n");
     for (points,width,indicator) in &built.paths {for pair in points.windows(2) {
         let d=pair[1]-pair[0];let length=d.truncate().length();if length<0.011 {continue;}
         let heading=d.x.atan2(d.y).to_degrees().rem_euclid(360.0);
