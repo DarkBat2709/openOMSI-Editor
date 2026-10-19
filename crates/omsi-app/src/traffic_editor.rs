@@ -237,7 +237,7 @@ pub fn write_definitions(plan:&Plan,root:&Path,original:&Path)->Result<(),String
     omsi_cfg::content_changed();Ok(())
 }
 #[derive(Clone,Copy)]
-pub enum Command { Manage, PathDelete, PathEdit, PathReset, PathNext, PathUndo, PathRedo, PathSave, Generate, Connector, ConnectorSource, ConnectorDestination, ConnectorReset, Close, Overlay, Free, Lane, ResetNode, NodeHeight(f64), Replace, Connected, TwoWay, Reverse, ForwardBus, BackwardBus, Width(f64),Offset(f64),Height(f64),Apply,Refresh }
+pub enum Command { Manage, PathDelete, PathEdit, PathReset, PathNext, PathUndo, PathRedo, PathSave, Generate, Connector, ConnectorFree, ConnectorUndo, ConnectorSource, ConnectorDestination, ConnectorReset, Close, Overlay, Free, Lane, ResetNode, NodeHeight(f64), Replace, Connected, TwoWay, Reverse, ForwardBus, BackwardBus, Width(f64),Offset(f64),Height(f64),Apply,Refresh }
 #[derive(Clone,Copy)]
 pub struct Target {pub point:DVec3,pub direction:DVec3,pub start:bool,pub key:omsi_sim::traffic::LaneKey,pub reversed:bool}
 pub struct Window {pub manager:Option<crate::editor_path_edit::Manager>,pub connector:Option<crate::traffic_connector::Connector>,pub connector_drag:Option<crate::editor_path_edit::PathDrag>,pub drag_pending:bool,pub drag_events:usize,pub drag_queued_at:Option<std::time::Instant>,pub targets:Vec<Target>,pub free:bool,pub active_lane:usize,pub selected_node:Option<usize>,pub drag:Option<(usize,f64,DVec3)>,pub replace:bool,pub start:Key,pub settings:Settings,pub preview:Plan,pub error:Option<String>,pub rects:Vec<([f32;4],Command)>,pub rect:Option<[f32;4]>}
@@ -315,7 +315,7 @@ impl Window {
     pub fn refresh(&mut self,world:&World){
         if let Some(connector)=&self.connector {
             self.preview=Plan::default();
-            self.error=match connector.build_on_road(&|p|world.editor_road_height(p)){Ok(plan)=>{self.preview=plan;None},Err(e)=>{if let Some(controls)=connector.controls(){self.preview.handles=controls.into_iter().enumerate().map(|(i,mut p)|{if let Some(z)=world.editor_road_height(p){p.z=z;}(i,p)}).collect();}Some(e)}};
+            self.error=match connector.build_on_road(&|p|world.editor_road_height(p).or_else(||connector.free.as_ref().and_then(|_|world.ground_height(p.x,p.y)))){Ok(plan)=>{self.preview=plan;None},Err(e)=>{self.preview.handles=connector.handles();Some(e)}};
             return;
         }
         let _diagnostic = crate::editor_diagnostics::Span::new("ai_preview", format!("tile={:?} spline={} nodes={} targets={} connected={} replace={}", self.start.0,self.start.1,self.settings.nodes.len(),self.targets.len(),self.settings.connected,self.replace));

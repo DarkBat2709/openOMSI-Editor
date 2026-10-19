@@ -1246,3 +1246,4 @@ pub mod junction;
 pub mod roundabout;
 pub mod roundabout_lanes;
 pub mod roundabout_splitters;
+pub mod free_path;

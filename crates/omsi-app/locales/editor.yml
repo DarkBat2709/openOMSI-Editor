@@ -3386,3 +3386,36 @@ _version: 2
 
 "Lane dividers: OFF":
   de: "Spurtrennlinien: AUS"
+
+"Free AI path":
+  de: "Freier KI-Fahrweg"
+
+"Remove last point":
+  de: "Letzten Punkt entfernen"
+
+"Mode: free drawing":
+  de: "Modus: frei zeichnen"
+
+"Mode: connect existing endpoints":
+  de: "Modus: vorhandene Endpunkte verbinden"
+
+"Clear preview":
+  de: "Vorschau leeren"
+
+"Click the surface to add the next section.":
+  de: "Auf die Fläche klicken, um den nächsten Abschnitt anzufügen."
+
+"Drag endpoints and three form handles.":
+  de: "Endpunkte und drei Formpunkte ziehen."
+
+"Click to add sections. Drag endpoints and three form handles. Add when ready.":
+  de: "Klicken fügt Abschnitte an. Endpunkte und drei Formpunkte ziehen. Anschließend hinzufügen."
+
+"Invalid point or too many sections":
+  de: "Ungültiger Punkt oder zu viele Abschnitte"
+
+"Points must be at least 1 m apart":
+  de: "Punkte müssen mindestens 1 m auseinanderliegen"
+
+"Connection is incomplete: add two points or select start and destination.":
+  de: "Verbindung unvollständig: zwei Punkte setzen oder Start und Ziel wählen."

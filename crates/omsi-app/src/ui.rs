@@ -1289,20 +1289,21 @@ impl Ui {
             let source=c.source.map(|t|format!("Start: path {} / lane {}",t.key.id,t.key.path+1)).unwrap_or("Select start: yellow path end".into());
             let target=c.destination.map(|t|format!("Destination: path {} / lane {}",t.key.id,t.key.path+1)).unwrap_or("Select destination: purple path start".into());
             let buttons=vec![
-                (rect(10.0,40.0,390.0,34.0),source,Command::ConnectorSource,true),
-                (rect(10.0,84.0,390.0,34.0),target,Command::ConnectorDestination,c.source.is_some()),
+                (rect(10.0,40.0,390.0,34.0),if c.free.is_some(){"Free AI path".into()}else{source},Command::ConnectorSource,c.free.is_none()),
+                (rect(10.0,84.0,390.0,34.0),if c.free.is_some(){"Remove last point".into()}else{target},if c.free.is_some(){Command::ConnectorUndo}else{Command::ConnectorDestination},c.free.as_ref().is_some_and(|f|!f.points.is_empty())||c.source.is_some()),
                 (rect(10.0,132.0,390.0,30.0),format!("Vehicles: {}",if c.bus_only{"Buses only"}else{"All vehicles"}),Command::ForwardBus,true),
                 (rect(310.0,172.0,40.0,28.0),"−".into(),Command::Width(-0.25),true),
                 (rect(360.0,172.0,40.0,28.0),"+".into(),Command::Width(0.25),true),
-                (rect(10.0,420.0,390.0,32.0),"Select start and destination again".into(),Command::ConnectorReset,true),
-                (rect(10.0,466.0,390.0,34.0),"Add connection (Enter)".into(),Command::Apply,c.picking.is_none()&&w.error.is_none()&&!w.preview.pieces.is_empty()),
+                (rect(10.0,210.0,390.0,30.0),if c.free.is_some(){"Mode: free drawing"}else{"Mode: connect existing endpoints"}.into(),Command::ConnectorFree,true),
+                (rect(10.0,420.0,390.0,32.0),if c.free.is_some(){"Clear preview"}else{"Select start and destination again"}.into(),Command::ConnectorReset,true),
+                (rect(10.0,466.0,390.0,34.0),"Add connection (Enter)".into(),Command::Apply,c.complete()&&w.error.is_none()&&!w.preview.pieces.is_empty()),
                 (rect(10.0,512.0,390.0,30.0),"Back to AI paths along the road".into(),Command::Connector,true),
-                (rect(10.0,556.0,390.0,30.0),if c.source.is_some()&&c.destination.is_some(){"Add connection + save (Ctrl+S)"}else{"Save map (Ctrl+S)"}.into(),Command::PathSave,true),
+                (rect(10.0,556.0,390.0,30.0),if c.complete(){"Add connection + save (Ctrl+S)"}else{"Save map (Ctrl+S)"}.into(),Command::PathSave,true),
                 (rect(10.0,594.0,390.0,30.0),"Close (Esc)".into(),Command::Close,true),
             ];
             self.catalog_text(r,scene,&format!("Lane width: {:.2} m",c.width),(x+12.0*s,y+184.0*s),290.0*s,12.0*s,SOFT);
-            for (i,text) in ["Straight-ahead paths are retained.","Yellow: start · Purple: destination · Green: drag curve", "Connect path endpoints, not the middle of a path.", "Preview only until you add the connection."].iter().enumerate(){
-                self.catalog_text(r,scene,text,(x+12.0*s,y+(224.0+i as f32*22.0)*s),386.0*s,12.0*s,SOFT);
+            for (i,text) in (if c.free.is_some(){["Click the surface to add the next section.","Drag endpoints and three form handles.","Preview only until you add the connection."]}else{["Yellow: start · Purple: destination · Green: drag curve","Connect path endpoints, not the middle of a path.","Preview only until you add the connection."]}).iter().enumerate(){
+                self.catalog_text(r,scene,text,(x+12.0*s,y+(250.0+i as f32*22.0)*s),386.0*s,12.0*s,SOFT);
             }
             let status=c.status();let message=w.error.as_deref().unwrap_or(&status);
             for (i,line) in wrap(&self.text,message,12.0*s,382.0*s).iter().take(5).enumerate(){
