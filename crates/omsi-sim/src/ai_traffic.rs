@@ -37,6 +37,8 @@ mod body_tests;
 #[cfg(test)]
 mod scenario_tests;
 #[cfg(test)]
+mod generated_ring_tests;
+#[cfg(test)]
 mod junction_tests;
 #[cfg(test)]
 mod service_tests;

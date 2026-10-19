@@ -454,7 +454,11 @@ fn o3d(mesh:&Mesh)->Result<Vec<u8>,String> {
 fn sco(project:&Project,built:&Built)->String {
     let mut text=format!("[friendlyname]\n{}\n\n[groups]\n2\nopenOMSI Editor\nEigene Kreuzungen\n\n[fixed]\n[surface]\n[absheight]\n\n[mesh]\nroad.o3d\n\n[terrainhole]\nroad.o3d\n",project.name);
     text.push_str("\n[editor_exact_path_links]\n");
-    for (points,width,indicator) in &built.paths {for pair in points.windows(2) {
+    let mut path_index=0;
+    for (points,width,indicator) in &built.paths {
+        let count=points.windows(2).filter(|p|(p[1]-p[0]).truncate().length()>=0.011).count();
+        text.push_str(&format!("\n[editor_path_group]\n{path_index}\n{count}\n"));path_index+=count;
+        for pair in points.windows(2) {
         let d=pair[1]-pair[0];let length=d.truncate().length();if length<0.011 {continue;}
         let heading=d.x.atan2(d.y).to_degrees().rem_euclid(360.0);
         text.push_str(&format!("\n[path]\n{:.6}\n{:.6}\n{:.6}\n{heading:.6}\n0\n{length:.6}\n0\n0\n0\n{width:.6}\n0\n{indicator}\n",pair[0].x,pair[0].y,pair[0].z));

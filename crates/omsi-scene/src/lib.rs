@@ -61,6 +61,7 @@ mod vehicle_materials;
 mod vehicle_types;
 mod vehicles;
 pub mod lanes;
+mod junction_lanes;
 mod season_looks;
 pub mod host;
 

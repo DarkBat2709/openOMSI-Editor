@@ -120,6 +120,7 @@ pub struct SceneryObject {
     pub abs_height: bool,
     /// Generated paths share exact endpoints; do not join nearby interior samples.
     pub editor_exact_path_links: bool,
+    pub editor_path_groups: Vec<(usize,usize)>,
     pub collision_mesh: Option<String>,
     pub crossing_height_deformation: Option<String>,
     pub no_collision: bool,
@@ -287,6 +288,7 @@ impl SceneryObject {
                 "fixed" => o.fixed = true,
                 "absheight" => o.abs_height = true,
                 "editor_exact_path_links" => o.editor_exact_path_links = true,
+                "editor_path_group" => { let start=r.i32();let count=r.i32();if start>=0 && count>0 {o.editor_path_groups.push((start as usize,count as usize));} },
                 // OMSI knows only this spelling: the 72 stock buildings written
                 // `[collisionmesh]` (the Staaken checkpoints on the Heerstraße among them)
                 // have no collision shape in OMSI and are driven through

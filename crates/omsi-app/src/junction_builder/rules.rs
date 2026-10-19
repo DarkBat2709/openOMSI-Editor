@@ -15,7 +15,7 @@ pub(super) fn asset_rules(asset:&Path)->Result<Option<String>,String> {
     let built=build(&project)?;
     Ok(Some(priority_rules(&project,&built)))
 }
-fn priority_rules(p:&Project,b:&Built)->String {
+pub(super) fn priority_rules(p:&Project,b:&Built)->String {
     let mut index=0;let mut out=String::new();
     for (points,_,_) in &b.paths {
         let entering=points.first().is_some_and(|v|p.arms.iter().any(|a|a.enabled && (v.truncate().dot(direction(a.angle))-a.length).abs()<1e-5 && v.truncate().dot(right(direction(a.angle))).abs()<a.width/2.0));

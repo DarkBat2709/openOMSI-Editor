@@ -274,7 +274,7 @@ pub fn object_lanes(
             _ => push(false),
         }
     }
-    out
+    crate::junction_lanes::coalesce(out, &sco.editor_path_groups)
 }
 
 /// Resolve the texture name for a scenery object's `[matl_freetex]` slot.

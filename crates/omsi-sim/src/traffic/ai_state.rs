@@ -67,6 +67,7 @@ pub struct AiState {
     /// A turn the car has taken a turn lane for (1 left, 2 right): the way out of the
     /// junction is chosen to match.
     pub turn_wish: i32,
+    pub editor_junction_route: Vec<usize>,
     /// Indicator the driver sets for a manoeuvre of its own (pulling away from a stop),
     /// held while `signal_time` runs.
     pub signal: i32,
@@ -368,7 +369,7 @@ const TRAP_DEPTH: u32 = 3;
 
 impl AiState {
     pub fn new(lane: usize, s: f32, seed: u64) -> AiState {
-        AiState { traffic_pool: None, veh_type: 0, lane, s, speed: 0.0, max_speed_kmh: 50.0, accel: 1.2, decel: 3.0, length: 5.0, rng: seed | 1, blinker: 0, braking: false, brake_lamp: 0.0, odometer: 0.0, planned_next: None, ahead: Vec::new(), change_plan: Vec::new(), prev_lane: None, yield_time: 0.0, route: Vec::new(), route_index: 0, change: None, change_cooldown: 5.0, lateral: 0.0, lateral_target: 0.0, lateral_ramp: (0.0, 0.0, 0.0, 1.0), turn_wish: 0, signal: 0, signal_time: 0.0, lat_accel: 2.8, desire: 1.0, headway: 1.4, min_gap: 2.0, accept_gap: 4.0, reaction: 0.7, front: 2.5, rear: 2.5, held: false, start_timer: 0.0, acc: 0.0, accel_cap: None, ordinary_brake: ORDINARY_BRAKE, emergency_brake: MAX_BRAKE, jerk: JERK, cmd: 0.0, emergency: false, emergency_began: false, body: BodyLink::default(), nudge_ramp: (0.0, 0.0, 0.0, 1.0), priority_drive: false, speed_cap: None }
+        AiState { traffic_pool: None, veh_type: 0, lane, s, speed: 0.0, max_speed_kmh: 50.0, accel: 1.2, decel: 3.0, length: 5.0, rng: seed | 1, blinker: 0, braking: false, brake_lamp: 0.0, odometer: 0.0, planned_next: None, ahead: Vec::new(), change_plan: Vec::new(), prev_lane: None, yield_time: 0.0, route: Vec::new(), route_index: 0, change: None, change_cooldown: 5.0, lateral: 0.0, lateral_target: 0.0, lateral_ramp: (0.0, 0.0, 0.0, 1.0), turn_wish: 0, editor_junction_route: Vec::new(), signal: 0, signal_time: 0.0, lat_accel: 2.8, desire: 1.0, headway: 1.4, min_gap: 2.0, accept_gap: 4.0, reaction: 0.7, front: 2.5, rear: 2.5, held: false, start_timer: 0.0, acc: 0.0, accel_cap: None, ordinary_brake: ORDINARY_BRAKE, emergency_brake: MAX_BRAKE, jerk: JERK, cmd: 0.0, emergency: false, emergency_began: false, body: BodyLink::default(), nudge_ramp: (0.0, 0.0, 0.0, 1.0), priority_drive: false, speed_cap: None }
     }
 
     fn rand(&mut self) -> u64 {
@@ -459,6 +460,15 @@ impl AiState {
                     nl.kind == LaneKind::Street && nl.allows(veh_type) && !pool_closed(nl) && (!nl.next.contains(&lane) || nl.continues_from(l, LINK_TOLERANCE))
                 })
                 .collect();
+        }
+        if l.editor_grouped_path {
+            if let Some(k)=self.editor_junction_route.iter().position(|&i|i==lane) {
+                if let Some(&next)=self.editor_junction_route.get(k+1).filter(|n|choices.contains(n)) {return Some(next);}
+            }
+            let routes=super::junction_route::exits(net,lane,&open_for);
+            let routes:Vec<_>=routes.into_iter().filter(|r|r.get(1).is_some_and(|n|choices.contains(n))).collect();
+            if !routes.is_empty(){let pick=(self.rand()%routes.len() as u64) as usize;
+                self.editor_junction_route=routes[pick].clone();return self.editor_junction_route.get(1).copied();}
         }
         if self.turn_wish != 0 {
             let wished: Vec<usize> = choices.iter().copied().filter(|&n| net.lanes[n].turn == self.turn_wish).collect();

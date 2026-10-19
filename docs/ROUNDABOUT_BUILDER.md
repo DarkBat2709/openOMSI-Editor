@@ -218,3 +218,21 @@ gespeichert und die Karte neu geladen werden, damit ihre SCO-Datei die neue
 Kennzeichnung enthält. Bestehende OMSI-Objekte ohne Kennzeichnung behalten das
 bisherige Verhalten. Die Korrektur verhindert unbeabsichtigte Verbindungen;
 sie garantiert keine bestimmte Ausfahrt nach einer festen Zahl von Runden.
+
+### KI-Durchfahrt im Teststand lanes3
+
+Der SCO-Export ergänzt `[editor_path_group]` (erster nativer Pfadindex, Anzahl).
+openOMSI fasst zusammenhängende, gleich geregelte Segmente einer erzeugten
+Fahrkurve beim Laden zusammen. Die nativen `[path]`-Einträge und ihre Regelindizes
+bleiben im Export bestehen. Ungültige Gruppen, Lücken und unterschiedlich
+geänderte Regeln werden nicht zusammengefasst. Dadurch sieht die begrenzte
+KI-Vorausplanung vollständige Kurven statt nur weniger Meter Miniabschnitte;
+Konflikt- und Vorfahrtsprüfungen erhalten längere Fahrwege.
+
+Zufallsverkehr legt sich innerhalb einer gruppierten erzeugten Kreuzung auf
+eine erreichbare Ausfahrt fest und folgt einem kürzesten Weg dorthin, statt an
+jedem Kreisknoten erneut abzubiegen. Gesperrte Fahrwege bleiben ausgeschlossen;
+Fahrplanrouten behalten ihren eigenen Verlauf. Weiterführende Ausfahrten werden
+gegenüber kurzen Sackgassen bevorzugt. Bei isolierten Testobjekten bleiben
+Endausfahrten nutzbar. Bestehende Kreisverkehre einmal im Baukasten aktualisieren,
+speichern und die Karte neu laden, damit die Gruppierung wirksam wird.
