@@ -6,7 +6,7 @@ import shutil
 import tempfile
 import zipfile
 
-VERSION = '0.8.7-pre'
+VERSION = '0.8.8-pre'
 NAME = f'openOMSI-Editor-{VERSION}-windows-x64'
 RUNTIME = ('vcruntime140.dll', 'vcruntime140_1.dll', 'msvcp140.dll')
 DXC_FILES = ('dxcompiler.dll', 'dxil.dll', 'LICENCE-MIT.txt', 'LICENSE-LLVM.txt', 'LICENSE-MS.txt')
@@ -29,7 +29,7 @@ if errorlevel 1 (
   exit /b 1
 )
 '''
-HELP = '''openOMSI Editor - 0.8.7-pre - Windows x64
+HELP = '''openOMSI Editor - 0.8.8-pre - Windows x64
 
 ENGLISH
 1. Right-click the downloaded ZIP and choose Extract All. Do not run inside the ZIP.

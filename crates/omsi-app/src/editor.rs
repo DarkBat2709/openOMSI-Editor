@@ -73,6 +73,7 @@ pub struct Editor {
     pub traffic_overlay:crate::traffic_editor::Overlay,
     pub path_edits:crate::editor_path_edit::Edits,
     pub traffic_window: Option<crate::traffic_editor::Window>,
+    pub dimensions_window: Option<crate::spline_dimensions::Window>,
     pub construction_window: Option<crate::construction_tools::Window>,
     pub construction_plane: Option<f64>,
     pub hide_terrain: bool,
@@ -166,6 +167,7 @@ pub(crate) fn toggle_session(active: &mut Option<Editor>, paused: &mut Option<Ed
     if let Some(mut editor) = active.take() {
         editor.catalog = None;
         editor.construction_window = None;
+        editor.dimensions_window = None;
         editor.text_window = None;
         editor.roadside_window = None;editor.sidewalk_window=None;editor.traffic_window=None;
         editor.placing_asset = None;
@@ -213,6 +215,7 @@ pub enum Action {
     RoadsideWindow,
     SidewalkWindow,
     ConstructionWindow,
+    SplineDimensions,
     TrafficManage,
     Length(f64),
     Curvature(f64),
@@ -1409,7 +1412,7 @@ pub(crate) fn camera_key_pressed(keys: &hashbrown::HashSet<winit::keyboard::KeyC
     use winit::keyboard::KeyCode as K;
     if !keys.contains(&code) { return false; }
     let Some(editor) = editor else { return true; };
-    if editor.construction_window.as_ref().is_some_and(|w| w.input.is_some()) || editor.sidewalk_window.as_ref().is_some_and(|w| w.input.is_some()) || editor.catalog.is_some() || editor.tile_window.is_some() || editor.text_window.is_some() || editor.junction_window.is_some() || editor.terrain.input.is_some() || editor.roadside_window.as_ref().is_some_and(|w| w.input.is_some()) { return false; }
+    if editor.dimensions_window.as_ref().is_some_and(|w| w.input.is_some()) || editor.construction_window.as_ref().is_some_and(|w| w.input.is_some()) || editor.sidewalk_window.as_ref().is_some_and(|w| w.input.is_some()) || editor.catalog.is_some() || editor.tile_window.is_some() || editor.text_window.is_some() || editor.junction_window.is_some() || editor.terrain.input.is_some() || editor.roadside_window.as_ref().is_some_and(|w| w.input.is_some()) { return false; }
     let shift = keys.contains(&K::ShiftLeft) || keys.contains(&K::ShiftRight);
     let ctrl = keys.contains(&K::ControlLeft) || keys.contains(&K::ControlRight);
     action_for(code, shift, ctrl, 0.0).is_none()

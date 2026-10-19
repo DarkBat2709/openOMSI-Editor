@@ -6,6 +6,7 @@ use glam::{DVec2, DVec3, Mat4, Quat, Vec2, Vec3};
 use omsi_map::{tile_size, MapSpline, Terrain};
 use omsi_scenery::Spline;
 
+pub mod spline_dimensions;
 mod hole_rims;
 mod ground_sound;
 pub use ground_sound::{GroundSound, LineKind, SoundLine, SoundSpot};
@@ -1240,3 +1241,9 @@ pub fn editor_path_point(curve:&SplineCurve,nodes:&[(usize,[f64;4])],path:usize,
     let forward=SplineCurve::dir(curve.heading_at(station)).extend(0.0);
     curve.profile_point(station,x,z)+DVec3::new(forward.y,-forward.x,0.0)*delta.x+forward*delta.y+DVec3::Z*delta.z
 }
+
+pub mod junction;
+pub mod roundabout;
+pub mod roundabout_lanes;
+pub mod roundabout_splitters;
+pub mod free_path;

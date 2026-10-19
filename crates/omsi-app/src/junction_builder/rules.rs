@@ -15,10 +15,11 @@ pub(super) fn asset_rules(asset:&Path)->Result<Option<String>,String> {
     let built=build(&project)?;
     Ok(Some(priority_rules(&project,&built)))
 }
-fn priority_rules(p:&Project,b:&Built)->String {
-    let n=p.arms.iter().filter(|a|a.enabled).count();let mut index=0;let mut out=String::new();
-    for (group,(points,_,_)) in b.paths.iter().enumerate() {
-        let priority=if (2*n..3*n).contains(&group){64}else{192};
+pub(super) fn priority_rules(p:&Project,b:&Built)->String {
+    let mut index=0;let mut out=String::new();
+    for (points,_,_) in &b.paths {
+        let entering=points.first().is_some_and(|v|p.arms.iter().any(|a|a.enabled && (v.truncate().dot(direction(a.angle))-a.length).abs()<1e-5 && v.truncate().dot(right(direction(a.angle))).abs()<a.width/2.0));
+        let priority=if entering{64}else{192};
         for pair in points.windows(2) {
             if (pair[1]-pair[0]).truncate().length()<0.011 {continue;}
             out.push_str(&format!("[rule]\n{index}\npriority\n{priority}\n0\n[rule]\n{index}\nspeedlimit\n20\n0\n"));index+=1;
@@ -65,8 +66,8 @@ mod tests {
     use super::*;
     #[test]
     fn native_rules_match_exported_paths_and_save_idempotently() {
-        for left in [false,true] {for cross in [false,true] {
-            let mut w=Window::new_roundabout(left);w.command(Command::Shape(cross));let b=build(&w.project).unwrap();
+        for left in [false,true] {for cross in [false,true] {for lanes in [1,2,4] {
+            let mut w=Window::new_roundabout(left);w.command(Command::Shape(cross));w.set(Field::RingLanes,lanes as f64);w.set(Field::ApproachLanes,lanes as f64);w.command(Command::SplitterTemplate);let b=build(&w.project).unwrap();
             let rules=priority_rules(&w.project,&b);
             let source="[version]\n14\n[object]\n0\nring.sco\n99\n0\n0\n0\n0\n0\n0\n1\n[openomsi_editor_roundabout_rules]\n[rule]\n0\ntrafficdensity\n0.4\n0\n";
             let targets=vec![(99,Some(rules))];let saved=rewrite(source,&targets).unwrap();
@@ -81,6 +82,6 @@ mod tests {
             assert!(priorities.iter().any(|r|r.value==64.0));assert_eq!(priorities[0].value,192.0);
             assert_eq!(rewrite(&saved,&[(99,None)]).unwrap(),source);
             let corrupt=saved.replacen(END,"",1);assert!(rewrite(&corrupt,&targets).is_err());
-        }}
+        }}}
     }
 }

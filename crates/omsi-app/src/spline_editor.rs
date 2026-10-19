@@ -1,6 +1,7 @@
 //! Spline mode of the in-game map editor. Edits stay in World across tile reloads.
 //! Existing records keep their index: attached object rows refer to it, not the ID.
 
+use omsi_geometry::spline_dimensions::{terrain_parts, between, valid_spline, inside_tile, curve_part, straight_tile_cuts, nearest_station, profile_edges, physical_edges, compatible_sections, tile_origin as origin, map_curve as curve};
 use crate::{editor::Action, scene::World};
 use glam::{DVec2, DVec3, Vec3};
 use hashbrown::{HashMap, HashSet};
@@ -39,8 +40,11 @@ fn selection_category(file: &str, def: Option<&omsi_scenery::Spline>) -> Selecti
     } else { SelectionFilter::Other }
 }
 
+mod dimensions;
+
 #[derive(Default)]
 pub struct SplineEditor {
+    pub dimensions: Option<[f64;4]>,
     pub selected: Option<Key>,
     pub selection_filter: SelectionFilter,
     group: Vec<Key>,
@@ -146,8 +150,9 @@ impl SplineEditor {
         let after: Vec<_> = before.iter().map(|(key, s)| {
             let mut s = s.clone(); s.pos[0] += delta.x; s.pos[1] += delta.y; s.pos[2] += delta.z; (*key, s)
         }).collect();
-        if after.iter().any(|(_, s)| !inside_tile(s)) {
-            return Some("Group move would cross a tile boundary; nothing moved".into());
+        let mut touched=HashSet::new();
+        for ((key,old),(_,new)) in before.iter().zip(&after) {
+            match Self::edit_tiles(world,*key,old,new){Ok(t)=>touched.extend(t),Err(e)=>return Some(e)}
         }
         if after == before { return Some(self.describe(world)); }
         if self.drag_offset.is_some() {
@@ -159,6 +164,7 @@ impl SplineEditor {
             else { edits.changed.insert(key, s); }
             edits.dirty_tiles.insert(key.0);
         }
+        for tile in touched {edits.dirty_tiles.insert(tile);edits.terrain_cache.remove(&tile);}
         edits.dirty = true; drop(edits);
         Some(self.describe(world))
     }
@@ -514,15 +520,16 @@ impl SplineEditor {
     }
 
     fn set(&mut self, world: &World, key: Key, s: MapSpline) -> Option<String> {
-        if !s.deleted && !inside_tile(&s) { return Some("This edit crosses the tile boundary. G connects ends; Shift+G creates a separate road".into()); }
         let old = world.spline_edits.lock().current(key)?;
         if old == s { return Some(self.describe(world)); }
+        let touched=match Self::edit_tiles(world,key,&old,&s){Ok(t)=>t,Err(e)=>return Some(e)};
         if self.drag_offset.is_none() { self.remember(vec![(key, old)]); }
+        else if let Some(before)=self.drag_before.take(){self.remember(vec![before]);}
         let mut e = world.spline_edits.lock();
         if e.added.contains_key(&key) { e.added.insert(key, s); }
         else { e.changed.insert(key, s); }
         e.dirty = true;
-        e.dirty_tiles.insert(key.0);
+        for tile in touched {e.dirty_tiles.insert(tile);e.terrain_cache.remove(&tile);}
         drop(e);
         Some(self.describe(world))
     }
@@ -530,7 +537,7 @@ impl SplineEditor {
     pub fn apply_height_profile(&mut self, world: &World, key: Key, values: [f64;5]) -> Result<(),String> {
         let s = world.spline_edits.lock().current(key).ok_or("Road no longer exists")?;
         let changed = crate::construction_tools::height_profile(&s,values)?;
-        if !inside_tile(&changed) {return Err("Road crosses a tile boundary; split it first".into());}
+        Self::edit_tiles(world,key,&s,&changed)?;
         self.finish_drag(); self.set(world,key,changed).ok_or("Could not update road")?;
         Ok(())
     }
@@ -648,6 +655,9 @@ impl SplineEditor {
         let mut edits = world.spline_edits.lock();
         for key in terrain_keys { edits.terrain_cache.remove(&key); edits.dirty_tiles.insert(key); }
         for (key, s) in before.splines {
+            for shape in edits.current(key).into_iter().chain(std::iter::once(s.clone())).filter(valid_spline) {
+                for (tile,_) in omsi_geometry::spline_dimensions::tile_sections(key.0,&shape){edits.dirty_tiles.insert(tile);edits.terrain_cache.remove(&tile);}
+            }
             if edits.added.contains_key(&key) { edits.added.insert(key, s); }
             else { edits.changed.insert(key, s); }
             edits.dirty_tiles.insert(key.0);
@@ -1097,9 +1107,9 @@ impl SplineEditor {
         self.cancel_connection();
         self.finish_drag();
         let Some(mut at) = at else { return "Point at the terrain and press Shift+G".into() };
-        if snap_to_ground { at.z = world.editor_terrain_height(at.x, at.y).unwrap_or(at.z) + 0.05; }
+        if let Some(v)=self.dimensions {at.z=v[3];} else if snap_to_ground { at.z = world.editor_terrain_height(at.x, at.y).unwrap_or(at.z) + 0.05; }
         if let Some((start, file)) = self.start.clone() {
-            let msg = self.add(world, &file, start, at, 0.0);
+            let msg = if let Some(values)=self.dimensions {self.add_dimensions(world,&file,start,at,values)} else {self.add(world, &file, start, at, 0.0)};
             if msg.starts_with("New spline") { self.start = None; }
             return msg;
         }
@@ -1114,6 +1124,7 @@ impl SplineEditor {
         self.catalog_file = Some(file); self.selected = None;
     }
     pub fn generation_started(&self) -> bool { self.start.is_some() }
+    pub fn placement_finished(&self) -> bool { self.start.is_none() && self.dimensions.is_none() }
     pub fn cancel_generation(&mut self) { self.start = None; }
 
     pub(crate) fn junction_plan(&self,world:&World,key:Key,id:i64,port:crate::junction_connections::Port,def:&omsi_scenery::Spline)->Result<MapSpline,String>{
@@ -1418,23 +1429,11 @@ impl SplineEditor {
             return self.move_group(world, ground + offset - curve(key.0, &current).point_at(0.0));
         }
         let mut s = world.spline_edits.lock().current(key)?;
-        let before_move = s.clone();
         let at = ground + offset;
         let origin = origin(key.0);
         s.pos = [at.x - origin.x, at.y - origin.y, at.z];
-        if s != before_move && inside_tile(&s) {
-            if let Some(before) = self.drag_before.take() { self.remember(vec![before]); }
-        }
         self.set(world, key, s)
     }
-}
-
-fn origin(tile: (i32, i32)) -> DVec2 {
-    DVec2::new(tile.0 as f64, tile.1 as f64) * omsi_map::tile_size()
-}
-
-fn curve(tile: (i32, i32), s: &MapSpline) -> SplineCurve {
-    SplineCurve::from_map(s, origin(tile))
 }
 
 const ROAD_CLEARANCE: f64 = 0.05;
@@ -1636,49 +1635,6 @@ fn tile_at(p: DVec3) -> (i32, i32) {
     ((p.x / size).floor() as i32, (p.y / size).floor() as i32)
 }
 
-/// Exact grid crossings of a straight line, including negative tile coordinates.
-fn straight_tile_cuts(start: DVec3, end: DVec3) -> Vec<f64> {
-    let size = omsi_map::tile_size();
-    let mut cuts = vec![0.0, 1.0];
-    for (a, b) in [(start.x, end.x), (start.y, end.y)] {
-        if (b - a).abs() < 1e-9 { continue; }
-        let lo = (a.min(b) / size).floor() as i32;
-        let hi = (a.max(b) / size).floor() as i32;
-        for n in lo + 1..=hi {
-            let t = (n as f64 * size - a) / (b - a);
-            if t > 1e-9 && t < 1.0 - 1e-9 { cuts.push(t); }
-        }
-    }
-    cuts.sort_by(f64::total_cmp);
-    cuts.dedup_by(|a, b| (*a - *b).abs() < 1e-9);
-    cuts
-}
-
-fn nearest_station(c: &SplineCurve, at: DVec3) -> f64 {
-    let count = (c.length / 2.0).ceil().clamp(1.0, 4096.0) as usize;
-    let step = c.length / count as f64;
-    let distance = |d| (c.point_at(d).truncate() - at.truncate()).length_squared();
-    let mut best = 0.0;
-    for i in 1..=count {
-        let d = i as f64 * step;
-        if distance(d) < distance(best) { best = d; }
-    }
-    let (mut lo, mut hi) = ((best - step).max(0.0), (best + step).min(c.length));
-    for _ in 0..32 {
-        let a = lo + (hi - lo) / 3.0;
-        let b = hi - (hi - lo) / 3.0;
-        if distance(a) < distance(b) { hi = b; } else { lo = a; }
-    }
-    let middle = (lo + hi) * 0.5;
-    [0.0, middle, c.length].into_iter().min_by(|a, b| distance(*a).total_cmp(&distance(*b))).unwrap_or(0.0)
-}
-
-// The renderer and handles must share one geometry path (including skew and mirror).
-fn physical_edges(def: &omsi_scenery::Spline, mirror: bool) -> [(f64, f64); 2] {
-    let (left, right) = profile_edges(def);
-    if mirror { [(-right.0, right.1), (-left.0, left.1)] } else { [left, right] }
-}
-
 fn edge_points(tile: (i32, i32), s: &MapSpline, def: &omsi_scenery::Spline, end: End) -> [DVec3; 2] {
     let station = if end == End::Start { 0.0 } else { s.length };
     let c = curve(tile, s);
@@ -1695,43 +1651,6 @@ fn edge_markers(world: &World, tile: (i32, i32), s: &MapSpline, steps: usize) ->
     let edges = physical_edges(&ty.def, s.mirror);
     (0..=steps).flat_map(|i| edges.map(|(x, z)| omsi_geometry::spline_profile_point(
         &ty.def, &c, false, s.length * i as f64 / steps as f64, x, z))).collect()
-}
-
-/// Keep profiles and materials intact; a width taper may only join compatible
-/// cross-sections. Never pretend that a sidewalk, lane merge or curb was invented.
-fn compatible_sections(a: &omsi_scenery::Spline, am: bool, b: &omsi_scenery::Spline, bm: bool, reverse: bool) -> bool {
-    let ae = physical_edges(a, am);
-    let be = physical_edges(b, bm);
-    let aw = ae[1].0 - ae[0].0;
-    let bw = be[1].0 - be[0].0;
-    if aw <= 0.001 || bw <= 0.001 { return false; }
-    // Compare every surface vertex with the target surface at its normalised width.
-    // The two directions detect extra target curbs/borders too.
-    let check = |from: &omsi_scenery::Spline, fm: bool, to: &omsi_scenery::Spline, tm: bool,
-                 fe: [(f64, f64); 2], te: [(f64, f64); 2]| {
-        from.profiles.iter().filter(|p| p.points.len() >= 2).flat_map(|p| &p.points).all(|p| {
-            let x = p.x as f64 * if fm { -1.0 } else { 1.0 };
-            let t = (x - fe[0].0) / (fe[1].0 - fe[0].0);
-            let u = if reverse { 1.0 - t } else { t };
-            let tx = te[0].0 + u * (te[1].0 - te[0].0);
-            let residual = p.z as f64 - (fe[0].1 * (1.0 - t) + fe[1].1 * t);
-            to.profiles.iter().flat_map(|p| p.points.windows(2)).any(|pair| {
-                let x0 = pair[0].x as f64 * if tm { -1.0 } else { 1.0 };
-                let x1 = pair[1].x as f64 * if tm { -1.0 } else { 1.0 };
-                if tx < x0.min(x1) - 1e-4 || tx > x0.max(x1) + 1e-4 { return false; }
-                let target_base = te[0].1 * (1.0 - u) + te[1].1 * u;
-                if (x1 - x0).abs() < 1e-6 {
-                    let z = residual + target_base;
-                    return z >= (pair[0].z.min(pair[1].z) as f64) - 0.005
-                        && z <= (pair[0].z.max(pair[1].z) as f64) + 0.005;
-                }
-                let f = ((tx - x0) / (x1 - x0)).clamp(0.0, 1.0);
-                let z = pair[0].z as f64 * (1.0 - f) + pair[1].z as f64 * f;
-                (z - target_base - residual).abs() <= 0.005
-            })
-        })
-    };
-    check(a, am, b, bm, ae, be) && check(b, bm, a, am, be, ae)
 }
 
 fn align_connection_edges(source_tile: (i32, i32), original: &MapSpline, source_def: &omsi_scenery::Spline,
@@ -1822,23 +1741,6 @@ fn align_connection_surface(source_tile:(i32,i32),original:&MapSpline,source_def
         }
     }
     Ok(())
-}
-
-fn profile_edges(s: &omsi_scenery::Spline) -> ((f64, f64), (f64, f64)) {
-    let mut left = (f64::INFINITY, 0.0);
-    let mut right = (f64::NEG_INFINITY, 0.0);
-    for p in s.profiles.iter().flat_map(|p| &p.points) {
-        if (p.x as f64) < left.0 { left = (p.x as f64, p.z as f64); }
-        if (p.x as f64) > right.0 { right = (p.x as f64, p.z as f64); }
-    }
-    if !left.0.is_finite() {
-        for p in &s.paths {
-            let lo=p.start[0] as f64-p.width as f64*0.5;let hi=p.start[0] as f64+p.width as f64*0.5;
-            if lo<left.0{left=(lo,p.start[2] as f64);}if hi>right.0{right=(hi,p.start[2] as f64);}
-        }
-        if !left.0.is_finite(){return ((0.0,0.0),(0.0,0.0));}
-    }
-    (left, right)
 }
 
 fn arc_to(s: &MapSpline, tile: (i32, i32), target: DVec3) -> Result<MapSpline, String> {
@@ -2127,78 +2029,6 @@ fn connection_tiles(source: Key, target: Key, fitted: &MapSpline) -> HashSet<(i3
     tiles
 }
 
-/// Monotone Hermite slopes prevent height overshoot between terrain samples.
-fn terrain_parts(s: &MapSpline, heights: &[f64]) -> Vec<MapSpline> {
-    let count = heights.len() - 1;
-    let step = s.length / count as f64;
-    let slopes: Vec<_> = heights.windows(2).map(|h| (h[1] - h[0]) / step).collect();
-    let mut tangent = vec![slopes[0]];
-    for pair in slopes.windows(2) {
-        tangent.push(if pair[0] * pair[1] <= 0.0 { 0.0 } else { 2.0 * pair[0] * pair[1] / (pair[0] + pair[1]) });
-    }
-    tangent.push(*slopes.last().unwrap());
-    let c = curve((0, 0), s);
-    (0..count).map(|i| {
-        let distance = i as f64 * step;
-        let p = c.point_at(distance);
-        let mut part = s.clone();
-        part.profile_transitions = sliced_transitions(s, distance, step);
-        part.pos = [p.x, p.y, heights[i]];
-        part.heading = c.heading_at(distance);
-        part.length = step;
-        part.grad_start = tangent[i] * 100.0;
-        part.grad_end = tangent[i + 1] * 100.0;
-        part.delta_h = Some(heights[i + 1] - heights[i]);
-        part.is_h = true;
-        part.cant_start = s.cant_start + (s.cant_end - s.cant_start) * i as f64 / count as f64;
-        part.cant_end = s.cant_start + (s.cant_end - s.cant_start) * (i + 1) as f64 / count as f64;
-        part.skew_start = s.skew_start + (s.skew_end - s.skew_start) * i as f64 / count as f64;
-        part.skew_end = s.skew_start + (s.skew_end - s.skew_start) * (i + 1) as f64 / count as f64;
-        part.tex_offset = s.tex_offset + distance;
-        part.map_chain_offset = Some(part.tex_offset);
-        part
-    }).collect()
-}
-
-fn sliced_transitions(s: &MapSpline, from: f64, length: f64) -> [Option<omsi_map::ProfileTransition>; 2] {
-    s.profile_transitions.map(|t| t.and_then(|mut t| {
-        t.station -= from;
-        (t.station + t.span > 0.0 && t.station - t.span < length).then_some(t)
-    }))
-}
-
-fn curve_part(s: &MapSpline, from: f64, length: f64) -> MapSpline {
-    let c = curve((0, 0), s);
-    let p = c.point_at(from);
-    let mut part = s.clone();
-    part.profile_transitions = sliced_transitions(s, from, length);
-    part.pos = [p.x, p.y, p.z];
-    part.heading = c.heading_at(from);
-    part.length = length;
-    part.grad_start = c.slope_at(from) * 100.0;
-    part.grad_end = c.slope_at(from + length) * 100.0;
-    part.delta_h = Some(c.height_at(from + length) - p.z);
-    part.is_h = true;
-    part.cant_start = c.cant_at(from);
-    part.cant_end = c.cant_at(from + length);
-    part.skew_start = s.skew_start + (s.skew_end - s.skew_start) * from / s.length;
-    part.skew_end = s.skew_start + (s.skew_end - s.skew_start) * (from + length) / s.length;
-    part.tex_offset = s.tex_offset + from;
-    part.map_chain_offset = Some(part.tex_offset);
-    part
-}
-
-fn between(file: &str, id: i64, tile: (i32, i32), start: DVec3, end: DVec3, offset: f64) -> MapSpline {
-    let d = end - start;
-    let length = d.truncate().length();
-    let grade = d.z / length.max(0.0001) * 100.0;
-    let o = origin(tile);
-    MapSpline { file: file.into(), id, pos: [start.x - o.x, start.y - o.y, start.z],
-        heading: d.x.atan2(d.y).to_degrees().rem_euclid(360.0), length,
-        grad_start: grade, grad_end: grade, delta_h: Some(d.z), is_h: true,
-        tex_offset: offset, map_chain_offset: Some(offset), ..Default::default() }
-}
-
 // Saved tombstones are deliberately excluded from collect_editor_splines. Resolve
 // a cache miss from the source tile, while always preferring current in-memory edits.
 fn deleted_spline_link_in_world(world: &World, owner: (i32,i32), id: i64) -> bool {
@@ -2313,22 +2143,6 @@ fn shaped_group(before: &[(Key,MapSpline)], action: &Action) -> Result<Vec<(Key,
         after.push((*key,part));
     }
     Ok(after)
-}
-
-fn valid_spline(s: &MapSpline) -> bool {
-    if s.profile_transitions.iter().flatten().any(|t| !t.valid()) { return false; }
-    if !s.length.is_finite() || s.length <= 0.0 || !s.heading.is_finite()
-        || !s.pos.iter().all(|n| n.is_finite()) || !s.radius.is_finite()
-        || !s.grad_start.is_finite() || !s.grad_end.is_finite()
-        || s.delta_h.is_some_and(|h| !h.is_finite()) { return false; }
-    [s.cant_start, s.cant_end, s.skew_start, s.skew_end, s.tex_offset].iter().all(|n| n.is_finite())
-}
-
-fn inside_tile(s: &MapSpline) -> bool {
-    if !valid_spline(s) { return false; }
-    let c = SplineCurve::from_map(s, DVec2::ZERO);
-    let size = omsi_map::tile_size();
-    (0..=128).all(|i| { let p = c.point_at(s.length * i as f64 / 128.0); p.x >= -1e-6 && p.y >= -1e-6 && p.x <= size + 1e-6 && p.y <= size + 1e-6 })
 }
 
 fn number(v: f64) -> String { format!("{v:.12}") }

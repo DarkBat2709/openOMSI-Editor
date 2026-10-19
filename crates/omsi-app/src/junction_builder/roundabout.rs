@@ -1,234 +1,91 @@
-//! One shared circulating lane, radial two-way approaches and a raised central island.
-//! Geometry uses metres in the OMSI XY plane. Existing junction export/placement is reused.
-use super::*;
-
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-pub struct Roundabout {
-    pub island_radius: f64,
-    pub road_width: f64,
-    pub island_height: f64,
-    #[serde(default)] pub outer_line: bool,
-    #[serde(default)] pub dashed_entries: bool,
-    #[serde(default="default_line_width")] pub line_width: f64,
-    #[serde(default="default_line_insets")] pub line_insets: [[f64;2];4],
-}
-fn default_line_width()->f64 {0.12}
-fn default_line_insets()->[[f64;2];4] {[[0.25;2];4]}
-impl Default for Roundabout {
-    fn default() -> Self {Self {island_radius:12.0,road_width:6.0,island_height:0.15,outer_line:false,dashed_entries:false,line_width:default_line_width(),line_insets:default_line_insets()}}
-}
-fn polar(r:f64,a:f64)->DVec3 {DVec3::new(r*a.sin(),r*a.cos(),0.0)}
-fn delta(a:f64,b:f64)->f64 {(a-b+std::f64::consts::PI).rem_euclid(std::f64::consts::TAU)-std::f64::consts::PI}
-
-/// Boundary of the union of the circular road and non-overlapping straight approaches.
-fn flare(outer:f64,half:f64)->(f64,f64) {
-    // A short widened mouth gives the entry curve room, without changing the port.
-    let slope=2.5/8.0;
-    (slope,half+slope*(outer+8.0))
-}
-fn mouth_angle(outer:f64,half:f64)->f64 {
-    let (k,c)=flare(outer,half);
-    (c/(outer*(1.0+k*k).sqrt())).clamp(-1.0,1.0).asin()-k.atan()
-}
-fn outer_radius(p:&Project,angle:f64)->f64 {
-    let r=p.roundabout.as_ref().unwrap();let outer=r.island_radius+r.road_width;
-    p.arms.iter().filter(|a|a.enabled).fold(outer,|radius,a| {
-        let d=delta(angle,a.angle.to_radians());
-        if d.cos()<=0.0 {return radius;}
-        let straight=(a.length/d.cos()).min(a.width/2.0/d.sin().abs().max(1e-12));
-        let (k,c)=flare(outer,a.width/2.0);
-        let mouth=((outer+8.0)/d.cos()).min(c/(d.sin().abs()+k*d.cos()));
-        radius.max(straight).max(mouth)
-    })
-}
-fn on_road(p:&Project,point:DVec3)->bool {
-    let r=p.roundabout.as_ref().unwrap();let radius=point.truncate().length();
-    radius>=r.island_radius-1e-6 && radius<=outer_radius(p,point.x.atan2(point.y))+1e-6
-}
-
-// Open boundary strips follow the actual arm flare and circle outline. Port caps
-// are excluded entirely, so no stripe can close an entrance.
-fn edge_strips(p:&Project,outline:&[DVec2])->Vec<[DVec3;4]> {
-    let r=p.roundabout.as_ref().unwrap();let n=outline.len();
-    let cap=|a:DVec2,b:DVec2|p.arms.iter().any(|arm| {
-        if !arm.enabled {return false;}
-        let d=direction(arm.angle);let q=right(d);
-        [a,b].iter().all(|v|(v.dot(d)-arm.length).abs()<1e-5 && v.dot(q).abs()<=arm.width/2.0+1e-5)
-    });
-    let open=(0..n).map(|i|!cap(outline[i],outline[(i+1)%n])).collect::<Vec<_>>();
-    let inset=|v:DVec2| {
-        let outer=r.island_radius+r.road_width;
-        let mut value=0.25;
-        let mut best=0.0;
-        for (i,arm) in p.arms.iter().enumerate().filter(|(_,a)|a.enabled) {
-            let d=direction(arm.angle);let along=v.dot(d);
-            let t=((along-outer)/(arm.length-outer)).clamp(0.0,1.0);
-            if t>best {best=t;let side=if v.dot(right(d))>=0.0 {0}else{1};
-                value=0.25+(r.line_insets[i][side]-0.25)*t;
-            }
-        }
-        value
-    };
-    let vertex=|i:usize,dist:f64| {
-        let before=(i+n-1)%n;let after=(i+1)%n;
-        let a=right((outline[i]-outline[before]).normalize_or_zero());
-        let b=right((outline[after]-outline[i]).normalize_or_zero());
-        let normal=if !open[before] {b} else if !open[i] {a} else {
-            let bisector=(a+b).normalize_or_zero();bisector/bisector.dot(b).max(0.25)
-        };
-        (outline[i]+normal*dist).extend(0.015)
-    };
-    (0..n).filter(|&i|open[i]).map(|i| {
-        let j=(i+1)%n;let a=inset(outline[i]);let b=inset(outline[j]);let half=r.line_width/2.0;
-        [vertex(i,a-half),vertex(i,a+half),vertex(j,b+half),vertex(j,b-half)]
-    }).collect()
-}
-
-fn entrance_dashes(p:&Project)->Vec<[DVec3;4]> {
-    let r=p.roundabout.as_ref().unwrap();let radius=r.island_radius+r.road_width-0.25;
-    let half=r.line_width/2.0;let h=DVec3::Z*0.017;let mut result=Vec::new();
-    for arm in p.arms.iter().filter(|a|a.enabled) {
-        let opening=mouth_angle(r.island_radius+r.road_width,arm.width/2.0);
-        let length=2.0*opening*radius;
-        // Equal one-metre strokes and gaps, centred on the opening.
-        let strokes=((length+1.0)/2.0).floor().max(1.0) as usize;
-        let start=(length-(strokes as f64*2.0-1.0))/2.0;
-        for i in 0..strokes {for j in 0..4 {
-            let a=arm.angle.to_radians()-opening+(start+2.0*i as f64+j as f64/4.0)/radius;
-            let b=a+0.25/radius;
-            result.push([polar(radius-half,a)+h,polar(radius+half,a)+h,polar(radius+half,b)+h,polar(radius-half,b)+h]);
-        }}
-    }
-    result
-}
-
-pub(super) fn build(p:&Project)->Result<Built,String> {
-    let r=p.roundabout.as_ref().unwrap();
-    for (f,v) in [(Field::IslandRadius,r.island_radius),(Field::RingWidth,r.road_width),(Field::IslandHeight,r.island_height)] {
-        let (lo,hi)=f.limits();if !v.is_finite() || !(lo..=hi).contains(&v) {return Err(format!("Invalid value: {}",f.title()));}
-    }
-    if !r.line_width.is_finite() || !(0.05..=0.5).contains(&r.line_width)
-        || r.line_insets.iter().flatten().any(|v|!v.is_finite() || !(0.05..=3.0).contains(v)) {
-        return Err("Invalid edge line dimensions".into());
-    }
-    if r.outer_line && p.arms.iter().enumerate().any(|(i,a)|a.enabled && r.line_insets[i].iter().any(|v|*v<r.line_width/2.0 || *v+r.line_width/2.0>=a.width/2.0)) {
-        return Err("Edge line must stay inside its arm".into());
-    }
-    let outer=r.island_radius+r.road_width;let mid=r.island_radius+r.road_width/2.0;
-    let sign=if p.left_hand {-1.0} else {1.0};
-    let arms:Vec<_>=p.arms.iter().filter(|a|a.enabled).collect();
-    for a in &arms {
-        if a.bend.abs()>1e-6 || a.sidewalk.abs()>1e-6 {return Err("Roundabout entrances must be straight and without sidewalks".into());}
-        if a.length<outer+8.0 {return Err(format!("Entrance length must be at least {:.1} m from the centre",outer+8.0));}
-        if a.width>r.road_width*2.0 || a.width/2.0>=outer*0.65 {return Err("Entrance too wide: reduce its width or enlarge the ring".into());}
-    }
-    for (i,a) in arms.iter().enumerate() {for b in arms.iter().skip(i+1) {
-        let separation=delta(a.angle.to_radians(),b.angle.to_radians()).abs();
-        let need=mouth_angle(outer,a.width/2.0)+mouth_angle(outer,b.width/2.0)+0.15;
-        if separation<need {return Err("Roundabout entrances overlap: change angles or enlarge the ring".into());}
-    }}
-    let mut mesh=Mesh {version:4,transform:Mat4::IDENTITY,has_transform:true,materials:vec![
-        Material {texture:p.road_texture.clone(),diffuse:if p.road_texture.is_empty(){[0.22,0.23,0.24,1.0]}else{[1.0;4]},..Default::default()},
-        Material {texture:p.walk_texture.clone(),diffuse:if p.walk_texture.is_empty(){[0.38,0.47,0.24,1.0]}else{[1.0;4]},..Default::default()},
-        Material {diffuse:[0.96,0.94,0.84,1.0],..Default::default()},
-    ],..Default::default()};
-    // Include every entrance corner/intersection angle in the mesh. This prevents
-    // triangles shaving off the ends of roads or leaving cracks beside the circle.
-    let mut angles:Vec<_>=(0..360).map(|i|i as f64*std::f64::consts::TAU/360.0).collect();
-    for a in &arms {for offset in [mouth_angle(outer,a.width/2.0),(a.width/2.0/(outer+8.0)).atan(),(a.width/2.0/a.length).atan()] {for side in [-1.0,1.0] {
-        angles.push((a.angle.to_radians()+side*offset).rem_euclid(std::f64::consts::TAU));
-    }}}
-    angles.sort_by(f64::total_cmp);angles.dedup_by(|a,b|(*a-*b).abs()<1e-9);angles.push(std::f64::consts::TAU);
-    let outline:Vec<_>=angles[..angles.len()-1].iter().map(|&a|polar(outer_radius(p,a),a).truncate()).collect();
-    if omsi_geometry::outline_crosses_itself(&outline) {return Err("Roundabout boundary intersects itself".into());}
-    for pair in angles.windows(2) {
-        let (a,b)=(pair[0],pair[1]);
-        let start=mesh.vertices.len();
-        quad(&mut mesh,polar(r.island_radius,a),polar(outer_radius(p,a),a),polar(outer_radius(p,b),b),polar(r.island_radius,b),0,p.texture_metres);
-        if let Some(surface)=&p.road_surface {
-            // Polar UVs follow the ring; the seam is confined to one radial edge.
-            for v in &mut mesh.vertices[start..] {
-                let xy=DVec2::new(v.position.x as f64,v.position.z as f64);
-                let mut theta=xy.x.atan2(xy.y).rem_euclid(std::f64::consts::TAU);
-                if (theta-a).abs()>(theta-b).abs() {theta=b;}else{theta=a;}
-                // At the closing seam use 2π rather than wrapping back to zero.
-                if b>6.28 && xy.x.abs()<1e-4 && xy.y>0.0 {theta=b;}
-                v.uv=Vec2::new(((xy.length()-r.island_radius)/surface.width_metres) as f32,
-                    (theta*mid/p.texture_metres*if surface.reverse_v{-1.0}else{1.0})as f32);
-            }
-        }
-        let z=DVec3::Z*r.island_height;
-        triangle(&mut mesh,z,polar(r.island_radius,a)+z,polar(r.island_radius,b)+z,1,p.texture_metres);
-        quad(&mut mesh,polar(r.island_radius,a),polar(r.island_radius,b),polar(r.island_radius,b)+z,polar(r.island_radius,a)+z,1,p.texture_metres);
-        if p.markings {
-            let h=DVec3::Z*0.012;
-            quad(&mut mesh,polar(r.island_radius+0.18,a)+h,polar(r.island_radius+0.30,a)+h,
-                polar(r.island_radius+0.30,b)+h,polar(r.island_radius+0.18,b)+h,2,1.0);
-        }
-    }
-    if r.outer_line {for [a,b,c,d] in edge_strips(p,&outline) {quad(&mut mesh,a,b,c,d,2,1.0);}}
-    if r.dashed_entries {for [a,b,c,d] in entrance_dashes(p) {quad(&mut mesh,a,b,c,d,2,1.0);}}
-    // Connections use separate shared ring nodes: every entrance can reach every exit,
-    // without duplicating all origin/destination routes or crossing the island.
-    let mut entries=Vec::new();let mut exits=Vec::new();let mut nodes=Vec::new();
-    for a in &arms {
-        let angle=a.angle.to_radians();
-        let d=direction(a.angle).extend(0.0);let side=right(direction(a.angle)).extend(0.0);
-        let offset=a.width/4.0;let radius=(r.road_width*1.5).clamp(6.0,15.0);
-        // Circular fillets are tangent to both the approach lane and the ring.
-        // Their centres are exactly mid+radius from the roundabout centre.
-        let join=((mid+radius).powi(2)-(offset+radius).powi(2)).sqrt();
-        if !join.is_finite() || join>a.length {return Err("Entrance too short for a smooth entry curve".into());}
-        let spread=((offset+radius)/(mid+radius)).asin();
-        let entry=(angle-sign*spread).rem_euclid(std::f64::consts::TAU);
-        let exit=(angle+sign*spread).rem_euclid(std::f64::consts::TAU);
-        nodes.extend([entry,exit]);
-        let approach=|side_sign:f64,anchor:f64| {
-            let centre=d*join-side*(side_sign*(offset+radius));
-            let start=d*join-side*(side_sign*offset);
-            let end=polar(mid,anchor);let v0=start-centre;let v1=end-centre;
-            let turn=v0.truncate().perp_dot(v1.truncate()).atan2(v0.dot(v1));
-            let n=(radius*turn.abs()/0.5).ceil().max(4.0)as usize;
-            let mut pts=vec![d*a.length-side*(side_sign*offset)];
-            pts.extend((0..=n).map(|i| {
-                let (sn,cs)=(turn*i as f64/n as f64).sin_cos();
-                centre+DVec3::new(v0.x*cs-v0.y*sn,v0.x*sn+v0.y*cs,0.0)
-            }));
-            *pts.last_mut().unwrap()=end;pts
-        };
-        let incoming=approach(sign,entry);
-        let mut outgoing=approach(-sign,exit);outgoing.reverse();
-        // Check the lane corridor, not just its centre line, against the raised island
-        // and the outer road edge. Invalid settings cannot be exported.
-        let width=(a.width/2.0).min(r.road_width*0.8);
-        for pts in [&incoming,&outgoing] {for (i,&point) in pts.iter().enumerate() {
-            let tangent=pts[(i+1).min(pts.len()-1)]-pts[i.saturating_sub(1)];
-            let lateral=right(tangent.truncate().normalize_or_zero()).extend(0.0)*width*0.46;
-            if !on_road(p,point) || !on_road(p,point+lateral) || !on_road(p,point-lateral) {
-                return Err("Entry curve leaves the road: enlarge the ring width or reduce entrance width".into());
-            }
-        }}
-        entries.push((incoming,width,1));exits.push((outgoing,width,if p.left_hand {2}else{3}));
-    }
-    nodes.sort_by(f64::total_cmp);
-    if sign>0.0 {nodes.reverse();}
-    let mut paths=Vec::new();
-    for i in 0..nodes.len() {
-        let start=nodes[i];let next=nodes[(i+1)%nodes.len()];
-        let arc=if sign>0.0 {(start-next).rem_euclid(std::f64::consts::TAU)}else{(next-start).rem_euclid(std::f64::consts::TAU)};
-        let n=(arc*mid/0.75).ceil().max(2.0)as usize;
-        let mut pts:Vec<_>=(0..=n).map(|j|polar(mid,start-sign*arc*j as f64/n as f64)).collect();
-        // Exactly identical node coordinates also survive the six-decimal SCO export.
-        pts[0]=polar(mid,start);*pts.last_mut().unwrap()=polar(mid,next);
-        paths.push((pts,r.road_width*0.8,1));
-    }
-    paths.extend(entries);paths.extend(exits);
-    Ok(Built {mesh,paths,outline})
-}
+pub use omsi_geometry::roundabout::{Roundabout,build};
+#[cfg(test)]
+use {super::*,omsi_geometry::roundabout::{on_road,edge_strips,entrance_dashes,delta,mouth_angle}};
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn lane_controls_roundtrip_undo_and_old_project_defaults() {
+        let mut w=Window::new_roundabout(false);let before=w.project.clone();
+        w.set(Field::RingLanes,3.0);assert_eq!(w.project.roundabout.as_ref().unwrap().lanes,3);assert_eq!(w.value(Field::RingWidth),18.0);
+        w.set(Field::ApproachLanes,2.0);assert_eq!(w.value(Field::Width),14.0);assert_eq!(w.project.roundabout.as_ref().unwrap().approach_lanes,[2,1,1,1]);
+        let value=serde_json::to_value(&w.project).unwrap();let restored:Project=serde_json::from_value(value).unwrap();assert_eq!(restored,w.project);
+        w.command(Command::Undo);w.command(Command::Undo);assert_eq!(w.project,before);
+        let mut json=serde_json::to_value(&before).unwrap();let obj=json["roundabout"].as_object_mut().unwrap();obj.remove("lanes");obj.remove("approach_lanes");obj.remove("lane_lines");
+        let old:Project=serde_json::from_value(json).unwrap();assert_eq!(old,before);
+        w.edit(Field::RingLanes);w.input.as_mut().unwrap().text="2.5".into();w.input.as_mut().unwrap().replace=false;assert!(!w.commit());assert_eq!(w.project,before);
+    }
+    #[test]
+    fn workflow_switch_commits_valid_input_and_preserves_invalid_input() {
+        let mut w=Window::new_roundabout(false);
+        w.edit(Field::IslandRadius);w.input.as_mut().unwrap().text="14".into();w.input.as_mut().unwrap().replace=false;
+        w.command(Command::RoundaboutStep(1));assert_eq!(w.roundabout_step,1);assert_eq!(w.value(Field::IslandRadius),14.0);
+        w.edit(Field::Width);w.input.as_mut().unwrap().text="invalid".into();w.input.as_mut().unwrap().replace=false;
+        w.command(Command::RoundaboutStep(2));assert_eq!(w.roundabout_step,1);assert!(w.input.is_some());
+        w.input=None;let before=serde_json::to_string(&w.project).unwrap();
+        for step in [2,3,0,1] {w.command(Command::RoundaboutStep(step));assert_eq!(w.roundabout_step,step);}
+        assert_eq!(before,serde_json::to_string(&w.project).unwrap());
+    }
+    #[test]
+    #[ignore = "requires graphics adapter; writes roundabout UI screenshots"]
+    fn render_splitter_ui() {
+        let instance=crate::graphics_instance();let mut renderer=pollster::block_on(omsi_render::Renderer::new_with(&instance,None,Some(wgpu::TextureFormat::Rgba8UnormSrgb),omsi_render::RenderOptions{msaa:1,ssao:false,fxaa:false,shadow_size:1024,..Default::default()})).unwrap();
+        let camera=omsi_render::Camera{position:DVec3::new(0.0,0.0,10.0),yaw:0.0,pitch:0.0,roll:0.0,fov_deg:60.0,near:0.1,far:1000.0};
+        for lang in ["DEU","ENG"] {crate::ui_language(lang);for (width,height) in [(1280,800),(800,600)] {
+            let mut w=Window::new_roundabout(false);w.set(Field::RingLanes,2.0);w.set(Field::ApproachLanes,2.0);
+            let mut scene=renderer.new_scene();let mut ui=crate::ui::Ui::new().unwrap();
+            ui.draw_junction_window(&renderer,&mut scene,Some(&mut w),Path::new("/tmp"),1.0,[0.0,0.0,width as f32,height as f32],(-1.0,-1.0));
+            for step in [1,3,0,2] {
+                let r=w.rects.iter().find(|(_,c)|matches!(c,Command::RoundaboutStep(n) if *n==step)).unwrap().0;
+                for cursor in [(r[0]+1.0,r[1]+1.0),((r[0]+r[2])*0.5,(r[1]+r[3])*0.5),(r[2]-1.0,r[3]-1.0)] {
+                    assert!(!ui.editor_window_drag_press(cursor),"island button must not start window dragging");
+                    assert!(matches!(w.hit(cursor),Some(Command::RoundaboutStep(n)) if n==step));
+                }
+                w.command(w.hit(((r[0]+r[2])*0.5,(r[1]+r[3])*0.5)).unwrap());assert_eq!(w.roundabout_step,step);assert_eq!(w.splitter_settings,step==2);
+                scene.overlays.clear();ui.draw_junction_window(&renderer,&mut scene,Some(&mut w),Path::new("/tmp"),1.0,[0.0,0.0,width as f32,height as f32],(-1.0,-1.0));
+                let rgba=renderer.render_to_image(&mut scene,width,height,&camera,&omsi_render::Lighting{shadows:false,..Default::default()}).unwrap();
+                image::save_buffer(format!("/tmp/roundabout-step-{step}-{lang}-{width}.png"),&rgba,width,height,image::ColorType::Rgba8).unwrap();
+            }
+            let r=w.rects.iter().find(|(_,c)|matches!(c,Command::Splitter)).unwrap().0;let cursor=((r[0]+r[2])*0.5,(r[1]+r[3])*0.5);
+            assert!(!ui.editor_window_drag_press(cursor));w.command(w.hit(cursor).unwrap());assert!(w.project.roundabout.as_ref().unwrap().splitters[0].enabled);
+            scene.overlays.clear();ui.draw_junction_window(&renderer,&mut scene,Some(&mut w),Path::new("/tmp"),1.0,[0.0,0.0,width as f32,height as f32],(-1.0,-1.0));
+            let r=w.rects.iter().find(|(_,c)|matches!(c,Command::SplitterTemplate)).unwrap().0;let cursor=((r[0]+r[2])*0.5,(r[1]+r[3])*0.5);
+            assert!(!ui.editor_window_drag_press(cursor));w.command(w.hit(cursor).unwrap());assert_eq!(w.project.roundabout.as_ref().unwrap().splitters[0].shape,omsi_geometry::roundabout_splitters::Shape::Wedge);
+            scene.overlays.clear();ui.draw_junction_window(&renderer,&mut scene,Some(&mut w),Path::new("/tmp"),1.0,[0.0,0.0,width as f32,height as f32],(-1.0,-1.0));
+            assert!(w.error.is_none(),"{:?}",w.error);assert!(w.rects.iter().any(|(_,c)|matches!(c,Command::Splitter)));
+            for (r,_) in &w.rects {assert!(r[0]>=0.0&&r[1]>=0.0&&r[2]<=width as f32&&r[3]<=height as f32);}
+            let rgba=renderer.render_to_image(&mut scene,width,height,&camera,&omsi_render::Lighting{shadows:false,..Default::default()}).unwrap();
+            image::save_buffer(format!("/tmp/roundabout-ui-{lang}-{width}.png"),&rgba,width,height,image::ColorType::Rgba8).unwrap();
+        }}
+    }
+    #[test]
+    fn splitter_controls_are_per_arm_and_undoable() {
+        let mut w=Window::new_roundabout(false);let initial=w.project.clone();
+        w.command(Command::RoundaboutStep(2));w.command(Command::Splitter);w.command(Command::SplitterShape);w.set(Field::SplitterLength,5.0);
+        assert!(w.splitter_settings);assert!(w.project.roundabout.as_ref().unwrap().splitters[0].enabled);
+        w.command(Command::Arm(1));assert!(!w.project.roundabout.as_ref().unwrap().splitters[1].enabled);assert_eq!(w.value(Field::SplitterLength),6.0);
+        for _ in 0..3 {w.command(Command::Undo);}assert_eq!(w.project,initial);
+        for _ in 0..3 {w.command(Command::Redo);}assert_eq!(w.project.roundabout.as_ref().unwrap().splitters[0].length,5.0);build(&w.project).unwrap();
+    }
+    #[test]
+    fn reference_island_preset_preserves_other_arms_and_undo() {
+        let mut w=Window::new_roundabout(false);let original=w.project.clone();w.arm=2;w.command(Command::SplitterTemplate);
+        let r=w.project.roundabout.as_ref().unwrap();assert!(r.splitters[2].enabled);assert!(!r.splitters[0].enabled);
+        assert_eq!((r.splitters[2].gap,r.splitters[2].length),(1.0,9.0));build(&w.project).unwrap();
+        let expected=w.project.clone();w.command(Command::Undo);assert_eq!(w.project,original);w.command(Command::Redo);assert_eq!(w.project,expected);
+        w.command(Command::SplitterShape);assert_eq!(w.project.roundabout.as_ref().unwrap().splitters[2].shape,omsi_geometry::roundabout_splitters::Shape::Rounded);
+    }
+    #[test]
+    #[ignore = "Writes splitter island visual QA previews"]
+    fn render_splitter_preview() {
+        for shape in [omsi_geometry::roundabout_splitters::Shape::Rounded,omsi_geometry::roundabout_splitters::Shape::Teardrop,omsi_geometry::roundabout_splitters::Shape::Wedge] {
+            let mut w=Window::new_roundabout(false);for s in &mut w.project.roundabout.as_mut().unwrap().splitters {s.enabled=true;s.shape=shape;if shape==omsi_geometry::roundabout_splitters::Shape::Wedge{s.gap=1.0;s.length=9.0;}}
+            w.project.roundabout.as_mut().unwrap().outer_line=true;let mut b=build(&w.project).unwrap();path_overlay(&mut b.mesh,&b.paths);
+            let img=crate::asset_catalog::junction_preview(std::path::Path::new("/tmp"),&b.mesh,0,None).unwrap();
+            image::RgbaImage::from_raw(img.width,img.height,img.rgba).unwrap().save(format!("/tmp/roundabout-splitter-{shape:?}.png")).unwrap();
+        }
+    }
     #[test]
     #[ignore = "Writes a local visual QA preview when requested"]
     fn render_edge_line_preview() {
@@ -272,8 +129,8 @@ mod tests {
             assert!(on_road(p,*v));let theta=v.x.atan2(v.y);
             assert!(p.arms.iter().filter(|a|a.enabled).any(|a|delta(theta,a.angle.to_radians()).abs()<=mouth_angle(r.island_radius+r.road_width,a.width/2.0)+1e-6));
         }}
-        let mut json=serde_json::to_value(p).unwrap();for name in ["outer_line","dashed_entries","line_width","line_insets"] {json["roundabout"].as_object_mut().unwrap().remove(name);}
-        let old:Project=serde_json::from_value(json).unwrap();assert!(!old.roundabout.as_ref().unwrap().outer_line);super::build(&old).unwrap();
+        let mut json=serde_json::to_value(p).unwrap();for name in ["outer_line","dashed_entries","line_width","line_insets","splitters"] {json["roundabout"].as_object_mut().unwrap().remove(name);}
+        let old:Project=serde_json::from_value(json).unwrap();assert!(old.roundabout.as_ref().unwrap().splitters.iter().all(|s|!s.enabled));assert!(!old.roundabout.as_ref().unwrap().outer_line);super::build(&old).unwrap();
     }
 
     #[test]
@@ -312,7 +169,7 @@ mod tests {
         let stamp=std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos();
         let dir=std::env::temp_dir().join(format!("roundabout-export-{stamp}"));
         let original=dir.join("original");let content=dir.join("content");std::fs::create_dir_all(&original).unwrap();
-        let mut w=Window::new_roundabout(false);w.project.road_texture="Texture/asphalt.png".into();
+        let mut w=Window::new_roundabout(false);w.command(Command::SplitterTemplate);w.project.road_texture="Texture/asphalt.png".into();
         std::fs::create_dir_all(original.join("Texture")).unwrap();
         image::RgbaImage::from_pixel(4,4,image::Rgba([50,60,70,255])).save(original.join("Texture/asphalt.png")).unwrap();
         let sco_path=export(&w.project,&original,&content,&original).unwrap();

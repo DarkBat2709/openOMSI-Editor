@@ -69,6 +69,7 @@ mod traffic_connector;
 mod traffic_editor_events;
 mod sidewalk;
 mod construction_tools;
+mod spline_dimensions;
 mod sidewalk_events;
 mod duty_book;
 mod game_lists;

@@ -3182,3 +3182,240 @@ _version: 2
 
 "Object {} is outside the map at tile ({}, {}); move it back or create that tile":
   de: "Objekt {} liegt außerhalb der Karte auf Kachel ({}, {}); zurückverschieben oder diese Kachel erstellen"
+
+"Spline dimensions …":
+  de: "Spline-Maße …"
+
+"Spline dimensions · drag here":
+  de: "Spline-Maße · hier ziehen"
+
+"Length (m)":
+  de: "Länge (m)"
+
+"Radius (m)":
+  de: "Radius (m)"
+
+"Gradient (%)":
+  de: "Steigung (%)"
+
+"Read selected spline":
+  de: "Auswahl einlesen"
+
+"Apply to selected spline":
+  de: "Auf Auswahl anwenden"
+
+"New spline dimensions: ON":
+  de: "Neue Splines mit Maßen: AN"
+
+"New spline dimensions: OFF":
+  de: "Neue Splines mit Maßen: AUS"
+
+"Constant gradient; check linked ends":
+  de: "Gleichmäßige Steigung; Anschlüsse prüfen"
+
+"Radius 0 = straight · Height = absolute start height":
+  de: "Radius 0 = gerade · Höhe = absolute Starthöhe"
+
+"Selected spline values loaded":
+  de: "Werte des gewählten Splines eingelesen"
+
+"Spline dimensions applied · Ctrl+Z undo · Ctrl+S save":
+  de: "Spline-Maße übernommen · Strg+Z zurück · Strg+S speichern"
+
+"New spline: choose a type, click start, then direction":
+  de: "Neuer Spline: Typ wählen, Start und dann Richtung anklicken"
+
+"Select one spline for numeric dimensions":
+  de: "Für genaue Maße einen einzelnen Spline auswählen"
+
+"Finish or cancel spline placement first":
+  de: "Spline-Platzierung zuerst abschließen oder abbrechen"
+
+"Click away from the start to choose a direction":
+  de: "Neben den Startpunkt klicken, um die Richtung festzulegen"
+
+"Road crosses a tile boundary; reduce length or move the start":
+  de: "Spline überschreitet Kachelgrenze; Länge kürzen oder Start verschieben"
+
+"New spline: exact dimensions · Ctrl+S to save":
+  de: "Neuer Spline mit genauen Maßen · Strg+S zum Speichern"
+
+"Length: 0.5–500 m; radius: 0 or ±0.5–100000 m; gradient: ±20%; height: -1000–10000 m":
+  de: "Länge: 0,5–500 m; Radius: 0 oder ±0,5–100000 m; Steigung: ±20%; Höhe: -1000–10000 m"
+
+"New spline: exact dimensions · Click next start · Esc to finish · Ctrl+S to save":
+  de: "Neuer Spline mit Maßen · Nächsten Start anklicken · Esc beendet · Strg+S speichert"
+
+"Curve angle (degrees)":
+  de: "Kurvenwinkel (°)"
+
+"Curve angle must be between -360 and 360 degrees":
+  de: "Kurvenwinkel muss zwischen -360 und 360 Grad liegen"
+
+"Preview follows mouse · N/M turn · Click places · Esc finishes":
+  de: "Vorschau folgt der Maus · N/M dreht · Klick setzt · Esc beendet"
+
+"Preview · N/M turn · Click places":
+  de: "Vorschau · N/M dreht · Klick setzt"
+
+"Check spline values and point at terrain":
+  de: "Spline-Werte prüfen und auf Gelände zeigen"
+
+"Selected spline updated automatically · Ctrl+Z undo · Ctrl+S save":
+  de: "Ausgewählter Spline automatisch geändert · Strg+Z zurück · Strg+S speichert"
+
+"The road leaves the map; nothing changed":
+  de: "Spline verlässt vorhandene Karte; nichts geändert"
+
+"Traffic islands …":
+  de: "Verkehrsinseln …"
+
+"Roundabout dimensions":
+  de: "Kreisverkehr-Maße"
+
+"Splitter island: ON":
+  de: "Verkehrsinsel: AN"
+
+"Splitter island: OFF":
+  de: "Verkehrsinsel: AUS"
+
+"Rounded":
+  de: "Abgerundet"
+
+"Teardrop":
+  de: "Tropfenform"
+
+"Splitter length (m)":
+  de: "Insellänge (m)"
+
+"Splitter width (m)":
+  de: "Inselbreite (m)"
+
+"Distance from ring (m)":
+  de: "Abstand zum Ring (m)"
+
+"Splitter height (m)":
+  de: "Höhe Verkehrsinsel (m)"
+
+"Invalid splitter island dimensions":
+  de: "Ungültige Maße der Verkehrsinsel"
+
+"Invalid roundabout dimensions":
+  de: "Ungültige Kreisverkehr-Maße"
+
+"Splitter island needs at least 2.75 m of road on each side; reduce island width or widen the arm":
+  de: "Neben der Insel sind je 2,75 m Fahrbahn nötig. Insel schmaler oder Zufahrt breiter einstellen."
+
+"Splitter island is too close to the ring; increase its distance":
+  de: "Verkehrsinsel zu nah am Ring: Abstand vergrößern."
+
+"Splitter island needs more entrance length; shorten the island or lengthen the arm":
+  de: "Zufahrt zu kurz für die Verkehrsinsel: Insel kürzen oder Zufahrt verlängern."
+
+"Rounded wedge":
+  de: "Abgerundeter Keil"
+
+"Reference splitter island":
+  de: "Insel nach Vorlage"
+
+"1 Circle":
+  de: "1 Kreisform"
+
+"2 Approaches":
+  de: "2 Zufahrten"
+
+"3 Islands":
+  de: "3 Inseln"
+
+"4 Finish":
+  de: "4 Ausstattung"
+
+"Whole roundabout: central island and circulating road.":
+  de: "Gesamter Kreisverkehr: Kreisinsel und Ringfahrbahn."
+
+"Outer diameter = 2 × (island radius + ring width).":
+  de: "Außendurchmesser = 2 × (Inselradius + Ringbreite)."
+
+"Select arm A–D. These dimensions apply only to that arm.":
+  de: "Arm A–D wählen. Maße gelten nur für diese Zufahrt."
+
+"Road width includes both lanes and the splitter island.":
+  de: "Fahrbahnbreite umfasst beide Spuren und die Insel."
+
+"Selected arm only. Wide end faces the ring.":
+  de: "Nur gewählte Zufahrt. Breites Ende zeigt zum Ring."
+
+"Kerbs follow island height; painted lines are separate.":
+  de: "Bordsteine folgen der Inselhöhe; Linien sind separat."
+
+"Choose surfaces and markings, then inspect the blue AI paths.":
+  de: "Beläge und Linien wählen, dann blaue KI-Wege prüfen."
+
+"Crossings, signs and traffic lights are not generated yet.":
+  de: "Überwege, Schilder und Ampeln werden noch nicht erzeugt."
+
+"Outer diameter (m)":
+  de: "Außendurchmesser (m)"
+
+"Choose a step above. You can return to any step before placing.":
+  de: "Schritt oben wählen. Vor dem Einsetzen jederzeit zurückwechseln."
+
+"Circulating lanes":
+  de: "Spuren im Kreis"
+
+"Lanes per direction":
+  de: "Spuren je Richtung"
+
+"Lane count must be between 1 and 4":
+  de: "Spuranzahl muss zwischen 1 und 4 liegen"
+
+"Lane count must be a whole number from 1 to 4":
+  de: "Spuranzahl muss eine ganze Zahl von 1 bis 4 sein"
+
+"Each lane needs at least 2.75 m width":
+  de: "Jede Spur braucht mindestens 2,75 m Breite"
+
+"Lane transition leaves the circulating road":
+  de: "Spurwechsel verlässt die Kreisfahrbahn"
+
+"Choose lanes and dimensions · Check AI paths · Save & place · Reload map for AI":
+  de: "Spuren und Maße wählen · KI-Wege prüfen · Speichern & einsetzen · Karte für KI neu laden"
+
+"Lane dividers: ON":
+  de: "Spurtrennlinien: AN"
+
+"Lane dividers: OFF":
+  de: "Spurtrennlinien: AUS"
+
+"Free AI path":
+  de: "Freier KI-Fahrweg"
+
+"Remove last point":
+  de: "Letzten Punkt entfernen"
+
+"Mode: free drawing":
+  de: "Modus: frei zeichnen"
+
+"Mode: connect existing endpoints":
+  de: "Modus: vorhandene Endpunkte verbinden"
+
+"Clear preview":
+  de: "Vorschau leeren"
+
+"Click the surface to add the next section.":
+  de: "Auf die Fläche klicken, um den nächsten Abschnitt anzufügen."
+
+"Drag endpoints and three form handles.":
+  de: "Endpunkte und drei Formpunkte ziehen."
+
+"Click to add sections. Drag endpoints and three form handles. Add when ready.":
+  de: "Klicken fügt Abschnitte an. Endpunkte und drei Formpunkte ziehen. Anschließend hinzufügen."
+
+"Invalid point or too many sections":
+  de: "Ungültiger Punkt oder zu viele Abschnitte"
+
+"Points must be at least 1 m apart":
+  de: "Punkte müssen mindestens 1 m auseinanderliegen"
+
+"Connection is incomplete: add two points or select start and destination.":
+  de: "Verbindung unvollständig: zwei Punkte setzen oder Start und Ziel wählen."

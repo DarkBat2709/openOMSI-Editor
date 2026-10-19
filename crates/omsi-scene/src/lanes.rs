@@ -156,7 +156,7 @@ pub(super) fn traffic_light_program_enabled(sco: &SceneryObject, has_signals: bo
 
 /// Lanes of one placed scenery object: `[path]` arcs in the object frame (x right,
 /// y forward, z up; heading clockwise, radius > 0 right turn) rotated by the object heading.
-pub(super) fn object_lanes(
+pub fn object_lanes(
     sco: &SceneryObject,
     pos: DVec3,
     rot: [f64; 3],
@@ -247,6 +247,7 @@ pub(super) fn object_lanes(
                 l.priority = v;
             }
             l.source = 2;
+            l.editor_exact_path_links = sco.editor_exact_path_links;
             l.key = Some(LaneKey {
                 tile,
                 id,
@@ -262,7 +263,7 @@ pub(super) fn object_lanes(
                     .filter(|t| *t >= 0)
                     .map(|t| (c, t as usize))
             });
-            if crate::editor_paths::from_rules(&mut l,rules) {out.push(l);}
+            out.push(l);
         };
         match p.direction {
             1 => push(true),
@@ -273,7 +274,7 @@ pub(super) fn object_lanes(
             _ => push(false),
         }
     }
-    out
+    crate::junction_lanes::restore(out, &sco.editor_path_groups, rules)
 }
 
 /// Resolve the texture name for a scenery object's `[matl_freetex]` slot.

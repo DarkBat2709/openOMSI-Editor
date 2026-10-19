@@ -10,6 +10,7 @@ use glam::{DVec2, DVec3};
 use hashbrown::HashMap;
 
 mod ai_state;
+mod junction_route;
 mod extend;
 mod lane;
 mod lights;

@@ -522,6 +522,8 @@ impl App {
                                 self.menus.editor.as_ref().filter(|ed|ed.terrain.active).map(|ed|&ed.terrain),
                                 scale * frame.ui_scale, hud, self.input.cursor);
                         }
+                        let dimensions=self.menus.editor.as_mut().filter(|_|editor_visible);
+                        ui.draw_spline_dimensions(r,scene,dimensions,scale*frame.ui_scale,hud,self.input.cursor);
                         let construction=self.menus.editor.as_mut().filter(|e|e.catalog.is_none()).filter(|_|editor_visible);
                         ui.draw_construction_window(r,scene,construction,scale*frame.ui_scale,hud,self.input.cursor);
                         let sidewalk=self.menus.editor.as_mut().filter(|e|e.catalog.is_none()).and_then(|e|e.sidewalk_window.as_mut()).filter(|_|editor_visible);

@@ -58,8 +58,8 @@ impl App {
         if matches!(command,Command::PathSave) {
             if self.menus.editor.as_ref().and_then(|e|e.traffic_window.as_ref()).is_some_and(connection_preview_pending) {
                 self.editor_traffic_drag();
-                let complete=self.menus.editor.as_ref().and_then(|e|e.traffic_window.as_ref()).and_then(|w|w.connector.as_ref()).is_some_and(|c|c.source.is_some()&&c.destination.is_some()&&c.picking.is_none());
-                if !complete {self.service_msg=Some(("Connection is incomplete: select start and destination first.".into(),8.0));return;}
+                let complete=self.menus.editor.as_ref().and_then(|e|e.traffic_window.as_ref()).and_then(|w|w.connector.as_ref()).is_some_and(|c|c.complete());
+                if !complete {self.service_msg=Some(("Connection is incomplete: add two points or select start and destination.".into(),8.0));return;}
                 self.editor_traffic_command(Command::Apply);
                 // Applying closes the window only on success. Leave failed previews
                 // editable, and never report them as saved map connections.
@@ -105,9 +105,11 @@ impl App {
         }
         if let Some(connector)=w.connector.as_mut() {
             match command {
+                Command::ConnectorFree=>{if connector.free.is_some(){*connector=Default::default();}else{*connector=Default::default();connector.free=Some(Default::default());connector.picking=None;}w.connector_drag=None;},
+                Command::ConnectorUndo=>{if let Some(f)=connector.free.as_mut(){f.undo();}w.connector_drag=None;},
                 Command::ConnectorSource=>{connector.picking=Some(true);w.drag=None;},
                 Command::ConnectorDestination=>{connector.picking=Some(false);w.drag=None;},
-                Command::ConnectorReset=>{*connector=Default::default();w.drag=None;},
+                Command::ConnectorReset=>{let free=connector.free.is_some();*connector=Default::default();if free{connector.free=Some(Default::default());connector.picking=None;}w.drag=None;},
                 Command::ForwardBus=>connector.bus_only=!connector.bus_only,
                 Command::Width(d)=>connector.width=(connector.width+d).clamp(1.5,5.0),
                 Command::Apply|Command::Refresh=>{},
@@ -117,7 +119,7 @@ impl App {
         }
         match command {
             Command::Manage|Command::PathDelete|Command::PathEdit|Command::PathReset|Command::PathNext|Command::PathUndo|Command::PathRedo|Command::PathSave|Command::Generate=>{},
-            Command::Connector|Command::ConnectorSource|Command::ConnectorDestination|Command::ConnectorReset=>{},
+            Command::Connector|Command::ConnectorFree|Command::ConnectorUndo|Command::ConnectorSource|Command::ConnectorDestination|Command::ConnectorReset=>{},
             Command::Free=>w.enable_free(),
             Command::Lane=>{w.active_lane=if w.settings.two_way{1-w.active_lane}else{0};w.ensure_nodes();},
             Command::ResetNode=>{if let Some(i)=w.selected_node {
@@ -137,8 +139,8 @@ impl App {
             Command::Apply=>{
                 w.refresh(&world);if w.error.is_some(){return;}
                 if let Some(c)=&w.connector {
-                    if c.picking.is_some()||c.source.is_none()||c.destination.is_none(){return;}
-                    for chosen in [c.source.unwrap(),c.destination.unwrap()] {
+                    if !c.complete(){return;}
+                    for chosen in [c.source,c.destination].into_iter().flatten() {
                         if !w.targets.iter().any(|t|t.key==chosen.key&&t.reversed==chosen.reversed&&t.start==chosen.start
                             &&t.point.distance(chosen.point)<0.1&&t.direction.dot(chosen.direction)>0.99) {
                             w.error=Some("Endpoint has changed or is not loaded. Select start and destination again.".into());return;
@@ -249,6 +251,8 @@ impl App {
             }).next() {
                 let p=p+glam::DVec3::Z*0.4;let t=(p-origin).dot(ray);
                 w.selected_node=Some(i);w.connector_drag=Some(crate::editor_path_edit::PathDrag {index:i,point:p,normal:ray,offset:p-(origin+ray*t),before:Default::default()});
+            } else if let Some(f)=c.free.as_mut() {
+                if let Some(world)=self.world.as_ref(){if let Some(p)=crate::placing::ground_hit(world,origin,ray,2000.0){if let Err(e)=f.add(p){w.error=Some(e);}else{w.refresh(world);}}}
             }
             return true;
         }
@@ -428,5 +432,5 @@ mod save_shortcut_tests {
 }
 
 fn connection_preview_pending(w:&Window)->bool {
-    w.connector.as_ref().is_some_and(|c|c.source.is_some()||c.destination.is_some())
+    w.connector.as_ref().is_some_and(|c|c.source.is_some()||c.destination.is_some()||c.free.as_ref().is_some_and(|f|!f.points.is_empty()))
 }

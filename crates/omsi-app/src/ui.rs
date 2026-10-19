@@ -11,6 +11,7 @@ use omsi_render::{Renderer, Scene, TextureId};
 
 mod menu;
 mod perf_panel;
+mod spline_dimensions;
 mod text;
 
 pub use text::TextCache;
@@ -739,7 +740,7 @@ impl Ui {
         let flat = self.text.flat;
         self.text.flat = true;
         self.editor_surface(r, scene, layout.panel, 5.0 * s, PANEL);
-        let title = if terrain { "Terrain editor 0.8.7-pre" } else if spline { "Spline editor 0.8.7-pre" } else { "Object editor 0.8.7-pre" };
+        let title = if terrain { "Terrain editor 0.8.8-pre" } else if spline { "Spline editor 0.8.8-pre" } else { "Object editor 0.8.8-pre" };
         self.put(r, scene, title, ((13.0 * s) as u32).max(1) | BOLD,
             MUTED, layout.panel[0] + 10.0 * s, layout.panel[1] + 12.0 * s);
         self.editor_surface(r, scene, layout.selection, 3.0 * s, PANEL_ALT);
@@ -846,7 +847,7 @@ impl Ui {
             self.editor_hint_mode = Some((spline, expanded));
         }
         let shortcuts = editor_shortcuts(spline, expanded);
-        let footer = if connection.is_some() { 198.0 } else if tools.is_some() { 372.0 } else if objects.is_some() {192.0} else { 0.0 };
+        let footer = if connection.is_some() { 198.0 } else if tools.is_some() { 404.0 } else if objects.is_some() {192.0} else { 0.0 };
         let hud_bottom = self.editor_hud_rect.map_or(viewport[1], |rect| rect[3]);
         let layout = editor_dock_layout(viewport, s, hud_bottom, shortcuts.len(), footer, self.editor_dock_position, spline);
         self.editor_help_scroll_max = layout.max_scroll;
@@ -1148,19 +1149,20 @@ impl Ui {
         use crate::editor::Action;
         let Some((enabled, filter)) = enabled else { return; };
         let [x, y] = origin;
-        let panel = [x, y, x + 284.0 * s, y + 372.0 * s];
+        let panel = [x, y, x + 284.0 * s, y + 404.0 * s];
         self.editor_tools_rect = Some(panel);
         self.editor_surface(r, scene, panel, 3.0 * s, PANEL);
         self.catalog_text(r, scene, if enabled { "Road shoulders / terrain" } else { "Select a road first" },
             (x + 8.0 * s, y + 5.0 * s), 268.0 * s, 13.0 * s, MUTED);
         self.catalog_text(r, scene, "Ctrl+click: add/remove · Click empty: clear",
-            (x + 8.0 * s, y + 317.0 * s), 268.0 * s, 12.0 * s, MUTED);
+            (x + 8.0 * s, y + 349.0 * s), 268.0 * s, 12.0 * s, MUTED);
         self.catalog_text(r, scene, "Ctrl+Tab: add overlap · C: continue",
-            (x + 8.0 * s, y + 332.0 * s), 268.0 * s, 12.0 * s, MUTED);
+            (x + 8.0 * s, y + 364.0 * s), 268.0 * s, 12.0 * s, MUTED);
         self.catalog_text(r, scene, "Group: +/- length · ,/. curve · Home/End gradient",
-            (x + 8.0 * s, y + 347.0 * s), 268.0 * s, 11.0 * s, MUTED);
+            (x + 8.0 * s, y + 379.0 * s), 268.0 * s, 11.0 * s, MUTED);
         for (row, (action, title)) in [
             (Action::CycleSelectionFilter, filter.title()),
+            (Action::SplineDimensions, "Spline dimensions …"),
             (Action::SmoothRoad(false), "Smooth shoulder (F8)"),
             (Action::SmoothRoad(true), "Smooth wider (Shift+F8)"),
             (Action::FitTerrain, "Road to terrain (F6)"),
@@ -1170,7 +1172,7 @@ impl Ui {
             (Action::SidewalkWindow, "Sidewalk along the road"),
             (Action::ConstructionWindow, "Bridge / tunnel / underground …"),
         ].into_iter().enumerate() {
-            let enabled=enabled||matches!(action,Action::ConstructionWindow | Action::CycleSelectionFilter);
+            let enabled=enabled||matches!(action,Action::ConstructionWindow | Action::SplineDimensions | Action::CycleSelectionFilter);
             let top = y + (27.0 + row as f32 * 32.0) * s;
             let rect = [x + 6.0 * s, top, x + 278.0 * s, top + 27.0 * s];
             let color = if !enabled { PANEL_ALT }
@@ -1287,20 +1289,21 @@ impl Ui {
             let source=c.source.map(|t|format!("Start: path {} / lane {}",t.key.id,t.key.path+1)).unwrap_or("Select start: yellow path end".into());
             let target=c.destination.map(|t|format!("Destination: path {} / lane {}",t.key.id,t.key.path+1)).unwrap_or("Select destination: purple path start".into());
             let buttons=vec![
-                (rect(10.0,40.0,390.0,34.0),source,Command::ConnectorSource,true),
-                (rect(10.0,84.0,390.0,34.0),target,Command::ConnectorDestination,c.source.is_some()),
+                (rect(10.0,40.0,390.0,34.0),if c.free.is_some(){"Free AI path".into()}else{source},Command::ConnectorSource,c.free.is_none()),
+                (rect(10.0,84.0,390.0,34.0),if c.free.is_some(){"Remove last point".into()}else{target},if c.free.is_some(){Command::ConnectorUndo}else{Command::ConnectorDestination},c.free.as_ref().is_some_and(|f|!f.points.is_empty())||c.source.is_some()),
                 (rect(10.0,132.0,390.0,30.0),format!("Vehicles: {}",if c.bus_only{"Buses only"}else{"All vehicles"}),Command::ForwardBus,true),
                 (rect(310.0,172.0,40.0,28.0),"−".into(),Command::Width(-0.25),true),
                 (rect(360.0,172.0,40.0,28.0),"+".into(),Command::Width(0.25),true),
-                (rect(10.0,420.0,390.0,32.0),"Select start and destination again".into(),Command::ConnectorReset,true),
-                (rect(10.0,466.0,390.0,34.0),"Add connection (Enter)".into(),Command::Apply,c.picking.is_none()&&w.error.is_none()&&!w.preview.pieces.is_empty()),
+                (rect(10.0,210.0,390.0,30.0),if c.free.is_some(){"Mode: free drawing"}else{"Mode: connect existing endpoints"}.into(),Command::ConnectorFree,true),
+                (rect(10.0,420.0,390.0,32.0),if c.free.is_some(){"Clear preview"}else{"Select start and destination again"}.into(),Command::ConnectorReset,true),
+                (rect(10.0,466.0,390.0,34.0),"Add connection (Enter)".into(),Command::Apply,c.complete()&&w.error.is_none()&&!w.preview.pieces.is_empty()),
                 (rect(10.0,512.0,390.0,30.0),"Back to AI paths along the road".into(),Command::Connector,true),
-                (rect(10.0,556.0,390.0,30.0),if c.source.is_some()&&c.destination.is_some(){"Add connection + save (Ctrl+S)"}else{"Save map (Ctrl+S)"}.into(),Command::PathSave,true),
+                (rect(10.0,556.0,390.0,30.0),if c.complete(){"Add connection + save (Ctrl+S)"}else{"Save map (Ctrl+S)"}.into(),Command::PathSave,true),
                 (rect(10.0,594.0,390.0,30.0),"Close (Esc)".into(),Command::Close,true),
             ];
             self.catalog_text(r,scene,&format!("Lane width: {:.2} m",c.width),(x+12.0*s,y+184.0*s),290.0*s,12.0*s,SOFT);
-            for (i,text) in ["Straight-ahead paths are retained.","Yellow: start · Purple: destination · Green: drag curve", "Connect path endpoints, not the middle of a path.", "Preview only until you add the connection."].iter().enumerate(){
-                self.catalog_text(r,scene,text,(x+12.0*s,y+(224.0+i as f32*22.0)*s),386.0*s,12.0*s,SOFT);
+            for (i,text) in (if c.free.is_some(){["Click the surface to add the next section.","Drag endpoints and three form handles.","Preview only until you add the connection."]}else{["Yellow: start · Purple: destination · Green: drag curve","Connect path endpoints, not the middle of a path.","Preview only until you add the connection."]}).iter().enumerate(){
+                self.catalog_text(r,scene,text,(x+12.0*s,y+(250.0+i as f32*22.0)*s),386.0*s,12.0*s,SOFT);
             }
             let status=c.status();let message=w.error.as_deref().unwrap_or(&status);
             for (i,line) in wrap(&self.text,message,12.0*s,382.0*s).iter().take(5).enumerate(){
@@ -1765,13 +1768,13 @@ impl Ui {
         if self.junction_image.is_none() {if let Some(img)=&window.preview {self.junction_image=Some((window.preview_id,r.add_texture(scene,img,false)));}}
         let s=scale.max(0.5).min((viewport[2]/1044.0).max(0.1)).min((viewport[3]/764.0).max(0.1));
         let kind=if window.project.roundabout.is_some(){"roundabout"}else{"junction"};
-        let (x,y)=self.editor_window_origin(kind,viewport,[1020.0*s,740.0*s],[viewport[0]+(viewport[2]-1020.0*s)*0.5,viewport[1]+(viewport[3]-740.0*s)*0.5],[896.0*s,52.0*s]);
+        let (x,y)=self.editor_window_origin(kind,viewport,[1020.0*s,740.0*s],[viewport[0]+(viewport[2]-1020.0*s)*0.5,viewport[1]+(viewport[3]-740.0*s)*0.5],[if kind=="roundabout"{380.0*s}else{896.0*s},52.0*s]);
         let rect=|a:f32,b:f32,w:f32,h:f32|[x+a*s,y+b*s,x+(a+w)*s,y+(b+h)*s];
         let flat=self.text.flat;self.text.flat=true;
         self.catalog_plate(r,scene,[0, 0, 0, 150],[viewport[0],viewport[1],viewport[0]+viewport[2],viewport[1]+viewport[3]]);
         self.editor_surface(r,scene,rect(0.0,0.0,1020.0,740.0),7.0*s,PANEL);
         let roundabout=window.project.roundabout.is_some();
-        self.catalog_text(r,scene,if roundabout {"Roundabout builder"} else {"Junction builder"},(x+22.0*s,y+18.0*s),680.0*s,24.0*s,WHITE);
+        self.catalog_text(r,scene,if roundabout {"Roundabout builder"} else {"Junction builder"},(x+22.0*s,y+18.0*s),if roundabout {360.0*s}else{680.0*s},24.0*s,WHITE);
         self.catalog_text(r,scene,&window.source_label,(x+22.0*s,y+46.0*s),970.0*s,10.0*s,SOFT);
         self.editor_surface(r,scene,rect(20.0,62.0,358.0,576.0),5.0*s,PANEL);
         let cross=window.project.arms[3].enabled;
@@ -1783,22 +1786,48 @@ impl Ui {
             let (status,color)=if window.pending.is_some_and(|(_,arm)|arm==i){("prepared".to_string(),[60,180,255,0])}else if let Some(id)=window.arm_links[i]{(format!("ID {id}"),[75,230,110,0])}else{("free".to_string(),MUTED)};
             self.catalog_text(r,scene,&status,(x+(32.0+i as f32*83.0)*s,y+153.0*s),77.0*s,8.0*s,color);
         }
+        if roundabout {for (i,title) in ["1 Circle","2 Approaches","3 Islands","4 Finish"].into_iter().enumerate() {
+            buttons.push((rect(390.0+i as f32*126.0,16.0,120.0,32.0),title.into(),Command::RoundaboutStep(i as u8),true,window.roundabout_step==i as u8));
+        }}
+        if roundabout && window.splitter_settings {
+            let island=&window.project.roundabout.as_ref().unwrap().splitters[window.arm];
+            buttons.push((rect(32.0,166.0,158.0,32.0),if island.enabled{"Splitter island: ON"}else{"Splitter island: OFF"}.into(),Command::Splitter,true,island.enabled));
+            buttons.push((rect(200.0,166.0,158.0,32.0),match island.shape {omsi_geometry::roundabout_splitters::Shape::Rounded=>"Rounded",omsi_geometry::roundabout_splitters::Shape::Teardrop=>"Teardrop",omsi_geometry::roundabout_splitters::Shape::Wedge=>"Rounded wedge"}.into(),Command::SplitterShape,true,false));
+        } else {
         let name=window.input.as_ref().filter(|i|i.field==Field::Name).map(|i|format!("{}│",i.text)).unwrap_or_else(||window.project.name.clone());
         buttons.push((rect(32.0,166.0,326.0,32.0),name,Command::Edit(Field::Name),true,window.input.as_ref().is_some_and(|i|i.field==Field::Name)));
-        let fields=if roundabout {[Field::Width,Field::Length,Field::Angle,Field::IslandRadius,Field::RingWidth,Field::IslandHeight,Field::TextureMetres]}
-            else {[Field::Width,Field::Length,Field::Angle,Field::Bend,Field::Sidewalk,Field::Corner,Field::TextureMetres]};
-        for (i,field) in fields.into_iter().enumerate() {
+        }
+        let fields:&[Field]=if roundabout {match window.roundabout_step {
+            0=>&[Field::RingLanes,Field::IslandRadius,Field::RingWidth,Field::IslandHeight],
+            1=>&[Field::ApproachLanes,Field::Width,Field::Length,Field::Angle],
+            2=>&[Field::SplitterLength,Field::SplitterWidth,Field::SplitterGap,Field::SplitterHeight,Field::Width,Field::Length],
+            _=>&[Field::TextureMetres],
+        }} else {&[Field::Width,Field::Length,Field::Angle,Field::Bend,Field::Sidewalk,Field::Corner,Field::TextureMetres]};
+        if roundabout {
+            let hints=match window.roundabout_step {
+                0=>["Whole roundabout: central island and circulating road.","Outer diameter = 2 × (island radius + ring width)."],
+                1=>["Select arm A–D. These dimensions apply only to that arm.","Road width includes both lanes and the splitter island."],
+                2=>["Selected arm only. Wide end faces the ring.","Kerbs follow island height; painted lines are separate."],
+                _=>["Choose surfaces and markings, then inspect the blue AI paths.","Crossings, signs and traffic lights are not generated yet."],
+            };
+            for (i,hint) in hints.iter().enumerate(){self.catalog_text(r,scene,hint,(x+32.0*s,y+(208.0+fields.len() as f32*36.0+8.0+i as f32*17.0)*s),326.0*s,10.0*s,SOFT);}
+            if window.roundabout_step<2 {let rb=window.project.roundabout.as_ref().unwrap();
+                self.catalog_text(r,scene,"Outer diameter (m)",(x+32.0*s,y+420.0*s),210.0*s,12.0*s,SOFT);
+                self.catalog_text(r,scene,&format!("{:.2}",2.0*(rb.island_radius+rb.road_width)),(x+248.0*s,y+420.0*s),100.0*s,14.0*s,AMBER);
+            }
+        }
+        for (i,&field) in fields.iter().enumerate() {
             let row=208.0+i as f32*36.0;
             self.catalog_text(r,scene,field.title(),(x+32.0*s,y+(row+8.0)*s),168.0*s,12.0*s,SOFT);
-            let step=match field {Field::Angle|Field::Bend=>5.0,Field::IslandHeight=>0.05,_=>0.5};
+            let step=match field {Field::RingLanes|Field::ApproachLanes=>1.0,Field::Angle|Field::Bend=>5.0,Field::IslandHeight|Field::SplitterHeight=>0.05,_=>0.5};
             buttons.push((rect(208.0,row,26.0,30.0),"−".into(),Command::Adjust(field,-step),true,false));
             buttons.push((rect(332.0,row,26.0,30.0),"+".into(),Command::Adjust(field,step),true,false));
             let input=window.input.as_ref().filter(|input|input.field==field);
-            let text=input.map(|i|format!("{}│",i.text)).unwrap_or_else(||format!("{:.2}",window.value(field)));
+            let text=input.map(|i|format!("{}│",i.text)).unwrap_or_else(||window.number_text(field));
             buttons.push((rect(240.0,row,86.0,30.0),text,Command::Edit(field),true,input.is_some()));
         }
         buttons.extend([
-            (rect(32.0,468.0,326.0,30.0),"Width / texture from selected spline".into(),Command::UseSpline,true,false),
+            (rect(32.0,468.0,326.0,30.0),if roundabout && window.splitter_settings{"Reference splitter island"}else{"Width / texture from selected spline"}.into(),if roundabout && window.splitter_settings{Command::SplitterTemplate}else{Command::UseSpline},true,false),
             (rect(32.0,511.0,158.0,30.0),"Choose asphalt …".into(),Command::RoadTexture,true,!window.project.road_texture.is_empty()),
             (rect(200.0,511.0,158.0,30.0),if roundabout {"Choose island texture …"}else{"Choose sidewalk …"}.into(),Command::WalkTexture,true,!window.project.walk_texture.is_empty()),
             (rect(32.0,551.0,if roundabout {158.0}else{326.0},28.0),if roundabout {if window.project.markings {"Island edge line: ON"}else{"Island edge line: OFF"}}else if window.project.markings {"Centre lines: ON"} else {"Centre lines: OFF"}.into(),Command::Markings,true,window.project.markings),
@@ -1810,6 +1839,9 @@ impl Ui {
             (rect(726.0,680.0,272.0,42.0),if window.target.is_some(){if roundabout {"Update placed roundabout"}else{"Update placed junction"}}else{"Save & place"}.into(),Command::Export,window.error.is_none(),false),
         ]);
         if roundabout {
+            if window.roundabout_step==3 {let enabled=window.project.roundabout.as_ref().unwrap().lane_lines;
+                buttons.push((rect(32.0,428.0,326.0,30.0),if enabled{"Lane dividers: ON"}else{"Lane dividers: OFF"}.into(),Command::LaneLines,true,enabled));
+            }
             let enabled=window.project.roundabout.as_ref().unwrap().outer_line;
             let dashed=window.project.roundabout.as_ref().unwrap().dashed_entries;
             buttons.push((rect(610.0,514.0,184.0,24.0),if dashed {"Entrance dashes: ON"}else{"Entrance dashes: OFF"}.into(),Command::DashedEntries,true,dashed));
@@ -1835,7 +1867,9 @@ impl Ui {
             }
         }
         let mut digit_hits=Vec::new();
-        if roundabout && window.line_settings {
+        if roundabout && window.roundabout_step!=3 {
+            self.catalog_text(r,scene,"Choose a step above. You can return to any step before placing.",(x+414.0*s,y+607.0*s),570.0*s,12.0*s,SOFT);
+        } else if roundabout && window.line_settings {
             for (i,field) in [Field::LineLeft,Field::LineRight,Field::LineWidth].into_iter().enumerate() {
                 let left=414.0+i as f32*194.0;
                 self.catalog_text(r,scene,field.title(),(x+left*s,y+592.0*s),180.0*s,11.0*s,SOFT);
@@ -1884,6 +1918,10 @@ impl Ui {
         for (i,line) in wrap(&self.text,message,11.0*s,374.0*s).iter().take(6).enumerate() {
             self.catalog_text(r,scene,line,(x+22.0*s,y+(648.0+i as f32*13.0)*s),374.0*s,11.0*s,SOFT);
         }
+        if roundabout {buttons.retain(|(_,_,command,_,_)|match command {
+            Command::RoadTexture|Command::WalkTexture|Command::Markings|Command::OuterLine|Command::DashedEntries|Command::LineSettings=>window.roundabout_step==3,
+            Command::UseSpline=>window.roundabout_step==1,_=>true,
+        });}
         for (area,title,command,enabled,selected) in buttons {
             let primary = matches!(&command, Command::Export);
             self.editor_surface(r,scene,area,3.0*s,if !enabled {PANEL_ALT}

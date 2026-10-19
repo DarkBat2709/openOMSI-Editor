@@ -2908,6 +2908,7 @@ dependencies = [
  "omsi-map",
  "omsi-o3d",
  "omsi-scenery",
+ "serde",
 ]
 
 [[package]]

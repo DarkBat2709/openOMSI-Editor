@@ -514,7 +514,7 @@ fn group_move_drag_undo_boundary_rejection_and_save_cover_multiple_tiles() {
     assert_eq!(world.spline_edits.lock().current(a).unwrap(),first);
     assert_eq!(world.spline_edits.lock().current(b).unwrap(),second);
     let undo_count=editor.undo.len();
-    assert!(editor.move_group(&world,DVec3::new(1000.0,0.0,0.0)).unwrap().contains("nothing moved"));
+    assert!(editor.move_group(&world,DVec3::new(1000.0,0.0,0.0)).unwrap().contains("leaves the map"));
     assert_eq!(editor.undo.len(),undo_count);
     assert_eq!(world.spline_edits.lock().current(a).unwrap(),first);
     assert_eq!(world.spline_edits.lock().current(b).unwrap(),second);

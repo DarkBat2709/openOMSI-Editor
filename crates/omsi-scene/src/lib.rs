@@ -61,6 +61,7 @@ mod vehicle_materials;
 mod vehicle_types;
 mod vehicles;
 pub mod lanes;
+mod junction_lanes;
 mod season_looks;
 pub mod host;
 
@@ -104,3 +105,5 @@ mod crossing_deformation_tests;
 
 pub mod ground_paint;
 pub mod roadside_objects;
+
+pub mod spline_preview;

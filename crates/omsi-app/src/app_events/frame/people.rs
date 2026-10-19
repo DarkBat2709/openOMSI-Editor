@@ -56,6 +56,7 @@ impl App {
                 }
                 self.placing_frame();
                 self.editor_terrain_frame(dt);
+                self.spline_preview_frame();
                 if let (Some(ed), Some(w), Some(scene)) = (self.menus.editor.as_mut(), self.world.as_ref(), self.scene.as_ref()) {
                     ed.trace_trees(w, scene);
                 }
