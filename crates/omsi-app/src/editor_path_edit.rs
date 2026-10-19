@@ -5,6 +5,12 @@ use omsi_sim::traffic::Lane;
 #[cfg(test)]
 use omsi_sim::traffic::LaneKey;
 use std::collections::HashMap;
+/// The simulation retains object lanes until reload; hide deleted owners in the editor.
+/// Spline paths have a separate identity and must not be removed by an object deletion.
+pub fn owner_is_deleted(lane: &Lane, deleted_objects: &std::collections::HashSet<i64>) -> bool {
+    lane.source == 2 && lane.key.is_some_and(|key| deleted_objects.contains(&key.id))
+}
+
 #[derive(Default)]
 pub struct Edits {
     pub changes: HashMap<Id, Change>,
@@ -793,4 +799,26 @@ mod integration_tests {
     }
 
 
+}
+
+#[cfg(test)]
+mod deleted_owner_tests {
+    use super::*;
+    #[test]
+    fn cached_object_paths_disappear_and_restore_without_hiding_independent_splines() {
+        let mut object = omsi_sim::traffic::LaneBuilder::polyline(
+            vec![DVec3::ZERO, DVec3::Y * 10.0], omsi_sim::traffic::LaneKind::Street, 3.0);
+        object.source = 2;
+        object.key = Some(LaneKey { tile: (-18, -2), id: 9861496, path: 937 });
+        let mut spline = object.clone(); spline.source = 1;
+        let mut other = object.clone(); other.key.as_mut().unwrap().id += 1;
+        let cached = [object, spline, other];
+        let mut deleted = std::collections::HashSet::from([9861496]);
+        let visible: Vec<_> = cached.iter().filter(|lane| !owner_is_deleted(lane, &deleted)).collect();
+        assert_eq!(visible.len(), 2);
+        assert_eq!(visible[0].source, 1);
+        assert_eq!(visible[1].key.unwrap().id, 9861497);
+        deleted.clear();
+        assert_eq!(cached.iter().filter(|lane| !owner_is_deleted(lane, &deleted)).count(), 3);
+    }
 }
