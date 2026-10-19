@@ -178,3 +178,16 @@ The central island and all splitter shapes have concrete-grey kerbs with vertica
 faces and bevelled crowns, independent of painted edge lines. Island surface textures
 stay on the inset top. Kerbs follow island height and remain inside the existing
 footprint. Update previously placed builder objects and save the map to apply them.
+
+### Bauablauf im Teststand 0.8.8-pre-islands6
+
+Der Baukasten ist jetzt in vier direkt anwählbare Schritte gegliedert:
+
+1. **Kreisform:** Anzahl der Zufahrten, Radius und Höhe der Kreisinsel sowie Breite der Ringfahrbahn einstellen. Der Außendurchmesser wird aus Radius und Ringbreite berechnet angezeigt.
+2. **Zufahrten:** Arm A–D wählen und dessen gesamte Fahrbahnbreite, Länge ab Mittelpunkt und Richtung einstellen. Die Breite umfasst beide Fahrtrichtungen einschließlich einer gegebenenfalls vorhandenen Verkehrsinsel. Hier kann auch das Profil des gewählten Splines übernommen werden.
+3. **Inseln:** Für den gewählten Arm die Verkehrsinsel einschalten, Form und Maße einstellen oder „Insel nach Vorlage“ verwenden. Die Bordsteine werden mit der Inselgeometrie erzeugt.
+4. **Ausstattung:** Asphalt und Inselbelag wählen, Randlinien und gestrichelte Einfahrten einstellen. Zwischen Linienabständen und Texturausschnitt kann umgeschaltet werden. Die blauen KI-Wege in der Vorschau prüfen und anschließend „Speichern & einsetzen“ wählen.
+
+Die Schritte können jederzeit gewechselt werden. Gültige laufende Eingaben werden beim Wechsel übernommen; ungültige Eingaben bleiben zum Korrigieren offen. Ein Seitenwechsel ändert keine Geometrie. Vorschau, Armwahl und Rückgängig bleiben verfügbar.
+
+Die Gliederung orientiert sich an [stvo2Go: Kreisverkehre sicher bauen, beschildern und markieren](https://www.stvo2go.de/kreisverkehr-bauen-beschildern-markieren/). Es handelt sich um eine Bedienungsverbesserung des vorhandenen einstreifigen Baukastens, nicht um eine vollständige Umsetzung aller dort beschriebenen Bauformen und Entwurfsregeln. Fußgängerüberwege, Radfurten, Schilder, Ampeln, separate Ein-/Ausfahrbreiten und ein überfahrbarer Innenring werden in diesem Teststand nicht neu erzeugt.

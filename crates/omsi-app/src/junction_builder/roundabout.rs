@@ -6,6 +6,17 @@ use {super::*,omsi_geometry::roundabout::{on_road,edge_strips,entrance_dashes,de
 mod tests {
     use super::*;
     #[test]
+    fn workflow_switch_commits_valid_input_and_preserves_invalid_input() {
+        let mut w=Window::new_roundabout(false);
+        w.edit(Field::IslandRadius);w.input.as_mut().unwrap().text="14".into();w.input.as_mut().unwrap().replace=false;
+        w.command(Command::RoundaboutStep(1));assert_eq!(w.roundabout_step,1);assert_eq!(w.value(Field::IslandRadius),14.0);
+        w.edit(Field::Width);w.input.as_mut().unwrap().text="invalid".into();w.input.as_mut().unwrap().replace=false;
+        w.command(Command::RoundaboutStep(2));assert_eq!(w.roundabout_step,1);assert!(w.input.is_some());
+        w.input=None;let before=serde_json::to_string(&w.project).unwrap();
+        for step in [2,3,0,1] {w.command(Command::RoundaboutStep(step));assert_eq!(w.roundabout_step,step);}
+        assert_eq!(before,serde_json::to_string(&w.project).unwrap());
+    }
+    #[test]
     #[ignore = "requires graphics adapter; writes roundabout UI screenshots"]
     fn render_splitter_ui() {
         let instance=crate::graphics_instance();let mut renderer=pollster::block_on(omsi_render::Renderer::new_with(&instance,None,Some(wgpu::TextureFormat::Rgba8UnormSrgb),omsi_render::RenderOptions{msaa:1,ssao:false,fxaa:false,shadow_size:1024,..Default::default()})).unwrap();
@@ -14,14 +25,16 @@ mod tests {
             let mut w=Window::new_roundabout(false);
             let mut scene=renderer.new_scene();let mut ui=crate::ui::Ui::new().unwrap();
             ui.draw_junction_window(&renderer,&mut scene,Some(&mut w),Path::new("/tmp"),1.0,[0.0,0.0,width as f32,height as f32],(-1.0,-1.0));
-            for toggle in [true,false,true] {
-                let r=w.rects.iter().find(|(_,c)|matches!(c,Command::SplitterSettings)).unwrap().0;
+            for step in [1,3,0,2] {
+                let r=w.rects.iter().find(|(_,c)|matches!(c,Command::RoundaboutStep(n) if *n==step)).unwrap().0;
                 for cursor in [(r[0]+1.0,r[1]+1.0),((r[0]+r[2])*0.5,(r[1]+r[3])*0.5),(r[2]-1.0,r[3]-1.0)] {
                     assert!(!ui.editor_window_drag_press(cursor),"island button must not start window dragging");
-                    assert!(matches!(w.hit(cursor),Some(Command::SplitterSettings)));
+                    assert!(matches!(w.hit(cursor),Some(Command::RoundaboutStep(n)) if n==step));
                 }
-                w.command(w.hit(((r[0]+r[2])*0.5,(r[1]+r[3])*0.5)).unwrap());assert_eq!(w.splitter_settings,toggle);
+                w.command(w.hit(((r[0]+r[2])*0.5,(r[1]+r[3])*0.5)).unwrap());assert_eq!(w.roundabout_step,step);assert_eq!(w.splitter_settings,step==2);
                 scene.overlays.clear();ui.draw_junction_window(&renderer,&mut scene,Some(&mut w),Path::new("/tmp"),1.0,[0.0,0.0,width as f32,height as f32],(-1.0,-1.0));
+                let rgba=renderer.render_to_image(&mut scene,width,height,&camera,&omsi_render::Lighting{shadows:false,..Default::default()}).unwrap();
+                image::save_buffer(format!("/tmp/roundabout-step-{step}-{lang}-{width}.png"),&rgba,width,height,image::ColorType::Rgba8).unwrap();
             }
             let r=w.rects.iter().find(|(_,c)|matches!(c,Command::Splitter)).unwrap().0;let cursor=((r[0]+r[2])*0.5,(r[1]+r[3])*0.5);
             assert!(!ui.editor_window_drag_press(cursor));w.command(w.hit(cursor).unwrap());assert!(w.project.roundabout.as_ref().unwrap().splitters[0].enabled);
@@ -38,7 +51,7 @@ mod tests {
     #[test]
     fn splitter_controls_are_per_arm_and_undoable() {
         let mut w=Window::new_roundabout(false);let initial=w.project.clone();
-        w.command(Command::SplitterSettings);w.command(Command::Splitter);w.command(Command::SplitterShape);w.set(Field::SplitterLength,5.0);
+        w.command(Command::RoundaboutStep(2));w.command(Command::Splitter);w.command(Command::SplitterShape);w.set(Field::SplitterLength,5.0);
         assert!(w.splitter_settings);assert!(w.project.roundabout.as_ref().unwrap().splitters[0].enabled);
         w.command(Command::Arm(1));assert!(!w.project.roundabout.as_ref().unwrap().splitters[1].enabled);assert_eq!(w.value(Field::SplitterLength),6.0);
         for _ in 0..3 {w.command(Command::Undo);}assert_eq!(w.project,initial);

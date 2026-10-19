@@ -22,12 +22,12 @@ impl Field {
         Self::Bend=>(-35.0,35.0),Self::Sidewalk=>(0.0,6.0),Self::Corner=>(0.0,20.0),Self::TextureMetres=>(0.25,100.0),Self::TextureWidth=>(0.25,100.0),Self::UStart|Self::UEnd=>(-16.0,16.0),Self::Name=>(0.0,0.0)}}
 }
 #[derive(Clone,Copy)]
-pub enum Command {SplitterTemplate,SplitterSettings,Splitter,SplitterShape,DashedEntries,OuterLine,LineSettings,Close,Shape(bool),Arm(usize),Edit(Field),Digit(Field,i32),Step(Field,f64),Adjust(Field,f64),RoadTexture,WalkTexture,Markings,
+pub enum Command {RoundaboutStep(u8),SplitterTemplate,Splitter,SplitterShape,DashedEntries,OuterLine,LineSettings,Close,Shape(bool),Arm(usize),Edit(Field),Digit(Field,i32),Step(Field,f64),Adjust(Field,f64),RoadTexture,WalkTexture,Markings,
     ShowPaths,Rotate,Undo,Redo,Export,Load,UseSpline,ConnectRoad}
 
 pub struct Input {pub field:Field,pub text:String,pub replace:bool}
 pub struct Window {
-    pub splitter_settings:bool,
+    pub roundabout_step:u8, pub splitter_settings:bool,
     pub line_settings:bool,
     pub texture_digits:[usize;3],pub texture_steps:[i32;3],pub texture_focus:Option<Field>,
     pub existing_preview:Vec<[DVec3;2]>,pub arm_links:[Option<i64>;4],pub source_label:String,pub road_preview:Vec<[DVec3;2]>,pub pending:Option<(((i32,i32),i64),usize)>,pub target:Option<i64>,pub placed_project:Option<Project>,pub project:Project,pub arm:usize,pub input:Option<Input>,pub message:String,pub rects:Vec<([f32;4],Command)>,
@@ -36,7 +36,7 @@ pub struct Window {
 }
 
 impl Window {
-    pub fn new(left_hand:bool)->Self {let project=Project {left_hand,..Default::default()};Self {splitter_settings:false,line_settings:false,texture_digits:[4;3],texture_steps:[-4;3],texture_focus:None,existing_preview:Vec::new(),arm_links:[None;4],source_label:String::new(),road_preview:Vec::new(),pending:None,target:None,placed_project:None,project,arm:0,input:None,
+    pub fn new(left_hand:bool)->Self {let project=Project {left_hand,..Default::default()};Self {roundabout_step:0,splitter_settings:false,line_settings:false,texture_digits:[4;3],texture_steps:[-4;3],texture_focus:None,existing_preview:Vec::new(),arm_links:[None;4],source_label:String::new(),road_preview:Vec::new(),pending:None,target:None,placed_project:None,project,arm:0,input:None,
         message:"Choose arm, adjust dimensions, then Save & place. Blue = AI paths.".into(),rects:Vec::new(),arm_labels:Vec::new(),preview:None,
         preview_id:0,show_paths:true,view:0,error:None,undo:Vec::new(),redo:Vec::new(),dirty:true}}
     pub fn new_roundabout(left_hand:bool)->Self {
@@ -136,7 +136,7 @@ impl Window {
     pub fn command(&mut self,command:Command) {
         match command {
             Command::SplitterTemplate=>{if self.commit()&&self.project.roundabout.is_some(){self.remember();let s=&mut self.project.roundabout.as_mut().unwrap().splitters[self.arm];s.enabled=true;s.shape=omsi_geometry::roundabout_splitters::Shape::Wedge;s.length=9.0;s.width=1.5;s.gap=1.0;self.changed();}},
-            Command::SplitterSettings=>{if self.commit(){self.splitter_settings=!self.splitter_settings;}},
+            Command::RoundaboutStep(step)=>{if step<4 && self.project.roundabout.is_some() && self.commit(){self.roundabout_step=step;self.splitter_settings=step==2;self.line_settings=step==3;}},
             Command::Splitter|Command::SplitterShape=>{if self.commit() && self.project.roundabout.is_some(){self.remember();let s=&mut self.project.roundabout.as_mut().unwrap().splitters[self.arm];if matches!(command,Command::Splitter){s.enabled=!s.enabled;}else {use omsi_geometry::roundabout_splitters::Shape;s.shape=match s.shape{Shape::Rounded=>Shape::Teardrop,Shape::Teardrop=>Shape::Wedge,Shape::Wedge=>Shape::Rounded};}self.changed();}},
             Command::DashedEntries=>{if self.commit() && self.project.roundabout.is_some() {self.remember();let r=self.project.roundabout.as_mut().unwrap();r.dashed_entries=!r.dashed_entries;self.changed();}},
             Command::OuterLine=>{if self.commit() && self.project.roundabout.is_some() {self.remember();let r=self.project.roundabout.as_mut().unwrap();r.outer_line=!r.outer_line;self.changed();}},

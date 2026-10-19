@@ -3317,3 +3317,45 @@ _version: 2
 
 "Reference splitter island":
   de: "Insel nach Vorlage"
+
+"1 Circle":
+  de: "1 Kreisform"
+
+"2 Approaches":
+  de: "2 Zufahrten"
+
+"3 Islands":
+  de: "3 Inseln"
+
+"4 Finish":
+  de: "4 Ausstattung"
+
+"Whole roundabout: central island and circulating road.":
+  de: "Gesamter Kreisverkehr: Kreisinsel und Ringfahrbahn."
+
+"Outer diameter = 2 × (island radius + ring width).":
+  de: "Außendurchmesser = 2 × (Inselradius + Ringbreite)."
+
+"Select arm A–D. These dimensions apply only to that arm.":
+  de: "Arm A–D wählen. Maße gelten nur für diese Zufahrt."
+
+"Road width includes both lanes and the splitter island.":
+  de: "Fahrbahnbreite umfasst beide Spuren und die Insel."
+
+"Selected arm only. Wide end faces the ring.":
+  de: "Nur gewählte Zufahrt. Breites Ende zeigt zum Ring."
+
+"Kerbs follow island height; painted lines are separate.":
+  de: "Bordsteine folgen der Inselhöhe; Linien sind separat."
+
+"Choose surfaces and markings, then inspect the blue AI paths.":
+  de: "Beläge und Linien wählen, dann blaue KI-Wege prüfen."
+
+"Crossings, signs and traffic lights are not generated yet.":
+  de: "Überwege, Schilder und Ampeln werden noch nicht erzeugt."
+
+"Outer diameter (m)":
+  de: "Außendurchmesser (m)"
+
+"Choose a step above. You can return to any step before placing.":
+  de: "Schritt oben wählen. Vor dem Einsetzen jederzeit zurückwechseln."

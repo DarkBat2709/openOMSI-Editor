@@ -1767,13 +1767,13 @@ impl Ui {
         if self.junction_image.is_none() {if let Some(img)=&window.preview {self.junction_image=Some((window.preview_id,r.add_texture(scene,img,false)));}}
         let s=scale.max(0.5).min((viewport[2]/1044.0).max(0.1)).min((viewport[3]/764.0).max(0.1));
         let kind=if window.project.roundabout.is_some(){"roundabout"}else{"junction"};
-        let (x,y)=self.editor_window_origin(kind,viewport,[1020.0*s,740.0*s],[viewport[0]+(viewport[2]-1020.0*s)*0.5,viewport[1]+(viewport[3]-740.0*s)*0.5],[if kind=="roundabout"{640.0*s}else{896.0*s},52.0*s]);
+        let (x,y)=self.editor_window_origin(kind,viewport,[1020.0*s,740.0*s],[viewport[0]+(viewport[2]-1020.0*s)*0.5,viewport[1]+(viewport[3]-740.0*s)*0.5],[if kind=="roundabout"{380.0*s}else{896.0*s},52.0*s]);
         let rect=|a:f32,b:f32,w:f32,h:f32|[x+a*s,y+b*s,x+(a+w)*s,y+(b+h)*s];
         let flat=self.text.flat;self.text.flat=true;
         self.catalog_plate(r,scene,[0, 0, 0, 150],[viewport[0],viewport[1],viewport[0]+viewport[2],viewport[1]+viewport[3]]);
         self.editor_surface(r,scene,rect(0.0,0.0,1020.0,740.0),7.0*s,PANEL);
         let roundabout=window.project.roundabout.is_some();
-        self.catalog_text(r,scene,if roundabout {"Roundabout builder"} else {"Junction builder"},(x+22.0*s,y+18.0*s),680.0*s,24.0*s,WHITE);
+        self.catalog_text(r,scene,if roundabout {"Roundabout builder"} else {"Junction builder"},(x+22.0*s,y+18.0*s),if roundabout {360.0*s}else{680.0*s},24.0*s,WHITE);
         self.catalog_text(r,scene,&window.source_label,(x+22.0*s,y+46.0*s),970.0*s,10.0*s,SOFT);
         self.editor_surface(r,scene,rect(20.0,62.0,358.0,576.0),5.0*s,PANEL);
         let cross=window.project.arms[3].enabled;
@@ -1785,7 +1785,9 @@ impl Ui {
             let (status,color)=if window.pending.is_some_and(|(_,arm)|arm==i){("prepared".to_string(),[60,180,255,0])}else if let Some(id)=window.arm_links[i]{(format!("ID {id}"),[75,230,110,0])}else{("free".to_string(),MUTED)};
             self.catalog_text(r,scene,&status,(x+(32.0+i as f32*83.0)*s,y+153.0*s),77.0*s,8.0*s,color);
         }
-        if roundabout {buttons.push((rect(650.0,16.0,240.0,32.0),if window.splitter_settings {"Roundabout dimensions"}else{"Traffic islands …"}.into(),Command::SplitterSettings,true,window.splitter_settings));}
+        if roundabout {for (i,title) in ["1 Circle","2 Approaches","3 Islands","4 Finish"].into_iter().enumerate() {
+            buttons.push((rect(390.0+i as f32*126.0,16.0,120.0,32.0),title.into(),Command::RoundaboutStep(i as u8),true,window.roundabout_step==i as u8));
+        }}
         if roundabout && window.splitter_settings {
             let island=&window.project.roundabout.as_ref().unwrap().splitters[window.arm];
             buttons.push((rect(32.0,166.0,158.0,32.0),if island.enabled{"Splitter island: ON"}else{"Splitter island: OFF"}.into(),Command::Splitter,true,island.enabled));
@@ -1794,10 +1796,26 @@ impl Ui {
         let name=window.input.as_ref().filter(|i|i.field==Field::Name).map(|i|format!("{}│",i.text)).unwrap_or_else(||window.project.name.clone());
         buttons.push((rect(32.0,166.0,326.0,32.0),name,Command::Edit(Field::Name),true,window.input.as_ref().is_some_and(|i|i.field==Field::Name)));
         }
-        let fields=if roundabout && window.splitter_settings {[Field::SplitterLength,Field::SplitterWidth,Field::SplitterGap,Field::SplitterHeight,Field::Width,Field::Length,Field::Angle]}
-            else if roundabout {[Field::Width,Field::Length,Field::Angle,Field::IslandRadius,Field::RingWidth,Field::IslandHeight,Field::TextureMetres]}
-            else {[Field::Width,Field::Length,Field::Angle,Field::Bend,Field::Sidewalk,Field::Corner,Field::TextureMetres]};
-        for (i,field) in fields.into_iter().enumerate() {
+        let fields:&[Field]=if roundabout {match window.roundabout_step {
+            0=>&[Field::IslandRadius,Field::RingWidth,Field::IslandHeight],
+            1=>&[Field::Width,Field::Length,Field::Angle],
+            2=>&[Field::SplitterLength,Field::SplitterWidth,Field::SplitterGap,Field::SplitterHeight,Field::Width,Field::Length],
+            _=>&[Field::TextureMetres],
+        }} else {&[Field::Width,Field::Length,Field::Angle,Field::Bend,Field::Sidewalk,Field::Corner,Field::TextureMetres]};
+        if roundabout {
+            let hints=match window.roundabout_step {
+                0=>["Whole roundabout: central island and circulating road.","Outer diameter = 2 × (island radius + ring width)."],
+                1=>["Select arm A–D. These dimensions apply only to that arm.","Road width includes both lanes and the splitter island."],
+                2=>["Selected arm only. Wide end faces the ring.","Kerbs follow island height; painted lines are separate."],
+                _=>["Choose surfaces and markings, then inspect the blue AI paths.","Crossings, signs and traffic lights are not generated yet."],
+            };
+            for (i,hint) in hints.iter().enumerate(){self.catalog_text(r,scene,hint,(x+32.0*s,y+(208.0+fields.len() as f32*36.0+8.0+i as f32*17.0)*s),326.0*s,10.0*s,SOFT);}
+            if window.roundabout_step<2 {let rb=window.project.roundabout.as_ref().unwrap();
+                self.catalog_text(r,scene,"Outer diameter (m)",(x+32.0*s,y+376.0*s),210.0*s,12.0*s,SOFT);
+                self.catalog_text(r,scene,&format!("{:.2}",2.0*(rb.island_radius+rb.road_width)),(x+248.0*s,y+376.0*s),100.0*s,14.0*s,AMBER);
+            }
+        }
+        for (i,&field) in fields.iter().enumerate() {
             let row=208.0+i as f32*36.0;
             self.catalog_text(r,scene,field.title(),(x+32.0*s,y+(row+8.0)*s),168.0*s,12.0*s,SOFT);
             let step=match field {Field::Angle|Field::Bend=>5.0,Field::IslandHeight|Field::SplitterHeight=>0.05,_=>0.5};
@@ -1845,7 +1863,9 @@ impl Ui {
             }
         }
         let mut digit_hits=Vec::new();
-        if roundabout && window.line_settings {
+        if roundabout && window.roundabout_step!=3 {
+            self.catalog_text(r,scene,"Choose a step above. You can return to any step before placing.",(x+414.0*s,y+607.0*s),570.0*s,12.0*s,SOFT);
+        } else if roundabout && window.line_settings {
             for (i,field) in [Field::LineLeft,Field::LineRight,Field::LineWidth].into_iter().enumerate() {
                 let left=414.0+i as f32*194.0;
                 self.catalog_text(r,scene,field.title(),(x+left*s,y+592.0*s),180.0*s,11.0*s,SOFT);
@@ -1894,6 +1914,10 @@ impl Ui {
         for (i,line) in wrap(&self.text,message,11.0*s,374.0*s).iter().take(6).enumerate() {
             self.catalog_text(r,scene,line,(x+22.0*s,y+(648.0+i as f32*13.0)*s),374.0*s,11.0*s,SOFT);
         }
+        if roundabout {buttons.retain(|(_,_,command,_,_)|match command {
+            Command::RoadTexture|Command::WalkTexture|Command::Markings|Command::OuterLine|Command::DashedEntries|Command::LineSettings=>window.roundabout_step==3,
+            Command::UseSpline=>window.roundabout_step==1,_=>true,
+        });}
         for (area,title,command,enabled,selected) in buttons {
             let primary = matches!(&command, Command::Export);
             self.editor_surface(r,scene,area,3.0*s,if !enabled {PANEL_ALT}
