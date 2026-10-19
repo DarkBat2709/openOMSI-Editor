@@ -116,6 +116,7 @@ impl App {
         if let crate::editor::Action::Workspace(mode) = action {
             self.editor_workspace(mode); return true;
         }
+        if matches!(action,crate::editor::Action::SplineDimensions){self.editor_open_dimensions();return true;}
         if matches!(action,crate::editor::Action::ConstructionWindow){self.editor_open_construction();return true;}
         if matches!(action,crate::editor::Action::TrafficManage){self.editor_open_path_manager();return true;}
         if matches!(action,crate::editor::Action::AuditSplines){self.editor_open_audit();return true;}
@@ -802,6 +803,7 @@ impl App {
             if let Some(command)=command {self.editor_junction_command(command);}return true;
         }
         if self.editor_traffic_mouse(pressed){return true;}
+        if self.editor_dimensions_mouse(pressed){return true;}
         if self.editor_construction_mouse(pressed){return true;}
         if self.editor_sidewalk_mouse(pressed){return true;}
         if self.editor_roadside_mouse(pressed) { return true; }

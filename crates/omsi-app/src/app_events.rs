@@ -185,6 +185,7 @@ impl ApplicationHandler for App {
                     }
                 }
                 let catalog_code = match event.physical_key { PhysicalKey::Code(code) => Some(code), _ => None };
+                if self.editor_dimensions_input(catalog_code,event.text.as_deref(),event.state==ElementState::Pressed){return;}
                 if self.editor_construction_input(catalog_code,event.text.as_deref(),event.state==ElementState::Pressed){return;}
                 if self.editor_traffic_input(catalog_code,event.state==ElementState::Pressed,event.repeat){return;}
                 if self.editor_sidewalk_input(catalog_code,event.text.as_deref(),event.state==ElementState::Pressed,event.repeat){return;}

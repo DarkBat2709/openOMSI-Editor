@@ -11,6 +11,7 @@ use omsi_render::{Renderer, Scene, TextureId};
 
 mod menu;
 mod perf_panel;
+mod spline_dimensions;
 mod text;
 
 pub use text::TextCache;
@@ -739,7 +740,7 @@ impl Ui {
         let flat = self.text.flat;
         self.text.flat = true;
         self.editor_surface(r, scene, layout.panel, 5.0 * s, PANEL);
-        let title = if terrain { "Terrain editor 0.8.7-pre" } else if spline { "Spline editor 0.8.7-pre" } else { "Object editor 0.8.7-pre" };
+        let title = if terrain { "Terrain editor 0.8.8-pre" } else if spline { "Spline editor 0.8.8-pre" } else { "Object editor 0.8.8-pre" };
         self.put(r, scene, title, ((13.0 * s) as u32).max(1) | BOLD,
             MUTED, layout.panel[0] + 10.0 * s, layout.panel[1] + 12.0 * s);
         self.editor_surface(r, scene, layout.selection, 3.0 * s, PANEL_ALT);
@@ -846,7 +847,7 @@ impl Ui {
             self.editor_hint_mode = Some((spline, expanded));
         }
         let shortcuts = editor_shortcuts(spline, expanded);
-        let footer = if connection.is_some() { 198.0 } else if tools.is_some() { 372.0 } else if objects.is_some() {192.0} else { 0.0 };
+        let footer = if connection.is_some() { 198.0 } else if tools.is_some() { 404.0 } else if objects.is_some() {192.0} else { 0.0 };
         let hud_bottom = self.editor_hud_rect.map_or(viewport[1], |rect| rect[3]);
         let layout = editor_dock_layout(viewport, s, hud_bottom, shortcuts.len(), footer, self.editor_dock_position, spline);
         self.editor_help_scroll_max = layout.max_scroll;
@@ -1148,19 +1149,20 @@ impl Ui {
         use crate::editor::Action;
         let Some((enabled, filter)) = enabled else { return; };
         let [x, y] = origin;
-        let panel = [x, y, x + 284.0 * s, y + 372.0 * s];
+        let panel = [x, y, x + 284.0 * s, y + 404.0 * s];
         self.editor_tools_rect = Some(panel);
         self.editor_surface(r, scene, panel, 3.0 * s, PANEL);
         self.catalog_text(r, scene, if enabled { "Road shoulders / terrain" } else { "Select a road first" },
             (x + 8.0 * s, y + 5.0 * s), 268.0 * s, 13.0 * s, MUTED);
         self.catalog_text(r, scene, "Ctrl+click: add/remove · Click empty: clear",
-            (x + 8.0 * s, y + 317.0 * s), 268.0 * s, 12.0 * s, MUTED);
+            (x + 8.0 * s, y + 349.0 * s), 268.0 * s, 12.0 * s, MUTED);
         self.catalog_text(r, scene, "Ctrl+Tab: add overlap · C: continue",
-            (x + 8.0 * s, y + 332.0 * s), 268.0 * s, 12.0 * s, MUTED);
+            (x + 8.0 * s, y + 364.0 * s), 268.0 * s, 12.0 * s, MUTED);
         self.catalog_text(r, scene, "Group: +/- length · ,/. curve · Home/End gradient",
-            (x + 8.0 * s, y + 347.0 * s), 268.0 * s, 11.0 * s, MUTED);
+            (x + 8.0 * s, y + 379.0 * s), 268.0 * s, 11.0 * s, MUTED);
         for (row, (action, title)) in [
             (Action::CycleSelectionFilter, filter.title()),
+            (Action::SplineDimensions, "Spline dimensions …"),
             (Action::SmoothRoad(false), "Smooth shoulder (F8)"),
             (Action::SmoothRoad(true), "Smooth wider (Shift+F8)"),
             (Action::FitTerrain, "Road to terrain (F6)"),
@@ -1170,7 +1172,7 @@ impl Ui {
             (Action::SidewalkWindow, "Sidewalk along the road"),
             (Action::ConstructionWindow, "Bridge / tunnel / underground …"),
         ].into_iter().enumerate() {
-            let enabled=enabled||matches!(action,Action::ConstructionWindow | Action::CycleSelectionFilter);
+            let enabled=enabled||matches!(action,Action::ConstructionWindow | Action::SplineDimensions | Action::CycleSelectionFilter);
             let top = y + (27.0 + row as f32 * 32.0) * s;
             let rect = [x + 6.0 * s, top, x + 278.0 * s, top + 27.0 * s];
             let color = if !enabled { PANEL_ALT }

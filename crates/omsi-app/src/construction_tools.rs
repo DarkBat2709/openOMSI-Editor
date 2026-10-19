@@ -1,5 +1,6 @@
 //! Explicit spline heights and an editor-only construction plane for bridges/tunnels.
 use crate::{app::App, scene::World, spline_editor::Key};
+#[cfg(test)]
 use glam::DVec3;
 use winit::keyboard::KeyCode;
 #[derive(Clone, Copy)]
@@ -72,52 +73,7 @@ impl Window {
         true
     }
 }
-/// A real ray/plane intersection, including a camera below the terrain.
-pub fn plane_hit(origin: DVec3, direction: DVec3, z: f64) -> Option<DVec3> {
-    if !z.is_finite() || direction.z.abs() < 1e-9 {
-        return None;
-    }
-    let distance = (z - origin.z) / direction.z;
-    (distance > 0.01 && distance <= 2000.0).then(|| origin + direction * distance)
-}
-/// Keep exact end height independent of the endpoint gradients (OMSI spline_h).
-pub fn height_profile(s: &omsi_map::MapSpline, v: [f64; 5]) -> Result<omsi_map::MapSpline, String> {
-    if v.iter().any(|v| !v.is_finite())
-        || !(0.5..=5000.0).contains(&s.length)
-        || v[..2].iter().any(|v| !(-1000.0..=10000.0).contains(v))
-        || v[2..4].iter().any(|v| v.abs() > 20.0)
-    {
-        return Err("Invalid height or gradient".into());
-    }
-    let mut result = s.clone();
-    result.pos[2] = v[0];
-    result.delta_h = Some(v[1] - v[0]);
-    result.grad_start = v[2];
-    result.grad_end = v[3];
-    result.is_h = true;
-    result.terrain_align = None;
-    result.terrain_align_flag = false;
-    let curve = omsi_geometry::SplineCurve::from_map(&result, glam::DVec2::ZERO);
-    // The gradient is quadratic: test its endpoints and the interior extremum exactly.
-    let a = curve.slope_at(0.0);
-    let b = curve.slope_at(s.length);
-    let mid = curve.slope_at(s.length * 0.5);
-    let quadratic = 2.0 * (a + b - 2.0 * mid);
-    let linear = b - a - quadratic;
-    let t = if quadratic.abs() > 1e-12 {
-        (-linear / (2.0 * quadratic)).clamp(0.0, 1.0)
-    } else {
-        0.0
-    };
-    let max = a.abs().max(b.abs()).max(curve.slope_at(s.length * t).abs());
-    if max > 0.200001 {
-        return Err(format!(
-            "Ramp too steep ({:.1}%); extend the road or reduce height difference",
-            max * 100.0
-        ));
-    }
-    Ok(result)
-}
+pub use omsi_geometry::spline_dimensions::{plane_hit, height_profile};
 impl App {
     pub(crate) fn editor_open_construction(&mut self) {
         if self.net.lan.is_some() {
@@ -422,19 +378,7 @@ mod tests {
         assert!(!construction_camera_input(editor.construction_window.as_ref().unwrap(),Some(KeyCode::KeyI),true,false,&mut keys));
     }
 
-    #[test]
-    fn plane_intersection_works_above_and_below_ground() {
-        assert_eq!(
-            plane_hit(DVec3::new(1.0, 2.0, 10.0), -DVec3::Z, -5.0),
-            Some(DVec3::new(1.0, 2.0, -5.0))
-        );
-        assert_eq!(
-            plane_hit(DVec3::new(1.0, 2.0, -10.0), DVec3::Z, -5.0),
-            Some(DVec3::new(1.0, 2.0, -5.0))
-        );
-        assert!(plane_hit(DVec3::ZERO, DVec3::X, -5.0).is_none());
-        assert!(plane_hit(DVec3::ZERO, DVec3::Z, -5.0).is_none());
-    }
+
     #[test]
     fn creating_a_tunnel_spline_keeps_the_work_plane_height() {
         let dir=std::env::temp_dir().join(format!("editor-plane-test-{}",std::process::id()));
@@ -450,25 +394,7 @@ mod tests {
         assert!((ed.markers(&world)[0].z-0.05).abs()<1e-9);
         std::fs::remove_dir_all(dir).unwrap();
     }
-    #[test]
-    fn profile_preserves_xy_and_ends_exactly_with_smooth_ramps() {
-        let s = omsi_map::MapSpline {
-            pos: [1.0, 2.0, 0.0],
-            length: 100.0,
-            terrain_align: Some(1.0),
-            terrain_align_flag: true,
-            ..Default::default()
-        };
-        let p = height_profile(&s, [0.0, 10.0, 0.0, 0.0, 0.0]).unwrap();
-        let c = omsi_geometry::SplineCurve::from_map(&p, glam::DVec2::ZERO);
-        assert!((c.end_point().z - 10.0).abs() < 1e-8);
-        assert!(c.slope_at(0.0).abs() < 1e-8);
-        assert!(c.slope_at(100.0).abs() < 1e-8);
-        assert_eq!(p.pos[..2], s.pos[..2]);
-        assert!(p.terrain_align.is_none() && !p.terrain_align_flag);
-        assert!(height_profile(&s, [0.0, 20.0, 0.0, 0.0, 0.0]).is_err());
-        assert!(height_profile(&s, [f64::NAN, 0.0, 0.0, 0.0, 0.0]).is_err());
-    }
+
 }
 
 #[cfg(test)]
@@ -550,6 +476,17 @@ mod visual_tests {
                     let cursor=((new[0]+new[2])*0.5,(new[1]+new[3])*0.5);
                     assert_eq!(w.buttons.iter().position(|(r,_)|cursor.0>=r[0]&&cursor.0<=r[2]&&cursor.1>=r[1]&&cursor.1<=r[3]),Some(index));
                 }
+                let construction=editor.construction_window.take();editor.spline_mode=true;scene.overlays.clear();
+                editor.dimensions_window=Some(crate::spline_dimensions::Window{message:"Radius 0 = straight · Height = absolute start height".into(),..Default::default()});
+                ui.draw_spline_dimensions(&renderer,&mut scene,Some(&mut editor),1.0,[0.0,0.0,width as f32,height as f32],(-1.0,-1.0));
+                let panel=editor.dimensions_window.as_ref().unwrap().rect.unwrap();
+                assert!(panel[2]<=width as f32 && panel[3]<=height as f32);
+                assert_eq!(editor.dimensions_window.as_ref().unwrap().buttons.len(),8);
+                assert!(ui.editor_window_drag_press((panel[0]+5.0,panel[1]+5.0)));
+                assert!(ui.editor_dock_move((width as f32*0.5,height as f32*0.5)));ui.end_editor_dock_drag();scene.overlays.clear();
+                ui.draw_spline_dimensions(&renderer,&mut scene,Some(&mut editor),1.0,[0.0,0.0,width as f32,height as f32],(-1.0,-1.0));
+                assert_ne!(editor.dimensions_window.as_ref().unwrap().rect.unwrap(),panel);
+                editor.dimensions_window=None;editor.construction_window=construction;
                 let rgba = renderer
                     .render_to_image(
                         &mut scene,

@@ -3182,3 +3182,63 @@ _version: 2
 
 "Object {} is outside the map at tile ({}, {}); move it back or create that tile":
   de: "Objekt {} liegt außerhalb der Karte auf Kachel ({}, {}); zurückverschieben oder diese Kachel erstellen"
+
+"Spline dimensions …":
+  de: "Spline-Maße …"
+
+"Spline dimensions · drag here":
+  de: "Spline-Maße · hier ziehen"
+
+"Length (m)":
+  de: "Länge (m)"
+
+"Radius (m)":
+  de: "Radius (m)"
+
+"Gradient (%)":
+  de: "Steigung (%)"
+
+"Read selected spline":
+  de: "Auswahl einlesen"
+
+"Apply to selected spline":
+  de: "Auf Auswahl anwenden"
+
+"New spline dimensions: ON":
+  de: "Neue Splines mit Maßen: AN"
+
+"New spline dimensions: OFF":
+  de: "Neue Splines mit Maßen: AUS"
+
+"Constant gradient; check linked ends":
+  de: "Gleichmäßige Steigung; Anschlüsse prüfen"
+
+"Radius 0 = straight · Height = absolute start height":
+  de: "Radius 0 = gerade · Höhe = absolute Starthöhe"
+
+"Selected spline values loaded":
+  de: "Werte des gewählten Splines eingelesen"
+
+"Spline dimensions applied · Ctrl+Z undo · Ctrl+S save":
+  de: "Spline-Maße übernommen · Strg+Z zurück · Strg+S speichern"
+
+"New spline: choose a type, click start, then direction":
+  de: "Neuer Spline: Typ wählen, Start und dann Richtung anklicken"
+
+"Select one spline for numeric dimensions":
+  de: "Für genaue Maße einen einzelnen Spline auswählen"
+
+"Finish or cancel spline placement first":
+  de: "Spline-Platzierung zuerst abschließen oder abbrechen"
+
+"Click away from the start to choose a direction":
+  de: "Neben den Startpunkt klicken, um die Richtung festzulegen"
+
+"Road crosses a tile boundary; reduce length or move the start":
+  de: "Spline überschreitet Kachelgrenze; Länge kürzen oder Start verschieben"
+
+"New spline: exact dimensions · Ctrl+S to save":
+  de: "Neuer Spline mit genauen Maßen · Strg+S zum Speichern"
+
+"Length: 0.5–500 m; radius: 0 or ±0.5–100000 m; gradient: ±20%; height: -1000–10000 m":
+  de: "Länge: 0,5–500 m; Radius: 0 oder ±0,5–100000 m; Steigung: ±20%; Höhe: -1000–10000 m"

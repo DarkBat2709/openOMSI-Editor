@@ -1,6 +1,7 @@
 //! Spline mode of the in-game map editor. Edits stay in World across tile reloads.
 //! Existing records keep their index: attached object rows refer to it, not the ID.
 
+use omsi_geometry::spline_dimensions::{between, valid_spline, inside_tile};
 use crate::{editor::Action, scene::World};
 use glam::{DVec2, DVec3, Vec3};
 use hashbrown::{HashMap, HashSet};
@@ -39,8 +40,11 @@ fn selection_category(file: &str, def: Option<&omsi_scenery::Spline>) -> Selecti
     } else { SelectionFilter::Other }
 }
 
+mod dimensions;
+
 #[derive(Default)]
 pub struct SplineEditor {
+    pub dimensions: Option<[f64;4]>,
     pub selected: Option<Key>,
     pub selection_filter: SelectionFilter,
     group: Vec<Key>,
@@ -1097,9 +1101,9 @@ impl SplineEditor {
         self.cancel_connection();
         self.finish_drag();
         let Some(mut at) = at else { return "Point at the terrain and press Shift+G".into() };
-        if snap_to_ground { at.z = world.editor_terrain_height(at.x, at.y).unwrap_or(at.z) + 0.05; }
+        if let Some(v)=self.dimensions {at.z=v[3];} else if snap_to_ground { at.z = world.editor_terrain_height(at.x, at.y).unwrap_or(at.z) + 0.05; }
         if let Some((start, file)) = self.start.clone() {
-            let msg = self.add(world, &file, start, at, 0.0);
+            let msg = if let Some(values)=self.dimensions {self.add_dimensions(world,&file,start,at,values)} else {self.add(world, &file, start, at, 0.0)};
             if msg.starts_with("New spline") { self.start = None; }
             return msg;
         }
@@ -2188,17 +2192,6 @@ fn curve_part(s: &MapSpline, from: f64, length: f64) -> MapSpline {
     part
 }
 
-fn between(file: &str, id: i64, tile: (i32, i32), start: DVec3, end: DVec3, offset: f64) -> MapSpline {
-    let d = end - start;
-    let length = d.truncate().length();
-    let grade = d.z / length.max(0.0001) * 100.0;
-    let o = origin(tile);
-    MapSpline { file: file.into(), id, pos: [start.x - o.x, start.y - o.y, start.z],
-        heading: d.x.atan2(d.y).to_degrees().rem_euclid(360.0), length,
-        grad_start: grade, grad_end: grade, delta_h: Some(d.z), is_h: true,
-        tex_offset: offset, map_chain_offset: Some(offset), ..Default::default() }
-}
-
 // Saved tombstones are deliberately excluded from collect_editor_splines. Resolve
 // a cache miss from the source tile, while always preferring current in-memory edits.
 fn deleted_spline_link_in_world(world: &World, owner: (i32,i32), id: i64) -> bool {
@@ -2313,22 +2306,6 @@ fn shaped_group(before: &[(Key,MapSpline)], action: &Action) -> Result<Vec<(Key,
         after.push((*key,part));
     }
     Ok(after)
-}
-
-fn valid_spline(s: &MapSpline) -> bool {
-    if s.profile_transitions.iter().flatten().any(|t| !t.valid()) { return false; }
-    if !s.length.is_finite() || s.length <= 0.0 || !s.heading.is_finite()
-        || !s.pos.iter().all(|n| n.is_finite()) || !s.radius.is_finite()
-        || !s.grad_start.is_finite() || !s.grad_end.is_finite()
-        || s.delta_h.is_some_and(|h| !h.is_finite()) { return false; }
-    [s.cant_start, s.cant_end, s.skew_start, s.skew_end, s.tex_offset].iter().all(|n| n.is_finite())
-}
-
-fn inside_tile(s: &MapSpline) -> bool {
-    if !valid_spline(s) { return false; }
-    let c = SplineCurve::from_map(s, DVec2::ZERO);
-    let size = omsi_map::tile_size();
-    (0..=128).all(|i| { let p = c.point_at(s.length * i as f64 / 128.0); p.x >= -1e-6 && p.y >= -1e-6 && p.x <= size + 1e-6 && p.y <= size + 1e-6 })
 }
 
 fn number(v: f64) -> String { format!("{v:.12}") }
