@@ -2,7 +2,9 @@
 //! anew at each ring node otherwise encourages repeated laps and lane weaving.
 use super::Network;
 pub fn exits(net:&Network,start:usize,open:&dyn Fn(usize,usize)->bool)->Vec<Vec<usize>> {
-    if net.lanes[start].ring { return ring_exits(net, start, open); }
+    // Generated junctions already provide a complete route through their owner.
+    // Their intermediate lane-change sections need not be marked as ring lanes.
+    if net.lanes[start].ring && !net.lanes[start].editor_grouped_path { return ring_exits(net, start, open); }
     let owner=net.lanes[start].key;
     let same=|i:usize|net.lanes[i].editor_grouped_path && owner.zip(net.lanes[i].key).is_some_and(|(a,b)|a.tile==b.tile&&a.id==b.id);
     let mut dist=std::collections::HashMap::from([(start,0.0f32)]);

@@ -397,8 +397,11 @@ impl AiState {
         if let Some(n) = next {
             if !net.lanes[lane].ring && net.lanes[n].ring {
                 self.editor_ring_entry = Some(lane);
-                // A new entry must not inherit an exit planned on an earlier visit.
-                self.editor_junction_route.clear();
+                // Keep a committed route that already includes this entry, including
+                // intermediate non-ring sections of a generated roundabout.
+                if !self.editor_junction_route.windows(2).any(|pair| pair == [lane, n]) {
+                    self.editor_junction_route.clear();
+                }
             } else if net.lanes[lane].ring && !net.lanes[n].ring {
                 self.editor_ring_entry = None;
             }
