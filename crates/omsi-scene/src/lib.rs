@@ -104,3 +104,5 @@ mod crossing_deformation_tests;
 
 pub mod ground_paint;
 pub mod roadside_objects;
+
+pub mod spline_preview;

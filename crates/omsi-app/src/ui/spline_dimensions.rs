@@ -30,7 +30,7 @@ impl Ui {
         for(i,line)in wrap(&self.text,&omsi_ui::tr(&w.message),10.0*s,326.0*s).iter().take(3).enumerate(){
             self.catalog_text(r,scene,line,(x+12.0*s,y+(304.0+i as f32*15.0)*s),326.0*s,10.0*s,MUTED);
         }
-        self.catalog_text(r,scene,"Constant gradient; check linked ends",(x+12.0*s,y+362.0*s),208.0*s,10.0*s,MUTED);
+        self.catalog_text(r,scene,"Preview · N/M turn · Click places",(x+12.0*s,y+362.0*s),208.0*s,10.0*s,MUTED);
         self.text.flat=flat;
     }
 }

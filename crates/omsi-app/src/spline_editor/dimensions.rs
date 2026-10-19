@@ -10,7 +10,7 @@ impl SplineEditor {
         self.finish_drag();self.set(world,key,changed).ok_or("Could not update road")?;
         Ok(())
     }
-    pub(super) fn add_dimensions(&mut self,world:&World,file:&str,start:DVec3,direction:DVec3,values:[f64;4])->String {
+    pub(crate) fn add_dimensions(&mut self,world:&World,file:&str,start:DVec3,direction:DVec3,values:[f64;4])->String {
         let result=(||->Result<_,String>{
             if omsi_map::world_coordinates(){return Err("Spline editing on world-coordinate maps is not supported yet".into());}
             let ty=world.spline_type(file).ok_or("Spline type not found")?;

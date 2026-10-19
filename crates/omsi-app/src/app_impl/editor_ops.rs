@@ -655,7 +655,7 @@ impl App {
                 if asset.kind == Kind::Spline { ed.splines.choose_file(asset.file.clone()); ed.spline_mode = true; ed.selected = None; ed.editing_added = None; }
                 else {ed.spline_mode=false;ed.object_stamp=Some(crate::editor::ObjectStamp::new(asset.path.clone()));
                     ed.align_object=ed.construction_plane.is_none() && asset.category==crate::asset_catalog::Category::Junctions;}
-                let message = if asset.kind == Kind::Spline { "Road type selected · Click start on ground, then target · Esc/B cancels" }
+                let message = if asset.kind == Kind::Spline && ed.dimensions_window.is_some() && ed.splines.dimensions.is_some() {"Preview follows mouse · N/M turn · Click places · Esc finishes"} else if asset.kind == Kind::Spline { "Road type selected · Click start on ground, then target · Esc/B cancels" }
                     else { "Object selected · Click target · Repeat placement for more copies · Esc to finish" };
                 ed.placing_asset = Some(asset); ed.catalog = None;
                 self.service_msg = Some((message.into(), 12.0));
@@ -901,6 +901,7 @@ impl App {
                 if terrain.mode==crate::terrain_editor::Mode::Textures {log::info!("Texture brush: no terrain hit · {}",terrain.message);}}
             return true;
         }
+        if self.spline_preview_click(){return true;}
         if let Some(asset) = self.menus.editor.as_ref().and_then(|ed| ed.placing_asset.clone()) {
             self.menus.editor_drag = false;
             let Some(hit) = (match self.menus.editor.as_ref().and_then(|e|e.construction_plane) { Some(z)=>crate::construction_tools::plane_hit(o,d.as_dvec3(),z), None=>crate::placing::ground_hit(&world,o,d.as_dvec3(),400.0) }) else {

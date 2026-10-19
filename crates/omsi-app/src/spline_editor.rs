@@ -1,7 +1,7 @@
 //! Spline mode of the in-game map editor. Edits stay in World across tile reloads.
 //! Existing records keep their index: attached object rows refer to it, not the ID.
 
-use omsi_geometry::spline_dimensions::{between, valid_spline, inside_tile, curve_part, sliced_transitions};
+use omsi_geometry::spline_dimensions::{between, valid_spline, inside_tile, curve_part, sliced_transitions, straight_tile_cuts, nearest_station, profile_edges};
 use crate::{editor::Action, scene::World};
 use glam::{DVec2, DVec3, Vec3};
 use hashbrown::{HashMap, HashSet};
@@ -1641,43 +1641,6 @@ fn tile_at(p: DVec3) -> (i32, i32) {
     ((p.x / size).floor() as i32, (p.y / size).floor() as i32)
 }
 
-/// Exact grid crossings of a straight line, including negative tile coordinates.
-fn straight_tile_cuts(start: DVec3, end: DVec3) -> Vec<f64> {
-    let size = omsi_map::tile_size();
-    let mut cuts = vec![0.0, 1.0];
-    for (a, b) in [(start.x, end.x), (start.y, end.y)] {
-        if (b - a).abs() < 1e-9 { continue; }
-        let lo = (a.min(b) / size).floor() as i32;
-        let hi = (a.max(b) / size).floor() as i32;
-        for n in lo + 1..=hi {
-            let t = (n as f64 * size - a) / (b - a);
-            if t > 1e-9 && t < 1.0 - 1e-9 { cuts.push(t); }
-        }
-    }
-    cuts.sort_by(f64::total_cmp);
-    cuts.dedup_by(|a, b| (*a - *b).abs() < 1e-9);
-    cuts
-}
-
-fn nearest_station(c: &SplineCurve, at: DVec3) -> f64 {
-    let count = (c.length / 2.0).ceil().clamp(1.0, 4096.0) as usize;
-    let step = c.length / count as f64;
-    let distance = |d| (c.point_at(d).truncate() - at.truncate()).length_squared();
-    let mut best = 0.0;
-    for i in 1..=count {
-        let d = i as f64 * step;
-        if distance(d) < distance(best) { best = d; }
-    }
-    let (mut lo, mut hi) = ((best - step).max(0.0), (best + step).min(c.length));
-    for _ in 0..32 {
-        let a = lo + (hi - lo) / 3.0;
-        let b = hi - (hi - lo) / 3.0;
-        if distance(a) < distance(b) { hi = b; } else { lo = a; }
-    }
-    let middle = (lo + hi) * 0.5;
-    [0.0, middle, c.length].into_iter().min_by(|a, b| distance(*a).total_cmp(&distance(*b))).unwrap_or(0.0)
-}
-
 // The renderer and handles must share one geometry path (including skew and mirror).
 fn physical_edges(def: &omsi_scenery::Spline, mirror: bool) -> [(f64, f64); 2] {
     let (left, right) = profile_edges(def);
@@ -1827,23 +1790,6 @@ fn align_connection_surface(source_tile:(i32,i32),original:&MapSpline,source_def
         }
     }
     Ok(())
-}
-
-fn profile_edges(s: &omsi_scenery::Spline) -> ((f64, f64), (f64, f64)) {
-    let mut left = (f64::INFINITY, 0.0);
-    let mut right = (f64::NEG_INFINITY, 0.0);
-    for p in s.profiles.iter().flat_map(|p| &p.points) {
-        if (p.x as f64) < left.0 { left = (p.x as f64, p.z as f64); }
-        if (p.x as f64) > right.0 { right = (p.x as f64, p.z as f64); }
-    }
-    if !left.0.is_finite() {
-        for p in &s.paths {
-            let lo=p.start[0] as f64-p.width as f64*0.5;let hi=p.start[0] as f64+p.width as f64*0.5;
-            if lo<left.0{left=(lo,p.start[2] as f64);}if hi>right.0{right=(hi,p.start[2] as f64);}
-        }
-        if !left.0.is_finite(){return ((0.0,0.0),(0.0,0.0));}
-    }
-    (left, right)
 }
 
 fn arc_to(s: &MapSpline, tile: (i32, i32), target: DVec3) -> Result<MapSpline, String> {
