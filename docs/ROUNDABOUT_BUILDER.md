@@ -191,3 +191,15 @@ Der Baukasten ist jetzt in vier direkt anwählbare Schritte gegliedert:
 Die Schritte können jederzeit gewechselt werden. Gültige laufende Eingaben werden beim Wechsel übernommen; ungültige Eingaben bleiben zum Korrigieren offen. Ein Seitenwechsel ändert keine Geometrie. Vorschau, Armwahl und Rückgängig bleiben verfügbar.
 
 Die Gliederung orientiert sich an [stvo2Go: Kreisverkehre sicher bauen, beschildern und markieren](https://www.stvo2go.de/kreisverkehr-bauen-beschildern-markieren/). Es handelt sich um eine Bedienungsverbesserung des vorhandenen einstreifigen Baukastens, nicht um eine vollständige Umsetzung aller dort beschriebenen Bauformen und Entwurfsregeln. Fußgängerüberwege, Radfurten, Schilder, Ampeln, separate Ein-/Ausfahrbreiten und ein überfahrbarer Innenring werden in diesem Teststand nicht neu erzeugt.
+
+### Getrennte Spuranzahlen (Teststand 0.8.8-pre-lanes1)
+
+Unter **1 Kreisform** stellt „Spuren im Kreis“ 1 bis 4 umlaufende Spuren ein. Unter **2 Zufahrten** gilt „Spuren je Richtung“ separat für den gewählten Arm A-D: beispielsweise 2 bedeutet zwei Einfahrspuren und zwei Ausfahrspuren. Kreisfahrbahn und Arme dürfen unterschiedliche Spuranzahlen haben.
+
+Beim Ändern der Spuranzahl wird die jeweilige bisherige Breite pro Spur beibehalten, soweit die Breitenbegrenzung dies zulässt. Die Ringbreite und die gesamte Armbreite bleiben anschließend manuell einstellbar. Ein größerer Ring verlängert die Arme bei Bedarf. Pro Spur werden mindestens 2,75 m Platz geprüft; Inseln beanspruchen zusätzlich Platz. Sehr breite Zufahrten brauchen ausreichend Ringbreite und Abstand zu benachbarten Armen. Unpassende Geometrie wird mit einer Meldung zurückgewiesen.
+
+Für jede Spur werden eigene KI-Wege erzeugt. Unterschiedliche Spuranzahlen erhalten Ein-/Ausfahrverbindungen; zusätzliche Übergänge zwischen benachbarten Ringspuren ermöglichen das Erreichen aller Ausfahrten. Die Prioritätsregeln unterscheiden Einfahrt und Kreisverkehr auch bei unterschiedlichen Spuranzahlen. Dies ist ein geometrisch geprüfter Teststand; das Verhalten im tatsächlichen KI-Verkehr ist noch im Spiel zu prüfen.
+
+Unter **4 Ausstattung** schaltet „Spurtrennlinien“ die automatisch erzeugten gestrichelten Spurtrenner im Ring und auf mehrspurigen Armen ein oder aus. Bereits aufgemalte Linien in einer Asphalttextur bleiben unverändert; für diese Funktion unmarkierten Asphalt verwenden. Vorhandene Straßensplines werden durch das Verändern der Spuranzahl nicht automatisch durch ein anderes Straßenprofil ersetzt: Anschlussbreite und Profil der bestehenden Straße müssen weiterhin passen.
+
+Die Spuranzahlen werden im Projekt gespeichert, sind rückgängig machbar und erscheinen nach erneutem Öffnen wieder. Alte Projekte ohne diese Angaben laden mit jeweils einer Spur. Die Abbildungen in den PDF-Handbüchern zeigen noch den vorherigen Teststand islands6.

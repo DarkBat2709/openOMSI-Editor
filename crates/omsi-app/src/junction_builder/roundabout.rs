@@ -6,6 +6,17 @@ use {super::*,omsi_geometry::roundabout::{on_road,edge_strips,entrance_dashes,de
 mod tests {
     use super::*;
     #[test]
+    fn lane_controls_roundtrip_undo_and_old_project_defaults() {
+        let mut w=Window::new_roundabout(false);let before=w.project.clone();
+        w.set(Field::RingLanes,3.0);assert_eq!(w.project.roundabout.as_ref().unwrap().lanes,3);assert_eq!(w.value(Field::RingWidth),18.0);
+        w.set(Field::ApproachLanes,2.0);assert_eq!(w.value(Field::Width),14.0);assert_eq!(w.project.roundabout.as_ref().unwrap().approach_lanes,[2,1,1,1]);
+        let value=serde_json::to_value(&w.project).unwrap();let restored:Project=serde_json::from_value(value).unwrap();assert_eq!(restored,w.project);
+        w.command(Command::Undo);w.command(Command::Undo);assert_eq!(w.project,before);
+        let mut json=serde_json::to_value(&before).unwrap();let obj=json["roundabout"].as_object_mut().unwrap();obj.remove("lanes");obj.remove("approach_lanes");obj.remove("lane_lines");
+        let old:Project=serde_json::from_value(json).unwrap();assert_eq!(old,before);
+        w.edit(Field::RingLanes);w.input.as_mut().unwrap().text="2.5".into();w.input.as_mut().unwrap().replace=false;assert!(!w.commit());assert_eq!(w.project,before);
+    }
+    #[test]
     fn workflow_switch_commits_valid_input_and_preserves_invalid_input() {
         let mut w=Window::new_roundabout(false);
         w.edit(Field::IslandRadius);w.input.as_mut().unwrap().text="14".into();w.input.as_mut().unwrap().replace=false;
@@ -22,7 +33,7 @@ mod tests {
         let instance=crate::graphics_instance();let mut renderer=pollster::block_on(omsi_render::Renderer::new_with(&instance,None,Some(wgpu::TextureFormat::Rgba8UnormSrgb),omsi_render::RenderOptions{msaa:1,ssao:false,fxaa:false,shadow_size:1024,..Default::default()})).unwrap();
         let camera=omsi_render::Camera{position:DVec3::new(0.0,0.0,10.0),yaw:0.0,pitch:0.0,roll:0.0,fov_deg:60.0,near:0.1,far:1000.0};
         for lang in ["DEU","ENG"] {crate::ui_language(lang);for (width,height) in [(1280,800),(800,600)] {
-            let mut w=Window::new_roundabout(false);
+            let mut w=Window::new_roundabout(false);w.set(Field::RingLanes,2.0);w.set(Field::ApproachLanes,2.0);
             let mut scene=renderer.new_scene();let mut ui=crate::ui::Ui::new().unwrap();
             ui.draw_junction_window(&renderer,&mut scene,Some(&mut w),Path::new("/tmp"),1.0,[0.0,0.0,width as f32,height as f32],(-1.0,-1.0));
             for step in [1,3,0,2] {

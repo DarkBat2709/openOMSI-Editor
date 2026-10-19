@@ -3359,3 +3359,30 @@ _version: 2
 
 "Choose a step above. You can return to any step before placing.":
   de: "Schritt oben wählen. Vor dem Einsetzen jederzeit zurückwechseln."
+
+"Circulating lanes":
+  de: "Spuren im Kreis"
+
+"Lanes per direction":
+  de: "Spuren je Richtung"
+
+"Lane count must be between 1 and 4":
+  de: "Spuranzahl muss zwischen 1 und 4 liegen"
+
+"Lane count must be a whole number from 1 to 4":
+  de: "Spuranzahl muss eine ganze Zahl von 1 bis 4 sein"
+
+"Each lane needs at least 2.75 m width":
+  de: "Jede Spur braucht mindestens 2,75 m Breite"
+
+"Lane transition leaves the circulating road":
+  de: "Spurwechsel verlässt die Kreisfahrbahn"
+
+"Choose lanes and dimensions · Check AI paths · Save & place · Reload map for AI":
+  de: "Spuren und Maße wählen · KI-Wege prüfen · Speichern & einsetzen · Karte für KI neu laden"
+
+"Lane dividers: ON":
+  de: "Spurtrennlinien: AN"
+
+"Lane dividers: OFF":
+  de: "Spurtrennlinien: AUS"

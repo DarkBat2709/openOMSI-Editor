@@ -1244,4 +1244,5 @@ pub fn editor_path_point(curve:&SplineCurve,nodes:&[(usize,[f64;4])],path:usize,
 
 pub mod junction;
 pub mod roundabout;
+pub mod roundabout_lanes;
 pub mod roundabout_splitters;

@@ -1,4 +1,4 @@
-//! One shared circulating lane, radial two-way approaches and a raised central island.
+//! Configurable circulating lanes, radial two-way approaches and a raised central island.
 //! Geometry uses metres in the OMSI XY plane. Existing junction export/placement is reused.
 use crate::junction::*;
 use glam::{DVec2,DVec3,Mat4,Vec2};
@@ -7,6 +7,9 @@ use serde::{Serialize,Deserialize};
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Roundabout {
+    #[serde(default="one_lane")] pub lanes:u8,
+    #[serde(default="lane_lines_default")] pub lane_lines:bool,
+    #[serde(default="one_lane_per_arm")] pub approach_lanes:[u8;4],
     #[serde(default)] pub splitters:[crate::roundabout_splitters::Splitter;4],
     pub island_radius: f64,
     pub road_width: f64,
@@ -16,10 +19,13 @@ pub struct Roundabout {
     #[serde(default="default_line_width")] pub line_width: f64,
     #[serde(default="default_line_insets")] pub line_insets: [[f64;2];4],
 }
+fn lane_lines_default()->bool {true}
+fn one_lane()->u8 {1}
+fn one_lane_per_arm()->[u8;4] {[1;4]}
 fn default_line_width()->f64 {0.12}
 fn default_line_insets()->[[f64;2];4] {[[0.25;2];4]}
 impl Default for Roundabout {
-    fn default() -> Self {Self {splitters:std::array::from_fn(|_|Default::default()),island_radius:12.0,road_width:6.0,island_height:0.15,outer_line:false,dashed_entries:false,line_width:default_line_width(),line_insets:default_line_insets()}}
+    fn default() -> Self {Self {lanes:1,lane_lines:true,approach_lanes:[1;4],splitters:std::array::from_fn(|_|Default::default()),island_radius:12.0,road_width:6.0,island_height:0.15,outer_line:false,dashed_entries:false,line_width:default_line_width(),line_insets:default_line_insets()}}
 }
 fn polar(r:f64,a:f64)->DVec3 {DVec3::new(r*a.sin(),r*a.cos(),0.0)}
 pub fn delta(a:f64,b:f64)->f64 {(a-b+std::f64::consts::PI).rem_euclid(std::f64::consts::TAU)-std::f64::consts::PI}
@@ -109,7 +115,7 @@ pub fn entrance_dashes(p:&Project)->Vec<[DVec3;4]> {
 pub fn build(p:&Project)->Result<Built,String> {
     let r=p.roundabout.as_ref().unwrap();
     if !r.island_radius.is_finite() || !(5.0..=60.0).contains(&r.island_radius)
-        || !r.road_width.is_finite() || !(4.0..=12.0).contains(&r.road_width)
+        || !r.road_width.is_finite() || !(4.0..=40.0).contains(&r.road_width)
         || !r.island_height.is_finite() || !(0.05..=1.0).contains(&r.island_height) {return Err("Invalid roundabout dimensions".into());}
     if !r.line_width.is_finite() || !(0.05..=0.5).contains(&r.line_width)
         || r.line_insets.iter().flatten().any(|v|!v.is_finite() || !(0.05..=3.0).contains(v)) {
@@ -118,6 +124,8 @@ pub fn build(p:&Project)->Result<Built,String> {
     if r.outer_line && p.arms.iter().enumerate().any(|(i,a)|a.enabled && r.line_insets[i].iter().any(|v|*v<r.line_width/2.0 || *v+r.line_width/2.0>=a.width/2.0)) {
         return Err("Edge line must stay inside its arm".into());
     }
+    if !(1..=4).contains(&r.lanes) || r.approach_lanes.iter().any(|n|!(1..=4).contains(n)) {return Err("Lane count must be between 1 and 4".into());}
+    if r.road_width/(r.lanes as f64)<2.75 {return Err("Each lane needs at least 2.75 m width".into());}
     let outer=r.island_radius+r.road_width;let mid=r.island_radius+r.road_width/2.0;
     let sign=if p.left_hand {-1.0} else {1.0};
     let arms:Vec<_>=p.arms.iter().filter(|a|a.enabled).collect();
@@ -175,6 +183,11 @@ pub fn build(p:&Project)->Result<Built,String> {
     }
     if r.outer_line {for [a,b,c,d] in edge_strips(p,&outline) {quad(&mut mesh,a,b,c,d,2,1.0);}}
     if r.dashed_entries {for [a,b,c,d] in entrance_dashes(p) {quad(&mut mesh,a,b,c,d,2,1.0);}}
+    if r.lanes>1 || r.approach_lanes.iter().any(|n|*n>1) {
+        let paths=crate::roundabout_lanes::paths(p)?;
+        crate::roundabout_lanes::markings(p,&mut mesh);
+        let mut built=Built{mesh,paths,outline};crate::roundabout_splitters::add_mesh(p,&mut built);return Ok(built);
+    }
     // Connections use separate shared ring nodes: every entrance can reach every exit,
     // without duplicating all origin/destination routes or crossing the island.
     let mut entries=Vec::new();let mut exits=Vec::new();let mut nodes=Vec::new();

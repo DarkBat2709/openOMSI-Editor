@@ -1,4 +1,4 @@
-//! Parameterised T/X junctions and single-lane roundabouts. Mesh, markings and AI paths come from the same arms.
+//! Parameterised T/X junctions and roundabouts with configurable lanes. Mesh, markings and AI paths come from the same arms.
 mod roundabout;
 mod rules;
 pub use rules::rewrite as rewrite_roundabout_rules;
@@ -13,16 +13,16 @@ pub use omsi_geometry::junction::{Arm,RoadSurface,Project,Built};
 use omsi_geometry::junction::{direction,right,triangle,quad};
 
 #[derive(Clone,Copy,Debug,PartialEq,Eq)]
-pub enum Field {SplitterLength,SplitterWidth,SplitterGap,SplitterHeight,LineLeft,LineRight,LineWidth,IslandRadius,RingWidth,IslandHeight,Name,Width,Length,Angle,Bend,Sidewalk,Corner,TextureMetres,UStart,UEnd,TextureWidth}
+pub enum Field {RingLanes,ApproachLanes,SplitterLength,SplitterWidth,SplitterGap,SplitterHeight,LineLeft,LineRight,LineWidth,IslandRadius,RingWidth,IslandHeight,Name,Width,Length,Angle,Bend,Sidewalk,Corner,TextureMetres,UStart,UEnd,TextureWidth}
 impl Field {
-    pub fn title(self)->&'static str {match self {Self::SplitterLength=>"Splitter length (m)",Self::SplitterWidth=>"Splitter width (m)",Self::SplitterGap=>"Distance from ring (m)",Self::SplitterHeight=>"Splitter height (m)",Self::LineLeft=>"Left line inset (m)",Self::LineRight=>"Right line inset (m)",Self::LineWidth=>"Line width (m)",Self::IslandRadius=>"Island radius (m)",Self::RingWidth=>"Ring road width (m)",Self::IslandHeight=>"Island height (m)",Self::Name=>"Name",Self::Width=>"Road width (m)",Self::Length=>"Length from centre (m)",
+    pub fn title(self)->&'static str {match self {Self::RingLanes=>"Circulating lanes",Self::ApproachLanes=>"Lanes per direction",Self::SplitterLength=>"Splitter length (m)",Self::SplitterWidth=>"Splitter width (m)",Self::SplitterGap=>"Distance from ring (m)",Self::SplitterHeight=>"Splitter height (m)",Self::LineLeft=>"Left line inset (m)",Self::LineRight=>"Right line inset (m)",Self::LineWidth=>"Line width (m)",Self::IslandRadius=>"Island radius (m)",Self::RingWidth=>"Ring road width (m)",Self::IslandHeight=>"Island height (m)",Self::Name=>"Name",Self::Width=>"Road width (m)",Self::Length=>"Length from centre (m)",
         Self::Angle=>"Direction (°)",Self::Bend=>"Bend at end (°)",Self::Sidewalk=>"Sidewalk per side (m)",Self::Corner=>"Corner radius (m)",Self::TextureWidth=>"Texture width (m)",Self::UStart=>"Crop U from",Self::UEnd=>"Crop U to",Self::TextureMetres=>"Texture length (m)"}}
     pub fn texture_index(self)->Option<usize> {match self {Self::UStart=>Some(0),Self::UEnd=>Some(1),Self::TextureWidth=>Some(2),_=>None}}
-    fn limits(self)->(f64,f64) {match self {Self::SplitterLength=>(2.0,30.0),Self::SplitterWidth=>(0.6,4.0),Self::SplitterGap=>(0.0,50.0),Self::SplitterHeight=>(0.05,0.5),Self::LineLeft|Self::LineRight=>(0.05,3.0),Self::LineWidth=>(0.05,0.5),Self::IslandRadius=>(5.0,60.0),Self::RingWidth=>(4.0,12.0),Self::IslandHeight=>(0.05,1.0),Self::Width=>(4.0,30.0),Self::Length=>(8.0,150.0),Self::Angle=>(0.0,360.0),
+    fn limits(self)->(f64,f64) {match self {Self::RingLanes|Self::ApproachLanes=>(1.0,4.0),Self::SplitterLength=>(2.0,30.0),Self::SplitterWidth=>(0.6,4.0),Self::SplitterGap=>(0.0,50.0),Self::SplitterHeight=>(0.05,0.5),Self::LineLeft|Self::LineRight=>(0.05,3.0),Self::LineWidth=>(0.05,0.5),Self::IslandRadius=>(5.0,60.0),Self::RingWidth=>(4.0,40.0),Self::IslandHeight=>(0.05,1.0),Self::Width=>(4.0,40.0),Self::Length=>(8.0,150.0),Self::Angle=>(0.0,360.0),
         Self::Bend=>(-35.0,35.0),Self::Sidewalk=>(0.0,6.0),Self::Corner=>(0.0,20.0),Self::TextureMetres=>(0.25,100.0),Self::TextureWidth=>(0.25,100.0),Self::UStart|Self::UEnd=>(-16.0,16.0),Self::Name=>(0.0,0.0)}}
 }
 #[derive(Clone,Copy)]
-pub enum Command {RoundaboutStep(u8),SplitterTemplate,Splitter,SplitterShape,DashedEntries,OuterLine,LineSettings,Close,Shape(bool),Arm(usize),Edit(Field),Digit(Field,i32),Step(Field,f64),Adjust(Field,f64),RoadTexture,WalkTexture,Markings,
+pub enum Command {LaneLines,RoundaboutStep(u8),SplitterTemplate,Splitter,SplitterShape,DashedEntries,OuterLine,LineSettings,Close,Shape(bool),Arm(usize),Edit(Field),Digit(Field,i32),Step(Field,f64),Adjust(Field,f64),RoadTexture,WalkTexture,Markings,
     ShowPaths,Rotate,Undo,Redo,Export,Load,UseSpline,ConnectRoad}
 
 pub struct Input {pub field:Field,pub text:String,pub replace:bool}
@@ -46,12 +46,14 @@ impl Window {
         w.project.name="Custom roundabout".into();
         w.project.arms[3].enabled=true;
         for arm in &mut w.project.arms {arm.length=35.0;}
-        w.message="Single lane · Choose an entrance and dimensions · Save & place · Reload map for AI".into();
+        w.message="Choose lanes and dimensions · Check AI paths · Save & place · Reload map for AI".into();
         w
     }
     pub fn hit(&self,p:(f32,f32))->Option<Command> {self.rects.iter().rev().find(|(r,_)|
         p.0>=r[0]&&p.0<=r[2]&&p.1>=r[1]&&p.1<=r[3]).map(|(_,c)|*c)}
     pub fn value(&self,field:Field)->f64 {let arm=&self.project.arms[self.arm];match field {
+        Field::RingLanes=>self.project.roundabout.as_ref().map_or(1.0,|r|r.lanes as f64),
+        Field::ApproachLanes=>self.project.roundabout.as_ref().map_or(1.0,|r|r.approach_lanes[self.arm] as f64),
         Field::SplitterLength|Field::SplitterWidth|Field::SplitterGap|Field::SplitterHeight=>{let r=self.project.roundabout.as_ref().unwrap();let s=&r.splitters[self.arm];match field {Field::SplitterLength=>s.length,Field::SplitterWidth=>s.width,Field::SplitterGap=>s.gap,_=>s.height}},
         Field::LineLeft=>self.project.roundabout.as_ref().map_or(0.25,|r|r.line_insets[self.arm][0]),
         Field::LineRight=>self.project.roundabout.as_ref().map_or(0.25,|r|r.line_insets[self.arm][1]),
@@ -77,6 +79,7 @@ impl Window {
         digits
     }
     pub fn number_text(&self,field:Field)->String {
+        if matches!(field,Field::RingLanes|Field::ApproachLanes){return format!("{:.0}",self.value(field));}
         format!("{:.*}",self.display_digits(field),self.value(field))
     }
     pub fn texture_step(&self,field:Field)->f64 {
@@ -99,9 +102,11 @@ impl Window {
     pub fn clear_connection_preview(&mut self){self.changed();}
     fn changed(&mut self) {self.dirty=true;self.error=None;self.road_preview.clear();self.pending=None;}
     pub fn connection_preview(&mut self,points:Vec<[DVec3;2]>,existing:Vec<[DVec3;2]>,links:[Option<i64>;4]){self.changed();self.road_preview=points;self.existing_preview=existing;self.arm_links=links;}
-    pub fn set(&mut self,field:Field,value:f64) {let (lo,hi)=field.limits();let value=value.clamp(lo,hi);
+    pub fn set(&mut self,field:Field,value:f64) {let (lo,hi)=field.limits();let value=value.clamp(lo,hi);let value=if matches!(field,Field::RingLanes|Field::ApproachLanes){value.round()}else{value};
         if !value.is_finite() || field==Field::Name || (self.value(field)-value).abs()<1e-8 {return;}
         self.remember();let arm=&mut self.project.arms[self.arm];match field {
+            Field::RingLanes=>{if let Some(r)=self.project.roundabout.as_mut(){r.road_width=(r.road_width/r.lanes as f64*value).clamp(2.75*value,40.0);r.lanes=value as u8;for a in &mut self.project.arms{a.length=a.length.max(r.island_radius+r.road_width+18.0);}}},
+            Field::ApproachLanes=>{if let Some(r)=self.project.roundabout.as_mut(){let island=if r.splitters[self.arm].enabled{r.splitters[self.arm].width}else{0.0};arm.width=((arm.width-island)/r.approach_lanes[self.arm] as f64*value+island).min(40.0);r.approach_lanes[self.arm]=value as u8;}},
             Field::SplitterLength|Field::SplitterWidth|Field::SplitterGap|Field::SplitterHeight=>{if let Some(r)=self.project.roundabout.as_mut(){let s=&mut r.splitters[self.arm];match field {Field::SplitterLength=>s.length=value,Field::SplitterWidth=>s.width=value,Field::SplitterGap=>s.gap=value,_=>s.height=value}}},
             Field::LineLeft|Field::LineRight=>{if let Some(r)=self.project.roundabout.as_mut(){r.line_insets[self.arm][if field==Field::LineLeft{0}else{1}]=value;}},
             Field::LineWidth=>{if let Some(r)=self.project.roundabout.as_mut(){r.line_width=value;}},
@@ -122,6 +127,7 @@ impl Window {
             if self.project.name!=text {self.remember();self.project.name=text;self.changed();}
         } else {let (lo,hi)=field.limits();match crate::terrain_editor::parse_number(&text,lo,hi) {
             Ok(v)=>{
+                if matches!(field,Field::RingLanes|Field::ApproachLanes) && v.fract()!=0.0 {self.message="Lane count must be a whole number from 1 to 4".into();return false;}
                 if let Some(i)=field.texture_index() {
                     if !input.replace {
                         let digits=text.split(['.',',']).nth(1).map_or(0,str::len);
@@ -138,6 +144,7 @@ impl Window {
             Command::SplitterTemplate=>{if self.commit()&&self.project.roundabout.is_some(){self.remember();let s=&mut self.project.roundabout.as_mut().unwrap().splitters[self.arm];s.enabled=true;s.shape=omsi_geometry::roundabout_splitters::Shape::Wedge;s.length=9.0;s.width=1.5;s.gap=1.0;self.changed();}},
             Command::RoundaboutStep(step)=>{if step<4 && self.project.roundabout.is_some() && self.commit(){self.roundabout_step=step;self.splitter_settings=step==2;self.line_settings=step==3;}},
             Command::Splitter|Command::SplitterShape=>{if self.commit() && self.project.roundabout.is_some(){self.remember();let s=&mut self.project.roundabout.as_mut().unwrap().splitters[self.arm];if matches!(command,Command::Splitter){s.enabled=!s.enabled;}else {use omsi_geometry::roundabout_splitters::Shape;s.shape=match s.shape{Shape::Rounded=>Shape::Teardrop,Shape::Teardrop=>Shape::Wedge,Shape::Wedge=>Shape::Rounded};}self.changed();}},
+            Command::LaneLines=>{if self.commit() && self.project.roundabout.is_some(){self.remember();let r=self.project.roundabout.as_mut().unwrap();r.lane_lines=!r.lane_lines;self.changed();}},
             Command::DashedEntries=>{if self.commit() && self.project.roundabout.is_some() {self.remember();let r=self.project.roundabout.as_mut().unwrap();r.dashed_entries=!r.dashed_entries;self.changed();}},
             Command::OuterLine=>{if self.commit() && self.project.roundabout.is_some() {self.remember();let r=self.project.roundabout.as_mut().unwrap();r.outer_line=!r.outer_line;self.changed();}},
             Command::LineSettings=>{if self.commit() {self.line_settings=!self.line_settings;}},

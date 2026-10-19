@@ -1797,8 +1797,8 @@ impl Ui {
         buttons.push((rect(32.0,166.0,326.0,32.0),name,Command::Edit(Field::Name),true,window.input.as_ref().is_some_and(|i|i.field==Field::Name)));
         }
         let fields:&[Field]=if roundabout {match window.roundabout_step {
-            0=>&[Field::IslandRadius,Field::RingWidth,Field::IslandHeight],
-            1=>&[Field::Width,Field::Length,Field::Angle],
+            0=>&[Field::RingLanes,Field::IslandRadius,Field::RingWidth,Field::IslandHeight],
+            1=>&[Field::ApproachLanes,Field::Width,Field::Length,Field::Angle],
             2=>&[Field::SplitterLength,Field::SplitterWidth,Field::SplitterGap,Field::SplitterHeight,Field::Width,Field::Length],
             _=>&[Field::TextureMetres],
         }} else {&[Field::Width,Field::Length,Field::Angle,Field::Bend,Field::Sidewalk,Field::Corner,Field::TextureMetres]};
@@ -1811,18 +1811,18 @@ impl Ui {
             };
             for (i,hint) in hints.iter().enumerate(){self.catalog_text(r,scene,hint,(x+32.0*s,y+(208.0+fields.len() as f32*36.0+8.0+i as f32*17.0)*s),326.0*s,10.0*s,SOFT);}
             if window.roundabout_step<2 {let rb=window.project.roundabout.as_ref().unwrap();
-                self.catalog_text(r,scene,"Outer diameter (m)",(x+32.0*s,y+376.0*s),210.0*s,12.0*s,SOFT);
-                self.catalog_text(r,scene,&format!("{:.2}",2.0*(rb.island_radius+rb.road_width)),(x+248.0*s,y+376.0*s),100.0*s,14.0*s,AMBER);
+                self.catalog_text(r,scene,"Outer diameter (m)",(x+32.0*s,y+420.0*s),210.0*s,12.0*s,SOFT);
+                self.catalog_text(r,scene,&format!("{:.2}",2.0*(rb.island_radius+rb.road_width)),(x+248.0*s,y+420.0*s),100.0*s,14.0*s,AMBER);
             }
         }
         for (i,&field) in fields.iter().enumerate() {
             let row=208.0+i as f32*36.0;
             self.catalog_text(r,scene,field.title(),(x+32.0*s,y+(row+8.0)*s),168.0*s,12.0*s,SOFT);
-            let step=match field {Field::Angle|Field::Bend=>5.0,Field::IslandHeight|Field::SplitterHeight=>0.05,_=>0.5};
+            let step=match field {Field::RingLanes|Field::ApproachLanes=>1.0,Field::Angle|Field::Bend=>5.0,Field::IslandHeight|Field::SplitterHeight=>0.05,_=>0.5};
             buttons.push((rect(208.0,row,26.0,30.0),"−".into(),Command::Adjust(field,-step),true,false));
             buttons.push((rect(332.0,row,26.0,30.0),"+".into(),Command::Adjust(field,step),true,false));
             let input=window.input.as_ref().filter(|input|input.field==field);
-            let text=input.map(|i|format!("{}│",i.text)).unwrap_or_else(||format!("{:.2}",window.value(field)));
+            let text=input.map(|i|format!("{}│",i.text)).unwrap_or_else(||window.number_text(field));
             buttons.push((rect(240.0,row,86.0,30.0),text,Command::Edit(field),true,input.is_some()));
         }
         buttons.extend([
@@ -1838,6 +1838,9 @@ impl Ui {
             (rect(726.0,680.0,272.0,42.0),if window.target.is_some(){if roundabout {"Update placed roundabout"}else{"Update placed junction"}}else{"Save & place"}.into(),Command::Export,window.error.is_none(),false),
         ]);
         if roundabout {
+            if window.roundabout_step==3 {let enabled=window.project.roundabout.as_ref().unwrap().lane_lines;
+                buttons.push((rect(32.0,428.0,326.0,30.0),if enabled{"Lane dividers: ON"}else{"Lane dividers: OFF"}.into(),Command::LaneLines,true,enabled));
+            }
             let enabled=window.project.roundabout.as_ref().unwrap().outer_line;
             let dashed=window.project.roundabout.as_ref().unwrap().dashed_entries;
             buttons.push((rect(610.0,514.0,184.0,24.0),if dashed {"Entrance dashes: ON"}else{"Entrance dashes: OFF"}.into(),Command::DashedEntries,true,dashed));
