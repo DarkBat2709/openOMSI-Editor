@@ -1177,14 +1177,27 @@ mod tests {
         assert_eq!(client.reconnects(), 1);
     }
 
+    // A port allocated for one protocol may be occupied or excluded for the other
+    // on Windows runners. Keep both sockets bound once a shared port is found.
+    fn session_and_mods_sockets() -> (UdpSocket, TcpListener) {
+        for _ in 0..100 {
+            let mods = TcpListener::bind("127.0.0.1:0").unwrap();
+            match UdpSocket::bind(mods.local_addr().unwrap()) {
+                Ok(session) => return (session, mods),
+                Err(error) if matches!(error.kind(), ErrorKind::AddrInUse | ErrorKind::PermissionDenied) => continue,
+                Err(error) => panic!("cannot bind test session socket: {error}"),
+            }
+        }
+        panic!("could not allocate a shared TCP/UDP test port after 100 attempts");
+    }
+
     /// Mod streams up to `MAX_TUNNELS`; one more is told `ERR busy` (and its game asks again),
     /// and a player's session still gets through with every stream taken.
     #[test]
     fn mod_streams_never_shut_a_player_out() {
-        let session = UdpSocket::bind("127.0.0.1:0").unwrap();
+        let (session, mods) = session_and_mods_sockets();
         let target = session.local_addr().unwrap();
         // the mods server at the session's port: holds every stream open
-        let mods = TcpListener::bind(("127.0.0.1", target.port())).unwrap();
         std::thread::spawn(move || {
             let mut held = Vec::new();
             for c in mods.incoming().flatten() {
@@ -1223,9 +1236,8 @@ mod tests {
     /// carried; once a player leaves, the requests get through again.
     #[test]
     fn players_never_take_the_mod_streams_places() {
-        let session = UdpSocket::bind("127.0.0.1:0").unwrap();
+        let (session, mods) = session_and_mods_sockets();
         let target = session.local_addr().unwrap();
-        let mods = TcpListener::bind(("127.0.0.1", target.port())).unwrap();
         std::thread::spawn(move || {
             let mut held = Vec::new();
             for c in mods.incoming().flatten() {

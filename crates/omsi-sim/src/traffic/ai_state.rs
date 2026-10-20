@@ -68,6 +68,8 @@ pub struct AiState {
     /// junction is chosen to match.
     pub turn_wish: i32,
     pub editor_junction_route: Vec<usize>,
+    /// Incoming lane used by random routing to avoid selecting the same arm as exit.
+    pub editor_ring_entry: Option<usize>,
     /// Indicator the driver sets for a manoeuvre of its own (pulling away from a stop),
     /// held while `signal_time` runs.
     pub signal: i32,
@@ -369,7 +371,7 @@ const TRAP_DEPTH: u32 = 3;
 
 impl AiState {
     pub fn new(lane: usize, s: f32, seed: u64) -> AiState {
-        AiState { traffic_pool: None, veh_type: 0, lane, s, speed: 0.0, max_speed_kmh: 50.0, accel: 1.2, decel: 3.0, length: 5.0, rng: seed | 1, blinker: 0, braking: false, brake_lamp: 0.0, odometer: 0.0, planned_next: None, ahead: Vec::new(), change_plan: Vec::new(), prev_lane: None, yield_time: 0.0, route: Vec::new(), route_index: 0, change: None, change_cooldown: 5.0, lateral: 0.0, lateral_target: 0.0, lateral_ramp: (0.0, 0.0, 0.0, 1.0), turn_wish: 0, editor_junction_route: Vec::new(), signal: 0, signal_time: 0.0, lat_accel: 2.8, desire: 1.0, headway: 1.4, min_gap: 2.0, accept_gap: 4.0, reaction: 0.7, front: 2.5, rear: 2.5, held: false, start_timer: 0.0, acc: 0.0, accel_cap: None, ordinary_brake: ORDINARY_BRAKE, emergency_brake: MAX_BRAKE, jerk: JERK, cmd: 0.0, emergency: false, emergency_began: false, body: BodyLink::default(), nudge_ramp: (0.0, 0.0, 0.0, 1.0), priority_drive: false, speed_cap: None }
+        AiState { traffic_pool: None, veh_type: 0, lane, s, speed: 0.0, max_speed_kmh: 50.0, accel: 1.2, decel: 3.0, length: 5.0, rng: seed | 1, blinker: 0, braking: false, brake_lamp: 0.0, odometer: 0.0, planned_next: None, ahead: Vec::new(), change_plan: Vec::new(), prev_lane: None, yield_time: 0.0, route: Vec::new(), route_index: 0, change: None, change_cooldown: 5.0, lateral: 0.0, lateral_target: 0.0, lateral_ramp: (0.0, 0.0, 0.0, 1.0), turn_wish: 0, editor_junction_route: Vec::new(), editor_ring_entry: None, signal: 0, signal_time: 0.0, lat_accel: 2.8, desire: 1.0, headway: 1.4, min_gap: 2.0, accept_gap: 4.0, reaction: 0.7, front: 2.5, rear: 2.5, held: false, start_timer: 0.0, acc: 0.0, accel_cap: None, ordinary_brake: ORDINARY_BRAKE, emergency_brake: MAX_BRAKE, jerk: JERK, cmd: 0.0, emergency: false, emergency_began: false, body: BodyLink::default(), nudge_ramp: (0.0, 0.0, 0.0, 1.0), priority_drive: false, speed_cap: None }
     }
 
     fn rand(&mut self) -> u64 {
@@ -391,6 +393,23 @@ impl AiState {
     /// into - filtering them only at spawn still let cars turn into a pedestrian street or a
     /// depot yard from next door. A car that has taken a turn lane takes the turn.
     pub(super) fn choose_after(&mut self, net: &Network, lane: usize) -> Option<usize> {
+        let next = self.choose_after_inner(net, lane);
+        if let Some(n) = next {
+            if !net.lanes[lane].ring && net.lanes[n].ring {
+                self.editor_ring_entry = Some(lane);
+                // Keep a committed route that already includes this entry, including
+                // intermediate non-ring sections of a generated roundabout.
+                if !self.editor_junction_route.windows(2).any(|pair| pair == [lane, n]) {
+                    self.editor_junction_route.clear();
+                }
+            } else if net.lanes[lane].ring && !net.lanes[n].ring {
+                self.editor_ring_entry = None;
+            }
+        }
+        next
+    }
+
+    fn choose_after_inner(&mut self, net: &Network, lane: usize) -> Option<usize> {
         let l = &net.lanes[lane];
         // (a car of a traffic pool - the trucks of a map that keeps them to its port roads -
         // takes only the ways its pool may go, as it was put on one. A forbidden exit
@@ -461,12 +480,13 @@ impl AiState {
                 })
                 .collect();
         }
-        if l.editor_grouped_path {
+        if l.editor_grouped_path || l.ring {
             if let Some(k)=self.editor_junction_route.iter().position(|&i|i==lane) {
                 if let Some(&next)=self.editor_junction_route.get(k+1).filter(|n|choices.contains(n)) {return Some(next);}
             }
             let routes=super::junction_route::exits(net,lane,&open_for);
-            let routes:Vec<_>=routes.into_iter().filter(|r|r.get(1).is_some_and(|n|choices.contains(n))).collect();
+            let mut routes:Vec<_>=routes.into_iter().filter(|r|r.get(1).is_some_and(|n|choices.contains(n))).collect();
+            if l.ring { super::junction_route::prefer_other_arm(net, self.editor_ring_entry, &mut routes); }
             if !routes.is_empty(){let pick=(self.rand()%routes.len() as u64) as usize;
                 self.editor_junction_route=routes[pick].clone();return self.editor_junction_route.get(1).copied();}
         }

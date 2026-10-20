@@ -107,9 +107,11 @@ pub(super) fn lights(cx: LightsCx, dt: f32, daylight: omsi_sim::Daylight, behind
             ed.traffic_overlay.refresh(w,cam.position);
             let network=cx.traffic.traffic.as_ref().map(|t|&t.net).or_else(||cx.menus.menus.navigator.as_ref().and_then(|n|n.map_net()));
             let objects=network.into_iter().flat_map(|n|n.lanes.iter()).filter(|l|l.source!=1);
+            let deleted_objects: std::collections::HashSet<_> = w.object_edits.lock().iter().filter(|(_, edit)| edit.deleted).map(|(&id, _)| id).collect();
             let mut targets=Vec::new();let mut manager_lanes=Vec::new();
             for lane in ed.traffic_overlay.lanes.iter().chain(objects).filter(|l|l.kind==omsi_sim::traffic::LaneKind::Street
                 && !ed.traffic_window.as_ref().is_some_and(|w|w.replace&&w.error.is_none()&&l.key.is_some_and(|k|w.preview.replacements.iter().any(|(key,_,_)|*key==(k.tile,k.id))))) {
+                if crate::editor_path_edit::owner_is_deleted(lane, &deleted_objects) { continue; }
                 let Some(lane)=ed.path_edits.preview(lane)else{continue;};
                 if ed.traffic_window.as_ref().is_some_and(|w|w.manager.is_some())&&lane.points.iter().any(|p|p.distance(cam.position)<700.0){manager_lanes.push(lane.as_ref().clone());}
                 if let Some(key)=lane.key {for start in [true,false] {
@@ -130,6 +132,7 @@ pub(super) fn lights(cx: LightsCx, dt: f32, daylight: omsi_sim::Daylight, behind
             }
             if let Some(window)=ed.traffic_window.as_mut(){window.targets=targets;
                 if let Some(m)=window.manager.as_mut(){m.visible=manager_lanes;m.can_undo=ed.path_edits.can_undo();m.can_redo=ed.path_edits.can_redo();
+                    if m.selected.as_ref().is_some_and(|lane| crate::editor_path_edit::owner_is_deleted(lane, &deleted_objects)) { m.selected=None; m.editing=false; }
                     m.deleted=m.selected.as_ref().is_some_and(|l|ed.path_edits.current(l).deleted);
                     if m.editing {if let Some(l)=m.selected.as_ref().and_then(|l|ed.path_edits.preview(l)) {for (i,p) in crate::editor_path_edit::Manager::handles(&l) {
                         scene.coronas.push(omsi_render::Corona {position:p+glam::DVec3::Z*0.4,size:0.8,color:if i==2{[0.9,0.1,1.0]}else if i==3{[1.0,0.8,0.0]}else{[0.2,1.0,0.2]},brightness:2.0,..Default::default()});

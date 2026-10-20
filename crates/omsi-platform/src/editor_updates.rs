@@ -282,7 +282,7 @@ fn installed_version(channel: Channel, exe: &Path) -> anyhow::Result<String> {
 }
 fn valid_version(v: &str) -> bool {
     let number = v.split('-').next().unwrap_or("");
-    number.split('.').count() == 3
+    (3..=4).contains(&number.split('.').count())
         && number
             .split('.')
             .all(|n| !n.is_empty() && n.bytes().all(|b| b.is_ascii_digit()))
@@ -695,6 +695,26 @@ mod tests {
         assert!(editor_release(&json!([draft]), "0.7.23-pre")
             .unwrap()
             .is_none());
+    }
+    #[test]
+    fn four_part_hotfix_versions_are_valid_and_ordered() {
+        assert!(valid_version("0.8.8.1"));
+        assert!(valid_version("0.8.8-pre"));
+        for bad in ["0.8.8.1.2", "0.8..1", "0.8", "../0.8.8.1"] { assert!(!valid_version(bad)); }
+        assert!(release_newer("0.8.8.1", "0.8.8-pre"));
+        assert!(release_newer("0.8.8.2", "0.8.8.1"));
+        assert!(release_newer("0.8.9", "0.8.8.1"));
+        assert!(!release_newer("0.8.8", "0.8.8.1"));
+    }
+    #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+    #[test]
+    fn editor_offers_four_part_hotfix_and_reads_installed_version() {
+        let published = json!([release("0.8.8-pre", true), release("0.8.8.1", true)]);
+        assert_eq!(editor_release(&published, "0.8.8-pre").unwrap().unwrap().version, "0.8.8.1");
+        assert!(editor_release(&published, "0.8.8.1").unwrap().is_none());
+        let f = Fixture::new(); let editor = f.place("editor");
+        std::fs::write(editor.dir.join("VERSION-EDITOR.txt"), "Editor 0.8.8.1\n").unwrap();
+        assert_eq!(installed_version(Channel::Editor, &editor.exe).unwrap(), "0.8.8.1");
     }
     #[test]
     fn stable_release_supersedes_its_prerelease() {
