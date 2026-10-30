@@ -9,6 +9,7 @@ impl App {
     pub(super) fn frame_weather(&mut self, dt: f32) -> omsi_sim::Daylight {
         // (the METAR sync: the report's weather, in real time)
         self.tick_metar(dt);
+        self.tick_tomorrow();
         if !self.paused && !self.gfx.streamer.as_ref().is_some_and(|s| s.editor_rebuilding()) {
             // (the time speed: the settings', or the session's in LAN play)
             let speed = self.time_speed();
@@ -57,7 +58,8 @@ crate::app::stage_ctx!(
 /// the snow, the cabin air, the tyres' spray and the sounds of the street.
 pub(super) fn lights(cx: LightsCx, dt: f32, daylight: omsi_sim::Daylight, behind: f32) {
     // the lamps' cones in fog and falling rain or snow, and new light pictures
-    let cone = cx.weather.weather.as_ref().map(|wt| lights::ConeWeather::new(wt.fog.0, daylight.night)).unwrap_or_default();
+    let enhanced = cx.gfx.renderer.as_ref().is_some_and(|r| !r.options.no_enhanced);
+    let cone = lights::ConeWeather { enhanced, ..cx.weather.weather.as_ref().map(|wt| lights::ConeWeather::of(wt, daylight.night)).unwrap_or_default() };
     if let Some(r) = cx.gfx.renderer.as_mut() {
         lights::upload_corona_textures(r);
     }
@@ -80,8 +82,21 @@ pub(super) fn lights(cx: LightsCx, dt: f32, daylight: omsi_sim::Daylight, behind
         }
         let vehicles = steps::light_vehicles(cx.player.player.as_ref(), cx.traffic.traffic.as_ref(), &cx.net.remotes);
         let __tc = Instant::now();
-        lights::collect(w, scene, &daylight, cam.position, &vehicles, cone);
+        lights::collect(
+            w, scene, &daylight, cam.position, &vehicles, cone,
+            lights::VehicleSmoke::from_setting(&cx.common.settings.vehicle_smoke),
+            cx.player.player.is_some(),
+        );
         drop(vehicles);
+        if cx.view.cam.flashlight {
+            lights::flashlight_ahead(scene, cam);
+        }
+        if let Some(p) = cx.player.player.as_ref() {
+            if let Some(tv) = p.trolley_view.as_ref() {
+                tv.push_effects(scene, &p.vehicle);
+            }
+            p.panto_fx.push_effects(scene);
+        }
         cx.perf.profile.add(crate::profile_keys::ProfKey::LightsCollect, __tc.elapsed().as_secs_f64());
         // Audit markers are independent of the current selection and editor mode.
         if let Some(a)=cx.menus.menus.editor.as_ref().filter(|_|cx.menus.menus.game_menu.is_none()).and_then(|ed|ed.audit.as_ref()).filter(|a|a.markers&&!a.busy()) {
@@ -193,25 +208,22 @@ pub(super) fn lights(cx: LightsCx, dt: f32, daylight: omsi_sim::Daylight, behind
                 ..Default::default()
             });
         }
+        // (set below while there is weather; none without)
+        omsi_sim::particles::set_road_water(None);
         if let Some(wt) = &cx.weather.weather {
             let (kind, rate) = precip_of(wt);
             let rain_quality = crate::rain::quality_of(&cx.common.settings.rain_quality);
             w.settings.set_rain_quality(rain_quality);
             cx.weather.rain.set(kind, rate, rain_quality);
+            cx.weather.rain.set_temperature(wt.temp.0);
             // [wind] direction (deg) speed (m/s)
             let wind = crate::rain::weather_wind(wt);
             let spray_wind = steps::spray_wind(wt);
-            // every bus one may ride in keeps the weather out: the own, another
-            // player's, a timetable bus - each part of it: an articulated bus's
-            // rear section is a coupled part with its own [boundingbox] (#777)
-            let boxed = crate::rain::vehicle_boxes;
-            let mut buses: Vec<(glam::DVec3, f64, [f32; 6])> = cx.player.player.as_ref().map(|p| boxed(&p.vehicle)).unwrap_or_default();
-            buses.extend(cx.net.remotes.remotes.values().flat_map(|rv| boxed(rv.vehicle())));
-            if let Some(t) = cx.traffic.traffic.as_ref() {
-                buses.extend(t.cars.iter().filter(|c| c.is_bus() && (c.vehicle.position - cam.position).length() < 40.0).flat_map(|c| boxed(&c.vehicle)));
-            }
             let __tr = Instant::now();
-            cx.weather.rain.tick(if *cx.clock.paused { 0.0 } else { dt }, cam.position, wind, scene, &buses);
+            // (the bus the camera rides with: in it or following it, not a free camera)
+            let riding = matches!(cx.view.view.as_str(), "driver" | "pax" | "outside");
+            let carried = cx.player.player.as_ref().filter(|_| riding).map(|p| crate::lights::vehicle_velocity(&p.vehicle)).unwrap_or_default();
+            cx.weather.rain.tick(if *cx.clock.paused { 0.0 } else { dt }, carried, wind, scene);
             // the player's bus's cabin air and the condensation on its glass
             if let Some(p) = cx.player.player.as_ref() {
                 steps::cabin_air_step(&mut cx.weather.cabin_air, if *cx.clock.paused { 0.0 } else { dt }, p, wt, cx.people.humans.as_ref());
@@ -221,6 +233,11 @@ pub(super) fn lights(cx: LightsCx, dt: f32, daylight: omsi_sim::Daylight, behind
             // puddles and the wet asphalt the renderer draws (the same wetness:
             // none under snow, OMSI_WETNESS as the picture takes it)
             let wetness = puddles::road_wetness(*cx.weather.wetness, wt.snow);
+            // (the vehicles' own wheel spray goes with the same water: only through puddles -
+            // in snow it keeps the scripts' own slush)
+            if !(wt.snow || wt.snow_on_road || kind == 2) {
+                omsi_sim::particles::set_road_water(Some(puddles::road_water_hook(w, wetness)));
+            }
             if (wetness > 0.0 || !cx.weather.spray.is_empty()) && !omsi_cfg::flags::OMSI_NO_SPRAY.is_set() {
                 let __ts = Instant::now();
                 steps::throw_spray(
@@ -285,6 +302,12 @@ pub(super) fn lights(cx: LightsCx, dt: f32, daylight: omsi_sim::Daylight, behind
                     s.volume = cx.common.settings.vol_ambient;
                     let people = cx.people.humans.as_ref().map(|h| h.people.iter().filter(|p| (p.position - cam.position).length() < 40.0).count() as u32).unwrap_or(0);
                     let open = cx.player.player.as_ref().and_then(|p| p.vehicle.var("Snd_OutsideVol")).unwrap_or(0.0);
+                    // the flashes the picture showed: their thunder comes at the speed of sound
+                    if let Some(r) = cx.gfx.renderer.as_mut() {
+                        for (delay, distance, dir) in r.take_strikes() {
+                            s.thunder(delay, distance, dir, cam.position);
+                        }
+                    }
                     s.update(
                         a,
                         crate::soundscape::Moment {

@@ -53,6 +53,11 @@ pub struct DoorWants {
     pub places: Vec<(String, bool)>,
 }
 
+/// Sale events to play money sounds
+pub enum SaleEvent {
+    PassengerGaveMoney,
+}
+
 /// A bus as the passengers know it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum BusId {
@@ -272,6 +277,9 @@ pub struct PeopleSim {
     pub ai_visits: HashMap<u64, (i64, f64)>,
     /// When each bus last had a door open (the passengers' clock).
     pub last_door_open: HashMap<BusId, f64>,
+    /// The buses coming to or listed at a stop near the player, for somebody running up late
+    /// (`runners_tick`): (stop, bus) → where its roll stands.
+    pub runner_rolls: HashMap<(i64, BusId), RollEntry>,
     /// Timetable buses to keep at their stop for a few seconds more (for the traffic): the
     /// bus, the stop it must be serving for it (none: any), the seconds.
     pub holds: Vec<(u64, Option<i64>, f32)>,
@@ -312,6 +320,8 @@ pub struct PeopleSim {
     pub content: u32,
     pub ticket_requests: u32,
     pub ticket_points: u32,
+    //sale events to play money sounds
+    pub sale_events: Vec<(BusId, SaleEvent)>,
     /// `PAX_Entry<i>_Req`: somebody at the kerb wants in through entry `i`.
     pub entry_req: Vec<bool>,
     /// `PAX_Exit<i>_Req`: somebody inside wants out through exit `i`.
@@ -352,6 +362,7 @@ pub struct PeopleSim {
     /// (Shared with the step that made them rather than copied: a copy was every bus's door
     /// lists and names again, every frame.)
     pub last_buses: Arc<Vec<BusNow>>,
+    pub(super) manual_door_requests: HashMap<u32, (super::DoorRequest, f32)>,
     /// Only avatars: nobody else is put on the map (the passengers are off).
     pub avatar_only: bool,
     /// The player has got up and left the wheel: a standing bus with a door open is left
@@ -401,6 +412,7 @@ pub struct PeopleSim {
     pub defer_populate: bool,
     /// Passengers pay the exact fare: no change is ever due.
     pub exact_fare: bool,
+    pub bad_driving: bool,
     /// How passengers board (`boarding` in the settings): `auto` - pay and take the
     /// ticket by themselves after a moment; `pay` - wait at the desk for the driver to
     /// sell it (and show a pass after `PAY_PATIENCE`); `walk` - no cash desk at all.
@@ -410,8 +422,6 @@ pub struct PeopleSim {
     pub stand_chance: f32,
     /// The driver pressed the ticket key (`ticket_give`): sell the requested ticket.
     pub give_ticket: bool,
-    /// The driver pressed `change_give`: all the change owed goes on the tray at once.
-    pub give_change_all: bool,
     /// The key that sells a ticket, as the HUD names it.
     pub ticket_key: String,
     /// Where the player looks from (set by the app every frame).

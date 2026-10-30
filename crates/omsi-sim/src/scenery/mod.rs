@@ -66,6 +66,13 @@ impl InUse {
     }
 }
 
+/// A mesh file name as scripts compare them: no folder, no `.o3d`, lower case.
+fn mesh_key(name: &str) -> String {
+    let n = name.replace('\\', "/").to_ascii_lowercase();
+    let n = n.rsplit('/').next().unwrap_or(&n).to_string();
+    n.strip_suffix(".o3d").map(str::to_string).unwrap_or(n)
+}
+
 /// Builtin variables of scenery objects (`program/varlist_scenobj.txt`).
 pub fn builtin_scenobj_vars(root: &Path) -> Vec<String> {
     let mut v: Vec<String> = match omsi_cfg::CfgFile::read(root.join("program/varlist_scenobj.txt")) {
@@ -145,11 +152,20 @@ pub struct SceneryInstance {
     pub vm: Vm,
     pub host: VehicleHost,
     animators: Vec<MeshAnimator>,
-    /// `[visible] var value` per mesh (no variable: one the object does not declare, which
-    /// reads 0 - Omsi.exe registers it as it reads the model).
-    visible_conds: Vec<Option<(Option<omsi_script::VarId>, f32)>>,
+    /// `[visible]` per mesh: its conditions (`MeshDef::visible_any`) with their variables
+    /// (none: one the object does not declare, which reads 0 - Omsi.exe registers it as it
+    /// reads the model). None: always shown.
+    visible_conds: Vec<Option<Vec<Vec<(Option<omsi_script::VarId>, omsi_model::VisibleCond)>>>>,
     pub mesh_transforms: Vec<Mat4>,
     pub mesh_visible: Vec<bool>,
+    /// The mesh files of the model, by index (what a script names a mesh by).
+    mesh_files: Vec<String>,
+    /// What a Lua script put on a mesh: a transform composed after the model's own animations,
+    /// and a visibility that decides over the `[visible]` conditions.
+    mesh_override: Vec<Option<Mat4>>,
+    mesh_force: Vec<Option<bool>>,
+    /// A Lua script drives the object: it has to be stepped every frame.
+    pub lua_driven: bool,
     v_in_use: Option<omsi_script::VarId>,
     v_night: Option<omsi_script::VarId>,
     v_phase: Option<omsi_script::VarId>,
@@ -179,7 +195,13 @@ impl SceneryInstance {
         vm.run_init(&program, &mut state, &mut host);
         let mut animators: Vec<MeshAnimator> = meshes.iter().map(|(d, pivot)| MeshAnimator::new(d, *pivot, |n| program.var(n))).collect();
         crate::anim::link_parents(&mut animators, &meshes.iter().map(|(d, _)| *d).collect::<Vec<_>>());
-        let visible_conds = meshes.iter().map(|(d, _)| d.visible.as_ref().map(|(v, x)| (program.var(v), *x))).collect();
+        let visible_conds = meshes
+            .iter()
+            .map(|(d, _)| {
+                let groups: Vec<Vec<_>> = d.visible_groups().map(|g| g.iter().map(|c| (program.var(&c.variable), c.clone())).collect()).collect();
+                (!groups.is_empty()).then_some(groups)
+            })
+            .collect();
         let n = meshes.len();
         SceneryInstance {
             v_night: program.var("NightlightA"),
@@ -196,6 +218,10 @@ impl SceneryInstance {
             visible_conds,
             mesh_transforms: vec![Mat4::IDENTITY; n],
             mesh_visible: vec![true; n],
+            mesh_files: meshes.iter().map(|(d, _)| d.file.clone()).collect(),
+            mesh_override: vec![None; n],
+            mesh_force: vec![None; n],
+            lua_driven: false,
             html_textures: Vec::new(),
         }
     }
@@ -207,7 +233,8 @@ impl SceneryInstance {
 
     /// Does the object need per-frame updates at all?
     pub fn is_dynamic(&self) -> bool {
-        !self.program.frame.is_empty() || self.animators.iter().any(|a| a.has_animations()) || self.visible_conds.iter().any(|c| c.is_some())
+        self.lua_driven
+            || !self.program.frame.is_empty() || self.animators.iter().any(|a| a.has_animations()) || self.visible_conds.iter().any(|c| c.is_some())
     }
 
     fn put(&mut self, id: Option<omsi_script::VarId>, v: f32) {
@@ -253,9 +280,61 @@ impl SceneryInstance {
         crate::anim::apply_parents(&self.animators, &mut self.mesh_transforms);
         for (i, c) in self.visible_conds.iter().enumerate() {
             self.mesh_visible[i] = match c {
-                Some((id, x)) => (id.map(|id| self.state.vars[id as usize]).unwrap_or(0.0) - x).abs() < 0.5,
+                Some(groups) => groups.iter().any(|g| g.iter().all(|(id, c)| c.holds(id.map(|id| self.state.vars[id as usize]).unwrap_or(0.0)))),
                 None => true,
             };
+        }
+        // what a Lua script put on the meshes goes over the model's own
+        for (i, o) in self.mesh_override.iter().enumerate() {
+            if let Some(m) = o {
+                self.mesh_transforms[i] = *m * self.mesh_transforms[i];
+            }
+        }
+        for (i, f) in self.mesh_force.iter().enumerate() {
+            if let Some(v) = f {
+                self.mesh_visible[i] = *v;
+            }
+        }
+    }
+
+    /// The number of meshes of the object.
+    pub fn mesh_count(&self) -> usize {
+        self.mesh_files.len()
+    }
+
+    /// The mesh a script names: its number from 1, or its file name (with or without the folder
+    /// and the `.o3d`, without regard to case).
+    pub fn mesh_index(&self, name: &str) -> Option<usize> {
+        if let Ok(n) = name.trim().parse::<usize>() {
+            return (1..=self.mesh_files.len()).contains(&n).then(|| n - 1);
+        }
+        let want = mesh_key(name);
+        self.mesh_files.iter().position(|f| mesh_key(f) == want)
+    }
+
+    pub fn mesh_file(&self, i: usize) -> Option<&str> {
+        self.mesh_files.get(i).map(String::as_str)
+    }
+
+    /// Put a transform on a mesh (composed after its animations); `None` takes it off.
+    pub fn set_mesh_transform(&mut self, i: usize, m: Option<Mat4>) -> bool {
+        match self.mesh_override.get_mut(i) {
+            Some(slot) => {
+                *slot = m;
+                true
+            }
+            None => false,
+        }
+    }
+
+    /// Show or hide a mesh whatever its `[visible]` conditions say; `None` leaves it to them.
+    pub fn set_mesh_visible(&mut self, i: usize, v: Option<bool>) -> bool {
+        match self.mesh_force.get_mut(i) {
+            Some(slot) => {
+                *slot = v;
+                true
+            }
+            None => false,
         }
     }
 
@@ -346,6 +425,28 @@ impl SceneryInstance {
     /// Whether the script asks for the buses due at its stop (`GetArrBus*`).
     pub fn wants_arrivals(&self) -> bool {
         self.program.names.iter().any(|n| n.get(..9).map(|p| p.eq_ignore_ascii_case("getarrbus")).unwrap_or(false))
+    }
+}
+
+#[cfg(test)]
+mod lua_mesh_tests {
+    use super::*;
+
+    #[test]
+    fn mesh_names_match_without_folder_extension_or_case() {
+        assert_eq!(mesh_key("Meshes\\Arm.O3D"), "arm");
+        assert_eq!(mesh_key("arm"), "arm");
+    }
+
+    #[test]
+    fn overrides_compose_after_the_animations_and_force_visibility() {
+        let mut inst = SceneryInstance::new(Arc::new(Program::default()), &[], crate::SimClock::default(), &[]);
+        assert_eq!(inst.mesh_count(), 0);
+        assert!(!inst.set_mesh_transform(0, Some(Mat4::IDENTITY)), "no such mesh");
+        assert_eq!(inst.mesh_index("1"), None);
+        assert!(!inst.is_dynamic());
+        inst.lua_driven = true;
+        assert!(inst.is_dynamic());
     }
 }
 

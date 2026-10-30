@@ -1014,7 +1014,7 @@ fn replacement_distinguishes_missing_neighbors_from_unloaded_or_unread_tiles() {
     edits.originals.get_mut(&((0, 0), 1)).unwrap().next_id = 99;
     edits.originals.get_mut(&((0, 0), 2)).unwrap().prev_id = 0;
     let mut index = crate::tiles::MapIndex::default();
-    index.splines.insert(99, crate::tiles::IndexedSpline { length: 10.0, map_chain_offset: None, prev: 1, next: 0 });
+    index.splines.insert(99, omsi_world::map_index::IndexedSpline { length: 10.0, map_chain_offset: None, prev: 1, next: 0 });
     assert!(connection_plan(&edits, &[(0, 0)], Some(&index), ((0, 0), 1), ((0, 0), 2), true, false).unwrap_err().contains("99 for editing first"));
     index.splines.remove(&99);
     let preview = connection_plan(&edits, &[(0, 0)], Some(&index), ((0, 0), 1), ((0, 0), 2), true, false).unwrap();

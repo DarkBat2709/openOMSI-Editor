@@ -86,13 +86,11 @@ pub fn compute_mesh_props(ty: &VehicleType, var: &dyn Fn(&str) -> Option<f32>) -
                     }
                 }
             }
-            // (a variable the bus does not declare is 0: Omsi.exe registers every
-            // `[visible]` and `[alphascale]` variable in the varlist as it reads the model,
-            // 0x5efae8 -> VarList_Register - left visible, the 2nd..nth variant of a
-            // destination display stood over the one shown)
-            if let Some((v, value)) = &def.visible {
-                let x = var(v).unwrap_or(0.0);
-                props.visible = (x - value).abs() < 0.5;
+            // Unknown visibility names leave the mesh shown. They must stay unresolved:
+            // the same missing name in [matl_change] selects the base material.
+            // (several conditions, a range, a negation or `||`: see `MeshDef::visible_any`)
+            if let Some(shown) = def.visible_by(&var) {
+                props.visible = shown;
             }
             // [illumination_interior] a b c d: the interior lights (by index) lighting this mesh
             let mut interior = 0.0f32;
@@ -165,18 +163,20 @@ impl PropSource {
 #[derive(Debug, Clone, Default)]
 pub(super) struct MeshPlan {
     pub(super) slots: usize,
-    /// `[matl_change]` (default 1) and `[matl_lightmap]` (default 1: a variable the bus does not have is on) per slot.
+    /// `[matl_change]` (missing: base material) and `[matl_lightmap]` (missing: on) per slot.
     pub(super) night: Vec<(usize, PropSource)>,
     pub(super) light: Vec<(usize, PropSource)>,
-    /// `[visible]` variable (None: one the bus does not declare, which reads 0) and value.
-    pub(super) visible: Option<(Option<usize>, f32)>,
+    /// `[visible]`: each condition of `MeshDef::visible_any` with its variable's index (None:
+    /// an unresolved name, whose condition is ignored) - shown when all of any one group hold;
+    /// empty: always.
+    pub(super) visible: Vec<Vec<(Option<usize>, omsi_model::VisibleCond)>>,
     /// `[illumination_interior]`: (brightness, range).
     pub(super) interior: Vec<(PropSource, f32)>,
     /// `[alphascale]`, `[texcoordtransX/Y]` variables per slot; the third field of `alpha`
     /// boosts a raindrop-film layer (`Rain_Window_*_Wetness`) so it stays visible instead of
     /// reading as the texture's own faint alpha (its drops are only a few percent opaque,
     /// so a middling wetness value was nearly invisible against the glass behind it).
-    /// (An undeclared `[alphascale]` variable reads 0, as `[visible]`'s.)
+    /// (An undeclared `[alphascale]` variable reads 0.)
     pub(super) alpha: Vec<(usize, Option<usize>, f32)>,
     pub(super) uv_x: Vec<(usize, usize)>,
     pub(super) uv_y: Vec<(usize, usize)>,
@@ -248,9 +248,9 @@ impl PropsPlan {
                     }
                 }
                 plan.visible = def
-                    .visible
-                    .as_ref()
-                    .map(|(v, value)| (var(v), *value));
+                    .visible_groups()
+                    .map(|g| g.iter().map(|c| (var(&c.variable), c.clone())).collect())
+                    .collect();
                 for idx in &def.illumination_interior {
                     if let Some(il) = usize::try_from(*idx)
                         .ok()
@@ -326,9 +326,10 @@ impl PropsPlan {
             for &(slot, src) in &plan.light {
                 props.slot_light[slot] = props.slot_light[slot].max(if src.value(vars, 1.0) >= 0.5 { 1.0 } else { 0.0 });
             }
-            if let Some((i, value)) = plan.visible {
-                let x = i.and_then(|i| vars.get(i).copied()).unwrap_or(0.0);
-                props.visible = (x - value).abs() < 0.5;
+            if !plan.visible.is_empty() {
+                props.visible = plan.visible.iter().any(|g| g.iter().all(|(i, c)| {
+                    i.and_then(|i| vars.get(i).copied()).is_none_or(|x| c.holds(x))
+                }));
             }
             let mut interior = 0.0f32;
             for &(src, range) in &plan.interior {

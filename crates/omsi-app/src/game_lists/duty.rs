@@ -122,7 +122,7 @@ pub(crate) fn flush_settings(force: bool) {
     *SETTINGS_CACHE.lock().unwrap_or_else(|e| e.into_inner()) = None;
 }
 
-pub(super) fn apply_pending(v: &mut serde_json::Value, pending: &[(String, String)]) {
+pub(crate) fn apply_pending(v: &mut serde_json::Value, pending: &[(String, String)]) {
     for (key, value) in pending {
         let parsed: serde_json::Value = value.parse::<f64>().map(serde_json::Value::from).unwrap_or_else(|_| serde_json::Value::from(value.as_str()));
         // a switch goes in as true/false, as the launcher's own values are: written as 1 it
@@ -166,7 +166,7 @@ pub(super) fn switch_driver(app: &mut App, name: &str) {
     next.go_on_from(&mut app.session.career);
     app.session.career = next;
     app.args.driver = Some(rel);
-    app.service_msg = Some((format!("Driver: {name}"), 3.0));
+    app.service_msg = Some((omsi_ui::i18n::tr_fill("Driver: {name}", &[("{name}", &name)]), 3.0));
 }
 
 /// The fleet numbers of the bus's `[number]` list with their registrations.
@@ -218,7 +218,7 @@ pub(crate) fn start_duty_at(app: &mut App, line: &str, tour: &str, trip: usize, 
     let mut d = match sch.player_duty(&w, line, tour, now, None, false) {
         Ok(d) => d,
         Err(e) => {
-            app.service_msg = Some((format!("No duty: {e}"), 8.0));
+            app.service_msg = Some((omsi_ui::i18n::tr_fill_words("No duty ({e})", &[("{e}", &e)]), 8.0));
             return;
         }
     };
@@ -262,6 +262,6 @@ pub(super) fn start_duty(app: &mut App, line: &str, tour: &str) {
             app.session.duty = Some(d);
             app.service_msg = Some((format!("Line {line}, tour {}", tour.trim()), 4.0));
         }
-        Err(e) => app.service_msg = Some((format!("No duty: {e}"), 8.0)),
+        Err(e) => app.service_msg = Some((omsi_ui::i18n::tr_fill_words("No duty ({e})", &[("{e}", &e)]), 8.0)),
     }
 }

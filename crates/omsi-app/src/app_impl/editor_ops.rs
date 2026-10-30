@@ -116,6 +116,9 @@ impl App {
         if let crate::editor::Action::Workspace(mode) = action {
             self.editor_workspace(mode); return true;
         }
+        if matches!(action,crate::editor::Action::BusStop){self.editor_place_transit(false);return true;}
+        if matches!(action,crate::editor::Action::EntryPoint){self.editor_place_transit(true);return true;}
+        if matches!(action,crate::editor::Action::Routes){self.editor_open_routes();return true;}
         if matches!(action,crate::editor::Action::SplineDimensions){self.editor_open_dimensions();return true;}
         if matches!(action,crate::editor::Action::ConstructionWindow){self.editor_open_construction();return true;}
         if matches!(action,crate::editor::Action::TrafficManage){self.editor_open_path_manager();return true;}
@@ -803,6 +806,7 @@ impl App {
             if let Some(command)=command {self.editor_junction_command(command);}return true;
         }
         if self.editor_traffic_mouse(pressed){return true;}
+        if self.editor_route_mouse(pressed){return true;}
         if self.editor_dimensions_mouse(pressed){return true;}
         if self.editor_construction_mouse(pressed){return true;}
         if self.editor_sidewalk_mouse(pressed){return true;}
@@ -973,6 +977,7 @@ impl App {
 
     /// The wheel in the object editor: the object turns (5° a notch), with Shift it rises.
     pub(crate) fn editor_wheel(&mut self, amount: f32) -> bool {
+        if self.menus.editor.as_ref().is_some_and(|e|e.route_window.is_some()){return true;}
         if self.menus.editor.is_none() {
             return false;
         }
@@ -1016,4 +1021,41 @@ impl App {
         }
         true
     }
+}
+
+/// The editor's key for `code` (with Shift for the fine steps), as the camera faces `yaw`
+/// (degrees clockwise from north).
+pub fn action_for(code: winit::keyboard::KeyCode, shift: bool, ctrl: bool, yaw: f64) -> Option<crate::editor::Action> {
+    use crate::editor::Action;
+    use winit::keyboard::KeyCode as K;
+    use glam::DVec3;
+    let step = if shift { 0.05 } else { 0.5 };
+    let turn = if shift { 0.5 } else { 5.0 };
+    let (s, c) = yaw.to_radians().sin_cos();
+    let fwd = DVec3::new(s, c, 0.0) * step;
+    let right = DVec3::new(c, -s, 0.0) * step;
+    Some(match code {
+        K::Enter | K::NumpadEnter => Action::Pick,
+        K::KeyC if !ctrl => Action::Copy,
+        K::KeyV if !ctrl => Action::Variant,
+        K::Tab => Action::NextPick,
+        K::KeyI => Action::Move(fwd),
+        K::KeyK => Action::Move(-fwd),
+        K::KeyL => Action::Move(right),
+        K::KeyJ => Action::Move(-right),
+        K::KeyO => Action::Move(DVec3::Z * step),
+        K::KeyU => Action::Move(-DVec3::Z * step),
+        K::KeyM => Action::Turn(turn),
+        K::KeyN => Action::Turn(-turn),
+        K::Delete => Action::Delete,
+        K::Backspace => Action::Undo,
+        K::KeyS if ctrl => Action::Save,
+        K::PageUp => Action::Ground(if shift { 0.05 } else { 0.25 }),
+        K::PageDown => Action::Ground(if shift { -0.05 } else { -0.25 }),
+        K::KeyF if !ctrl => Action::Flatten,
+        K::BracketRight => Action::Brush(1.25),
+        K::BracketLeft => Action::Brush(0.8),
+        K::Escape => Action::Leave,
+        _ => return None,
+    })
 }

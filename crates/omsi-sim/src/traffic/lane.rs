@@ -129,6 +129,8 @@ pub struct Lane {
     pub crossing_problem: bool,
     /// Part of a roundabout's ring (see `rings::find_rings`).
     pub ring: bool,
+    /// What a rail lane's track is: tram or railway, third rail, tunnel (see `rail::track`).
+    pub track: Option<crate::rail::TrackInfo>,
 }
 
 /// Priority of a path without a `[rule] priority`.
@@ -372,7 +374,7 @@ impl LaneBuilder {
     pub fn curve(points: Vec<DVec3>, headings: Vec<f32>, curvature: Vec<f32>, kind: LaneKind, width: f32) -> Lane {
         let dist = cumulative(&points);
         let speed_limit_kmh = if kind == LaneKind::Air { AIR_NO_LIMIT_KMH } else { 50.0 };
-        Lane { key: None, reversed: false, kind, width, points, headings, curvature, dist, speed_limit_kmh, next: Vec::new(), traffic_light: None, turn: 0, source: 0, offset: 0.0, name: String::new(), invisible: false, density: 1.0, group_density: Vec::new(), no_cars: false, rule_bus: false, editor_bus_only: false, editor_exact_path_links: false, editor_grouped_path: false, editor_path_roads:None, editor_path_surface:None, editor_path_base:Vec::new(), editor_path_headings:Vec::new(),editor_path_curvature:Vec::new(), editor_path_shape:[[0.0;3];2],editor_path_ends:[[0.0;3];2],editor_path_floor:None, editor_additional_connection:false, editor_next:None, editor_previous:None, rule_trucks: false, no_overtaking: false, left: None, right: None, priority: DEFAULT_PRIORITY, blocks: Vec::new(), crossing_problem: false, ring: false }
+        Lane { key: None, reversed: false, kind, width, points, headings, curvature, dist, speed_limit_kmh, next: Vec::new(), traffic_light: None, turn: 0, source: 0, offset: 0.0, name: String::new(), invisible: false, density: 1.0, group_density: Vec::new(), no_cars: false, rule_bus: false, editor_bus_only: false, editor_exact_path_links: false, editor_grouped_path: false, editor_path_roads:None, editor_path_surface:None, editor_path_base:Vec::new(), editor_path_headings:Vec::new(),editor_path_curvature:Vec::new(), editor_path_shape:[[0.0;3];2],editor_path_ends:[[0.0;3];2],editor_path_floor:None, editor_additional_connection:false, editor_next:None, editor_previous:None, rule_trucks: false, no_overtaking: false, left: None, right: None, priority: DEFAULT_PRIORITY, blocks: Vec::new(), crossing_problem: false, ring: false, track: None }
     }
 
     /// Lane from bare points: headings from the neighbouring points on both sides (the

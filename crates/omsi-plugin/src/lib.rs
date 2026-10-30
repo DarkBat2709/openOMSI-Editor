@@ -47,6 +47,7 @@
 //! Wine elsewhere). The frame is one round trip.
 
 pub mod api;
+pub mod data;
 pub mod io;
 pub mod lua;
 pub mod ui;
@@ -229,6 +230,7 @@ impl TicketCall {
             price: (a.price.to_bits() != self.price.to_bits() && a.price.is_finite()).then_some(a.price.max(0.0)),
             voice: (!a.voice.trim().is_empty()).then(|| a.voice.clone()),
             tag: None,
+            payment: None,
         }
     }
 }
@@ -747,9 +749,9 @@ pub struct Remote {
 }
 
 impl Remote {
-    /// Start `host` (with `runner`, e.g. `wine`, in front when given) on the library and
-    /// have it call `PluginStart`.
-    pub fn spawn(runner: Option<&Path>, host: &Path, dll: &Path) -> Result<Remote, String> {
+    /// Start `host` (with `runner`, e.g. `wine`, in front when given) on the library in
+    /// `dir` and have it call `PluginStart`.
+    pub fn spawn(runner: Option<&Path>, host: &Path, dll: &Path, dir: &Path) -> Result<Remote, String> {
         let mut cmd = match runner {
             Some(r) => {
                 let mut c = Command::new(r);
@@ -758,11 +760,20 @@ impl Remote {
             }
             None => Command::new(host),
         };
-        cmd.arg(dll).stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::inherit());
-        if let Some(dir) = dll.parent() {
-            cmd.current_dir(dir);
+        cmd.arg(dll).stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::piped()).current_dir(dir);
+        #[cfg(windows)]
+        {
+            use std::os::windows::process::CommandExt;
+            cmd.creation_flags(0x0800_0000);
         }
         let mut child = cmd.spawn().map_err(|e| format!("could not start {}: {e}", host.display()))?;
+        if let Some(err) = child.stderr.take() {
+            std::thread::spawn(move || {
+                for line in std::io::BufRead::lines(BufReader::new(err)).map_while(Result::ok) {
+                    log::warn!("plugin host: {line}");
+                }
+            });
+        }
         let to = BufWriter::new(child.stdin.take().ok_or("no stdin")?);
         let from = BufReader::new(child.stdout.take().ok_or("no stdout")?);
         let mut r = Remote { child, to, from, procs: Procs::default() };
@@ -830,6 +841,12 @@ pub struct Plugin {
     failed: bool,
 }
 
+const PATCHES_OMSI_EXE: &[&str] = &["omsipresentationtools.dll"];
+
+fn patches_omsi_exe(dll: &Path) -> bool {
+    dll.file_name().is_some_and(|n| PATCHES_OMSI_EXE.contains(&n.to_string_lossy().to_ascii_lowercase().as_str()))
+}
+
 /// Where to look for the out-of-process host and what runs it.
 #[derive(Debug, Clone, Default)]
 pub struct HostConfig {
@@ -886,6 +903,9 @@ impl Plugin {
             return Err("no [dll]".into());
         }
         let dll = resolve_path(plugins_dir, &opl.dll).ok_or_else(|| format!("{} not found", opl.dll))?;
+        if patches_omsi_exe(&dll) {
+            return Err("it patches the code of OMSI.exe, which openOMSI does not run".into());
+        }
         let (backend, procs) = match Library::load(&dll) {
             Ok(lib) => {
                 lib.start();
@@ -899,7 +919,8 @@ impl Plugin {
                 if !cfg!(windows) && hosts.runner.is_none() {
                     return Err(format!("{local}; a Windows plugin needs Wine here (or OMSI_WINE)"));
                 }
-                let r = Remote::spawn(hosts.runner.as_deref(), host, &dll)?;
+                let root = plugins_dir.parent().unwrap_or(plugins_dir);
+                let r = Remote::spawn(hosts.runner.as_deref(), host, &dll, root)?;
                 let p = r.procs();
                 (Backend::Remote(r), p)
             }
@@ -1049,6 +1070,24 @@ impl Plugin {
     }
 }
 
+/// The prefix of the name of a plugin that belongs to a vehicle.
+pub const VEHICLE_PREFIX: &str = "vehicle:";
+/// The prefix of the name of a plugin that drives scenery objects (`[lua_script]` of a `.sco`).
+pub const OBJECT_PREFIX: &str = "object:";
+
+/// The plugin name an object script runs under: its file name plus a short hash of the whole
+/// path, so `Objects/A/gate.lua` and `Objects/B/gate.lua` are two scripts. The game loads a
+/// script and routes its events by this name alone.
+pub fn object_script_name(path: &Path) -> String {
+    let stem = path.file_stem().map(|n| n.to_string_lossy().into_owned()).unwrap_or_else(|| "script".into());
+    // FNV-1a over the path as written, with one kind of separator and no letter case
+    let mut h: u32 = 0x811c_9dc5;
+    for b in path.to_string_lossy().replace('\\', "/").to_ascii_lowercase().bytes() {
+        h = (h ^ u32::from(b)).wrapping_mul(0x0100_0193);
+    }
+    format!("{OBJECT_PREFIX}{stem}-{h:08x}")
+}
+
 /// Every plugin of the plugins folders.
 #[derive(Default)]
 pub struct Plugins {
@@ -1071,6 +1110,19 @@ impl Plugins {
     /// Load the plugins of each `plugins` folder given (the first folder's copy of an
     /// `.opl` name wins).
     pub fn load(dirs: &[PathBuf], hosts: &HostConfig) -> Plugins {
+        Self::load_with_process_grants(dirs, hosts, api::process::ProcessGrants::from_env())
+    }
+
+    pub fn load_with_process_grants(dirs: &[PathBuf], hosts: &HostConfig, process_grants: api::process::ProcessGrants) -> Plugins {
+        Self::load_process_host(dirs, hosts, process_grants, None)
+    }
+
+    /// Interactive game hosts supply a broker whose requests only their trusted UI can answer.
+    pub fn load_with_process_permissions(dirs: &[PathBuf], hosts: &HostConfig, process_grants: api::process::ProcessGrants, permissions: std::sync::Arc<api::process::ProcessPermissions>) -> Plugins {
+        Self::load_process_host(dirs, hosts, process_grants, Some(permissions))
+    }
+
+    fn load_process_host(dirs: &[PathBuf], hosts: &HostConfig, process_grants: api::process::ProcessGrants, process_permissions: Option<std::sync::Arc<api::process::ProcessPermissions>>) -> Plugins {
         let mut loaded: Vec<Plugin> = Vec::new();
         let mut seen = std::collections::HashSet::new();
         for dir in dirs {
@@ -1089,7 +1141,7 @@ impl Plugins {
             }
         }
         let mut lua = Vec::new();
-        let hub = api::runtime::SharedHub::default();
+        let hub = std::rc::Rc::new(api::runtime::Hub { process_grants: std::sync::Arc::new(process_grants), process_permissions, ..Default::default() });
         let ui = hub.ui.clone();
         let mut seen = std::collections::HashSet::new();
         for dir in dirs {
@@ -1140,6 +1192,122 @@ impl Plugins {
 
     pub fn is_empty(&self) -> bool {
         self.loaded.is_empty() && self.lua.is_empty() && self.wasm.is_empty()
+    }
+
+    /// What the scripts of a vehicle may do: they act on the bus and its cab, show their panels,
+    /// keep their own data and play sounds; the world, the traffic, the camera, the LAN, UDP and
+    /// native programs are for the player's own plugins. A vehicle is content from anywhere, and
+    /// a `.oop` that asks for more keeps only these.
+    pub fn vehicle_script_permissions() -> std::collections::HashSet<api::Perm> {
+        [api::Perm::Ui, api::Perm::Storage, api::Perm::VehicleWrite, api::Perm::Audio].into_iter().collect()
+    }
+
+    /// Start the scripts of a vehicle (its `[vehicle_script]` files) as plugins named
+    /// `vehicle:<file>`; the ones of the vehicle before it are stopped first. Returns how many
+    /// started.
+    pub fn attach_vehicle_scripts(&mut self, files: &[PathBuf]) -> usize {
+        self.detach_vehicle_scripts();
+        let allowed = Self::vehicle_script_permissions();
+        let mut started = 0;
+        for path in files {
+            let ext = path.extension().map(|e| e.to_string_lossy().to_ascii_lowercase()).unwrap_or_default();
+            let stem = path.file_stem().map(|n| n.to_string_lossy().into_owned()).unwrap_or_else(|| "script".into());
+            let name = format!("{VEHICLE_PREFIX}{stem}");
+            let narrow = |declared: Option<std::collections::HashSet<api::Perm>>| -> Option<std::collections::HashSet<api::Perm>> {
+                Some(match declared {
+                    Some(d) => d.intersection(&allowed).copied().collect(),
+                    None => allowed.clone(),
+                })
+            };
+            let result: Result<(), String> = match ext.as_str() {
+                "lua" => {
+                    let mut spec = lua::LuaSpec::disk(path);
+                    spec.name = name.clone();
+                    spec.perms = narrow(None);
+                    lua::LuaPlugin::start_spec(spec, path, &mut lua::NoVehicle, self.hub.clone()).map(|p| self.lua.push(p))
+                }
+                "oop" => match oop::load(path) {
+                    Ok(oop::Loaded::Lua(mut spec)) => {
+                        spec.name = name.clone();
+                        spec.perms = narrow(spec.perms.take());
+                        lua::LuaPlugin::start_spec(spec, path, &mut lua::NoVehicle, self.hub.clone()).map(|p| self.lua.push(p))
+                    }
+                    Ok(oop::Loaded::Wasm(mut spec)) => {
+                        spec.name = name.clone();
+                        spec.perms = narrow(spec.perms.take());
+                        wasm_plugin::WasmHost::start(spec, path, &mut lua::NoVehicle, self.hub.clone()).map(|p| self.wasm.push(p))
+                    }
+                    Err(e) => Err(e),
+                },
+                other => Err(format!("a vehicle script is .lua or .oop, not .{other}")),
+            };
+            match result {
+                Ok(()) => {
+                    started += 1;
+                    log::info!("vehicle script {} started", path.display());
+                }
+                Err(e) => log::warn!("vehicle script {} not started: {e}", path.display()),
+            }
+        }
+        started
+    }
+
+    /// Start the script of a scenery object type (a file named by a `.sco`'s `[lua_script]`) as a
+    /// plugin called `object:<file>`, if it is not running yet. Returns the plugin's name, or
+    /// `None` when the file would not start. Object scripts may play sounds and nothing else
+    /// beyond the `object.*` functions: they are content from the map's maker.
+    pub fn ensure_object_script(&mut self, path: &Path) -> Option<String> {
+        let name = object_script_name(path);
+        if self.has(&name) {
+            return Some(name);
+        }
+        let allowed: std::collections::HashSet<api::Perm> = [api::Perm::Audio].into_iter().collect();
+        let ext = path.extension().map(|e| e.to_string_lossy().to_ascii_lowercase()).unwrap_or_default();
+        let result: Result<(), String> = match ext.as_str() {
+            "lua" => {
+                let mut spec = lua::LuaSpec::disk(path);
+                spec.name = name.clone();
+                spec.perms = Some(allowed);
+                lua::LuaPlugin::start_spec(spec, path, &mut lua::NoVehicle, self.hub.clone()).map(|p| self.lua.push(p))
+            }
+            "oop" => match oop::load(path) {
+                Ok(oop::Loaded::Lua(mut spec)) => {
+                    spec.name = name.clone();
+                    spec.perms = Some(spec.perms.take().map_or_else(|| allowed.clone(), |d| d.intersection(&allowed).copied().collect()));
+                    lua::LuaPlugin::start_spec(spec, path, &mut lua::NoVehicle, self.hub.clone()).map(|p| self.lua.push(p))
+                }
+                Ok(oop::Loaded::Wasm(mut spec)) => {
+                    spec.name = name.clone();
+                    spec.perms = Some(spec.perms.take().map_or_else(|| allowed.clone(), |d| d.intersection(&allowed).copied().collect()));
+                    wasm_plugin::WasmHost::start(spec, path, &mut lua::NoVehicle, self.hub.clone()).map(|p| self.wasm.push(p))
+                }
+                Err(e) => Err(e),
+            },
+            other => Err(format!("an object script is .lua or .oop, not .{other}")),
+        };
+        match result {
+            Ok(()) => {
+                log::info!("object script {} started", path.display());
+                Some(name)
+            }
+            Err(e) => {
+                log::warn!("object script {} not started: {e}", path.display());
+                None
+            }
+        }
+    }
+
+    /// Stop the scripts of the vehicle that was the player's.
+    pub fn detach_vehicle_scripts(&mut self) {
+        let mine = |n: &str| n.starts_with(VEHICLE_PREFIX);
+        for p in self.lua.iter_mut().filter(|p| mine(&p.name)) {
+            p.stop(&mut lua::NoVehicle);
+        }
+        self.lua.retain(|p| !mine(&p.name));
+        for p in self.wasm.iter_mut().filter(|p| mine(&p.name)) {
+            p.stop(&mut lua::NoVehicle);
+        }
+        self.wasm.retain(|p| !mine(&p.name));
     }
 
     pub fn frame(&mut self, io: &mut dyn PluginIo) {
@@ -1315,6 +1483,12 @@ mod tests {
         // (a kind or ticket number out of range is left as it was)
         let bad = TicketAnswer { kind: 7, ticket: -1, ..same };
         assert_eq!(call.change(&bad), TicketChange::default());
+    }
+
+    #[test]
+    fn omsi_exe_patchers_left_out() {
+        assert!(patches_omsi_exe(Path::new("plugins/OMSIPresentationTools.dll")));
+        assert!(!patches_omsi_exe(Path::new("plugins/Demo/demo.dll")));
     }
 
     #[test]

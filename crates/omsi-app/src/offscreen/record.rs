@@ -84,6 +84,7 @@ impl Offscreen<'_> {
             Some(&self.weather),
             cloud_drift_at(&self.weather, self.run_clock.time),
             self.wetness,
+            0.0,
             Some(&self.world),
             driven,
             driven,
@@ -110,7 +111,16 @@ impl Offscreen<'_> {
         steps::world_lamps(&self.world, &self.renderer, &mut self.scene, &self.run_clock, &daylight, true, true);
         {
             let vehicles = steps::light_vehicles(self.player.as_ref(), self.traffic.as_ref(), &self.remotes_off);
-            world_lights(&mut self.renderer, &self.world, &mut self.scene, &self.weather, &daylight, cam.position, &vehicles);
+            world_lights(&mut self.renderer, &self.world, &mut self.scene, &self.weather, &daylight, cam.position, &vehicles, &self.settings.vehicle_smoke, self.player.is_some());
+            if omsi_cfg::flags::OMSI_FLASHLIGHT.is_set() {
+                lights::flashlight_ahead(&mut self.scene, &cam);
+            }
+        }
+        if let Some(p) = self.player.as_ref() {
+            if let Some(tv) = p.trolley_view.as_ref() {
+                tv.push_effects(&mut self.scene, &p.vehicle);
+            }
+            p.panto_fx.push_effects(&mut self.scene);
         }
         self.spray.sprites(cam.position, &mut self.scene.smoke);
         let lighting = self.lighting_now(&cam);

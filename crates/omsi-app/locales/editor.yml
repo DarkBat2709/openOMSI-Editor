@@ -34,9 +34,6 @@ _version: 2
 "Fine movement":
   de: "Fein bewegen"
 
-"Length":
-  de: "Länge"
-
 "Curve":
   de: "Kurve"
 
@@ -153,9 +150,6 @@ _version: 2
 
 "Spline connections · entire map":
   de: "Spline-Verbindungen · ganze Karte"
-
-"Check again":
-  de: "Erneut prüfen"
 
 "Markers: ON":
   de: "Marker: AN"
@@ -672,9 +666,6 @@ _version: 2
 
 "[ ] Profile / curve transition (openOMSI)":
   de: "[ ] Profil-/Kurvenübergang (openOMSI)"
-
-"Replace":
-  de: "Ersetzen"
 
 "Position or roads changed after the junction edit; undo those changes first":
   de: "Seit der Kreuzungsänderung wurden Position oder Straßen verändert; diese Änderungen zuerst rückgängig machen"
@@ -2005,9 +1996,6 @@ _version: 2
 "Terrain change undone":
   de: "Geländeänderung rückgängig"
 
-"North":
-  de: "Nord"
-
 "Northeast":
   de: "Nordost"
 
@@ -2600,9 +2588,6 @@ _version: 2
 
 "Buses only":
   de: "Nur Busse"
-
-"All vehicles":
-  de: "Alle Fahrzeuge"
 
 "Select start and destination again":
   de: "Start und Ziel neu wählen"
@@ -3419,3 +3404,117 @@ _version: 2
 
 "Connection is incomplete: add two points or select start and destination.":
   de: "Verbindung unvollständig: zwei Punkte setzen oder Start und Ziel wählen."
+
+"Place bus stop":
+  de: "Bushaltestelle platzieren"
+
+"Place entry point":
+  de: "Startpunkt platzieren"
+
+"Routes and lines …":
+  de: "Routen und Linien …"
+
+"Routes and lines":
+  de: "Routen und Linien"
+
+"Stop name":
+  de: "Haltestellenname"
+
+"Entry point name":
+  de: "Name des Startpunkts"
+
+"Boarding maximum":
+  de: "Einsteiger maximal"
+
+"Boarding minimum":
+  de: "Einsteiger minimal"
+
+"Alighting weight":
+  de: "Aussteiger-Gewichtung"
+
+"Stop length (m)":
+  de: "Haltestellenlänge (m)"
+
+"Platform side (0 right, 1 left)":
+  de: "Bahnsteigseite (0 rechts, 1 links)"
+
+"Route name":
+  de: "Routenname"
+
+"Departure (HH:MM)":
+  de: "Abfahrt (HH:MM)"
+
+"Duration (minutes)":
+  de: "Fahrtdauer (Minuten)"
+
+"AI group (optional)":
+  de: "KI-Gruppe (optional)"
+
+"Choose stops in travel order":
+  de: "Haltestellen in Fahrtrichtung auswählen"
+
+"No stops found. Place, name and save stops first.":
+  de: "Keine Haltestellen gefunden. Erst platzieren, benennen und speichern."
+
+"Remove last stop":
+  de: "Letzte Haltestelle entfernen"
+
+"Save route and line":
+  de: "Route und Linie speichern"
+
+"Save and reload map after placing stops or changing roads. Choose stops in travel order.":
+  de: "Nach neuen Haltestellen oder Straßenänderungen Karte speichern und neu laden. Haltestellen der Reihe nach wählen."
+
+"Route and line saved · Reload map to drive the new tour":
+  de: "Route und Linie gespeichert · Zum Fahren des neuen Umlaufs Karte neu laden"
+
+"Click to place · N/M direction · Edit text to name · Ctrl+S to save":
+  de: "Klick platziert · N/M dreht · Über Text bearbeiten benennen · Strg+S speichert"
+
+"A route needs at least two stops":
+  de: "Eine Route benötigt mindestens zwei Haltestellen"
+
+"This route name already exists; choose a new name":
+  de: "Dieser Routenname existiert bereits. Bitte einen neuen Namen wählen."
+
+"This route file already exists":
+  de: "Diese Routendatei existiert bereits"
+
+"Enter valid line and route names":
+  de: "Gültige Linien- und Routennamen eingeben"
+
+"Choose a different next stop":
+  de: "Eine andere nächste Haltestelle wählen"
+
+"No driving path near stop":
+  de: "Kein Fahrweg in der Nähe der Haltestelle"
+
+"Stop is more than 40 m from a driving path":
+  de: "Die Haltestelle liegt über 40 m vom Fahrweg entfernt"
+
+"Stop position not found; save and reload the map":
+  de: "Haltestellenposition fehlt. Karte speichern und neu laden."
+
+"Use HH:MM for departure":
+  de: "Abfahrt im Format HH:MM eingeben"
+
+"Departure must be between 00:00 and 47:59":
+  de: "Abfahrt muss zwischen 00:00 und 47:59 liegen"
+
+"Enter the trip duration in minutes":
+  de: "Fahrtdauer in Minuten eingeben"
+
+"Trip duration must be between 0 and 1440 minutes":
+  de: "Fahrtdauer muss größer als 0 und höchstens 1440 Minuten sein"
+
+"Content folder unavailable":
+  de: "Inhaltsordner nicht verfügbar"
+
+"The original OMSI helper object is missing":
+  de: "Das originale OMSI-Hilfsobjekt fehlt"
+
+"Stops run against the direction of this driving path":
+  de: "Die Haltestellen liegen entgegen der Fahrtrichtung dieses Fahrwegs"
+
+"Previous":
+  de: "Zurück"

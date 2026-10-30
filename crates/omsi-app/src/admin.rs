@@ -21,9 +21,9 @@
 //! `weather cycle`, `weather set <Weather/file.owt>`.
 
 use crate::App;
-use omsi_net::{LanSession, Role};
+use omsi_net::Role;
 
-pub(crate) use omsi_lan::admin::{duty_arg, ServerAdmin, TrafficOrder, LOCAL_ADMIN};
+pub(crate) use omsi_lan::admin::{duty_arg, ServerAdmin, LOCAL_ADMIN};
 use omsi_lan::admin::{act_on_session, answer, beside, Action, Admin, Done, WeatherAction};
 use omsi_lan::commands::Command;
 
@@ -34,7 +34,7 @@ pub(crate) const SPEEDS: [f64; 6] = [1.0, 2.0, 4.0, 8.0, 15.0, 30.0];
 pub(crate) fn items(app: &App) -> Vec<(String, String)> {
     let mut out = Vec::new();
     let Some(lan) = app.net.lan.as_ref() else { return out };
-    let mut peers: Vec<(u32, String)> = lan.peers().map(|p| (p.pose.id, if p.pose.name.is_empty() { format!("Player {}", p.pose.id) } else { p.pose.name.clone() })).collect();
+    let mut peers: Vec<(u32, String)> = lan.peers().map(|p| (p.pose.id, if p.pose.name.is_empty() { omsi_ui::tr("Player {}").replace("{}", &p.pose.id.to_string()) } else { p.pose.name.clone() })).collect();
     peers.sort();
     for (id, name) in &peers {
         if *id == lan.my_id {
@@ -84,6 +84,11 @@ pub(crate) fn items(app: &App) -> Vec<(String, String)> {
     out
 }
 
+pub(crate) fn sent_to_server(app: &App, action: &str) -> String {
+    let label = app.menus.admin_list.as_ref().and_then(|l| l.iter().find(|r| r.1 == action)).map_or(action, |r| r.0.as_str());
+    omsi_ui::i18n::said(format!("{}: {}", omsi_ui::tr("Sent to the server"), omsi_ui::tr(label)), format!("Sent to the server: {label}"))
+}
+
 /// A line of the menu chosen in this game.
 pub(crate) fn run(app: &mut App, action: &str) {
     if action == "back" {
@@ -93,8 +98,31 @@ pub(crate) fn run(app: &mut App, action: &str) {
     if lan.role == Role::Client {
         // (a server's admin: the server does it)
         lan.command(1, &format!("admin {action}"));
-        app.service_msg = Some((format!("Sent to the server: {action}"), 3.0));
+        app.service_msg = Some((sent_to_server(app, action), 3.0));
         return;
+    }
+    // (a machine ban says what became of it on this screen)
+    match Action::parse(action) {
+        Some(Action::HwBan { id, scope, hours, why }) => {
+            let by = "the host";
+            let msg = match app.net.lan.as_mut().map(|l| omsi_lan::admin::ban::hardware_ban(l, id, scope, hours, why.as_deref().unwrap_or(""), by)) {
+                Some(Ok(m)) => m,
+                Some(Err(e)) => e,
+                None => return,
+            };
+            app.service_msg = Some((msg, 5.0));
+            return;
+        }
+        Some(Action::Unban(id)) => {
+            let msg = match app.net.lan.as_mut().map(|l| omsi_lan::admin::ban::unban(l, &id)) {
+                Some(Ok(m)) => m,
+                Some(Err(e)) => e,
+                None => return,
+            };
+            app.service_msg = Some((msg, 4.0));
+            return;
+        }
+        _ => {}
     }
     host_action(app, action);
 }
@@ -133,7 +161,7 @@ fn host_action(app: &mut App, action: &str) {
             if let Some(l) = app.net.lan.as_mut() {
                 l.clock_speed = s;
             }
-            app.service_msg = Some((format!("Time speed x{s}"), 3.0));
+            app.service_msg = Some((omsi_ui::i18n::tr_fill("Time speed x{s}", &[("{s}", &s.to_string())]), 3.0));
         }
         (Action::Clock(s), _) => {
             let d = (s - app.clock.time + 43_200.0).rem_euclid(86_400.0) - 43_200.0;
@@ -148,19 +176,21 @@ fn host_action(app: &mut App, action: &str) {
                 app.session.weather_cycle = Some(c);
             }
             let on = app.session.weather_cycle.is_some();
-            app.service_msg = Some((format!("Weather cycle {}", if on { "on" } else { "off" }), 3.0));
+            app.service_msg = Some((omsi_ui::i18n::tr_fill_words("Weather cycle {}", &[("{}", &(if on { "on" } else { "off" }))]), 3.0));
         }
         // (only an installed weather file: the name comes from the admin's game)
         (Action::Weather(WeatherAction::Set(file)), _) if !file.contains("..") && file.to_ascii_lowercase().starts_with("weather/") && file.to_ascii_lowercase().ends_with(".owt") => {
             app.change_weather(Some(file), true, 1.0);
         }
         (Action::Weather(_), _) => app.next_weather(),
+        // (a dedicated server's: a game's own is its Options' passengers setting)
+        (Action::PassengerDensity(_), _) => app.service_msg = Some((omsi_ui::tr("The passenger density is set in Options here").into_owned(), 3.0)),
         (Action::Traffic(arg), _) if arg == "clear" => clear_ai_traffic(app),
         (Action::Traffic(_), _) => {
             if let Some(t) = app.session.traffic.as_mut() {
                 t.target = crate::game_lists::next_step(&crate::game_lists::TRAFFIC, t.target);
                 app.args.traffic = t.target;
-                app.service_msg = Some((format!("Traffic: {}", t.target), 3.0));
+                app.service_msg = Some((omsi_ui::i18n::said(format!("{}: {}", omsi_ui::tr("Traffic"), t.target), format!("Traffic: {}", t.target)), 3.0));
             }
         }
         _ => {}
@@ -177,7 +207,7 @@ pub(crate) fn clear_ai_traffic(app: &mut App) {
     if let (Some(t), Some(w), Some(r), Some(scene)) = (app.session.traffic.as_mut(), app.world.as_ref(), app.renderer.as_ref(), app.scene.as_mut()) {
         let removed = t.clear_random();
         crate::view_sync::apply_traffic(t, &mut app.gfx.sim_view.traffic, w, r, scene);
-        app.service_msg = Some((format!("{removed} AI vehicles taken off the road"), 3.0));
+        app.service_msg = Some((omsi_ui::i18n::tr_fill("{removed} AI vehicles taken off the road", &[("{removed}", &removed.to_string())]), 3.0));
     }
 }
 
@@ -207,6 +237,7 @@ pub(crate) fn teleport(app: &mut App, at: glam::DVec3, heading: f64) {
         let origin = glam::DVec3::new(at.x, at.y, z);
         p.vehicle.position = origin;
         p.vehicle.heading = heading;
+        crate::rail_drive::placed(p, z);
         if let Some(rb) = p.vehicle.rigid.as_mut() {
             rb.place(origin, heading);
         }
@@ -261,7 +292,12 @@ pub(crate) fn carry_out(app: &mut App, from: u32, command: Command) {
         // (host → us) a service for our bus, or our bus back on its wheels
         Command::Service(kind) => {
             app.run_service(&kind, "host");
-            app.service_msg = Some((format!("The host: {kind}"), 3.0));
+            let done = match kind.as_str() {
+                "refuel" => "The host refuelled your bus",
+                "wash" => "The host washed your bus",
+                _ => "The host repaired your bus",
+            };
+            app.service_msg = Some((done.into(), 3.0));
         }
         Command::Unstick => {
             if let Some(p) = app.player.as_ref() {
@@ -340,26 +376,28 @@ pub(crate) fn carry_out(app: &mut App, from: u32, command: Command) {
         }
         Command::AdminLocked => app.service_msg = Some(("Too many wrong admin passwords: try again later".into(), 4.0)),
         // (server → us) the password was right: the menu is ours
-        Command::AdminOk => {
+        Command::AdminOk(role) => {
             app.net.is_admin = true;
+            crate::admin_panel::take(app, &Command::AdminOk(role));
             app.service_msg = Some(("You administer this server now: Esc menu, Administration".into(), 6.0));
         }
+        // (server → us) what its admin's menu shows
+        c @ (Command::AdminResult { .. } | Command::AdminPlayer(_) | Command::AdminListEnd { .. } | Command::AdminState(_) | Command::AdminBan(_) | Command::AdminBansEnd { .. }) => crate::admin_panel::take(app, &c),
         Command::AdminNo => app.service_msg = Some(("Wrong admin password".into(), 4.0)),
         // (a game hosting by code sent a notice: the player's game showed it)
         Command::NotifySeen(id) => log::info!("LAN: player {from} saw notice {id}"),
         // (the session's own: `lan_command`)
-        Command::Trigger(_) | Command::VoiceAsked | Command::Voice(_) => {}
+        Command::Trigger(_) | Command::VoiceAsked | Command::Voice(_) | Command::VoiceMuted(_) => {}
     }
 }
 
-/// A command a player sent the dedicated server (see `omsi_lan::admin::server_command`).
-pub(crate) fn server_command(lan: &mut LanSession, from: u32, text: &str, adm: &mut ServerAdmin, positions: &dyn Fn(u32) -> Option<(glam::DVec3, f64)>) {
-    let rules = omsi_lan::admin::ServerRules {
-        real_time: crate::real_time::server_real(),
-        traffic_max: crate::game_lists::TRAFFIC_MAX,
-        notice_ok: &|text| crate::ui::Notice::parse(text).is_some(),
-    };
-    omsi_lan::admin::server_command(lan, from, text, adm, positions, &rules);
+/// What of the game a dedicated server's administration goes by (`metar`: its weather
+/// follows a METAR report).
+pub(crate) fn server_rules(metar: bool) -> omsi_lan::admin::ServerRules<'static> {
+    fn notice_ok(text: &str) -> bool {
+        crate::ui::Notice::parse(text).is_some()
+    }
+    omsi_lan::admin::ServerRules { real_time: crate::real_time::server_real(), traffic_max: crate::game_lists::TRAFFIC_MAX, notice_ok: &notice_ok, metar }
 }
 
 /// The bus fallen through the world (a hole in the ground, a tile that was not there yet,
@@ -401,7 +439,7 @@ pub(crate) fn guard_fall(app: &mut App, dt: f32) {
 
 #[cfg(test)]
 mod traffic_order_tests {
-    use super::TrafficOrder;
+    use omsi_lan::admin::TrafficOrder;
 
     #[test]
     fn a_traffic_order_is_read() {

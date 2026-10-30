@@ -20,6 +20,7 @@
 //! larger.
 
 mod placement_save;
+pub(crate) mod transit_save;
 
 use crate::scene::{ObjectEdit, World};
 use glam::{DVec3, Mat4, Vec3};
@@ -61,6 +62,7 @@ struct JunctionUndo {id:i64,path:PathBuf,before:Vec<(crate::spline_editor::Key,o
 
 #[derive(Default)]
 pub struct Editor {
+    pub route_window: Option<crate::route_editor::Window>,
     pub audit:Option<crate::audit_events::Audit>,
     pub catalog: Option<crate::asset_catalog::Catalog>,
     pub tile_window: Option<crate::tile_editor::Window>,
@@ -191,6 +193,7 @@ pub enum Workspace { Objects, Splines, AiPaths }
 /// What a key does in the editor.
 #[derive(Clone, Copy)]
 pub enum Action {
+    BusStop, EntryPoint, Routes,
     SplineMode,
     Workspace(Workspace),
     TerrainToRoad,
@@ -945,17 +948,17 @@ impl Editor {
         let roundabout_rules = &placement.rules;
         let mut written = Vec::new();
         for ((tx, ty), edits) in by_tile {
-            let src = world.tile_source(tx, ty).ok_or_else(|| format!("tile ({tx}, {ty}) is not in the map"))?;
+            let src = world.tile_source(tx, ty).ok_or_else(|| omsi_ui::tr("tile ({tx}, {ty}) is not in the map").replace("{tx}", &tx.to_string()).replace("{ty}", &ty.to_string()))?;
             // (a LAN host's map is sealed: never written out in plain form, edited or not)
             if omsi_cfg::vfs::is_sealed(&src) {
-                return Err(format!("{} is the LAN host's map: not written", src.display()));
+                return Err(omsi_ui::tr("{file} is the LAN host's map: not written").replace("{file}", &src.display().to_string()));
             }
-            let name = src.file_name().ok_or("tile without a name")?.to_owned();
+            let name = src.file_name().ok_or_else(|| omsi_ui::tr("tile without a name").into_owned())?.to_owned();
             let out = content.join(map_dir).join(&name);
             // never into the installation itself
             if let (Ok(o), Ok(r)) = (out.parent().map(|p| p.to_path_buf()).unwrap_or_default().canonicalize().or_else(|_| Ok::<_, std::io::Error>(out.clone())), original.canonicalize()) {
                 if o.starts_with(&r) {
-                    return Err(format!("{} lies in the original installation: not written", out.display()));
+                    return Err(omsi_ui::tr("{file} lies in the original installation: not written").replace("{file}", &out.display().to_string()));
                 }
             }
             let cached = self.saved_tile_sources.lock().unwrap().get(&(tx, ty)).cloned();
@@ -977,7 +980,7 @@ impl Editor {
             let (new_text, paths)=crate::editor_path_edit::rewrite(&new_text,(tx,ty),&self.path_edits)?;
             let n = n + c + p + s + l + rows + paths;
             if n == 0 {
-                return Err(format!("the objects edited were not found in {}", src.display()));
+                return Err(omsi_ui::tr("the objects edited were not found in {file}").replace("{file}", &src.display().to_string()));
             }
             std::fs::create_dir_all(out.parent().unwrap_or(Path::new("."))).map_err(|e| e.to_string())?;
             let data = encode(&new_text, enc);
@@ -997,16 +1000,16 @@ impl Editor {
         // the ground the brush shaped: each tile's .map.terrain
         let terrains = world.terrain_edits.lock().clone();
         for ((tx, ty), t) in terrains {
-            let src = world.tile_source(tx, ty).ok_or_else(|| format!("tile ({tx}, {ty}) is not in the map"))?;
+            let src = world.tile_source(tx, ty).ok_or_else(|| omsi_ui::tr("tile ({tx}, {ty}) is not in the map").replace("{tx}", &tx.to_string()).replace("{ty}", &ty.to_string()))?;
             // (a LAN host's map is sealed: never written out in plain form, edited or not)
             if omsi_cfg::vfs::is_sealed(&src) {
-                return Err(format!("{} is the LAN host's map: not written", src.display()));
+                return Err(omsi_ui::tr("{file} is the LAN host's map: not written").replace("{file}", &src.display().to_string()));
             }
-            let name = format!("{}.terrain", src.file_name().ok_or("tile without a name")?.to_string_lossy());
+            let name = format!("{}.terrain", src.file_name().ok_or_else(|| omsi_ui::tr("tile without a name").into_owned())?.to_string_lossy());
             let out = content.join(map_dir).join(&name);
             if let (Some(dir), Ok(r)) = (out.parent(), original.canonicalize()) {
                 if dir.canonicalize().unwrap_or_else(|_| dir.to_path_buf()).starts_with(&r) {
-                    return Err(format!("{} lies in the original installation: not written", out.display()));
+                    return Err(omsi_ui::tr("{file} lies in the original installation: not written").replace("{file}", &out.display().to_string()));
                 }
             }
             std::fs::create_dir_all(out.parent().unwrap_or(Path::new("."))).map_err(|e| e.to_string())?;
@@ -1015,6 +1018,7 @@ impl Editor {
             written.push(out);
         }
         written.extend(crate::ground_paint::save(world,map_rel,content,original)?);
+        let transit=transit_save::save(self,world,map_rel,content,original,&written)?;written.extend(transit);
         Ok(written)
     }
 }
@@ -1412,6 +1416,7 @@ pub(crate) fn camera_key_pressed(keys: &hashbrown::HashSet<winit::keyboard::KeyC
     use winit::keyboard::KeyCode as K;
     if !keys.contains(&code) { return false; }
     let Some(editor) = editor else { return true; };
+    if editor.route_window.is_some(){return false;}
     if editor.dimensions_window.as_ref().is_some_and(|w| w.input.is_some()) || editor.construction_window.as_ref().is_some_and(|w| w.input.is_some()) || editor.sidewalk_window.as_ref().is_some_and(|w| w.input.is_some()) || editor.catalog.is_some() || editor.tile_window.is_some() || editor.text_window.is_some() || editor.junction_window.is_some() || editor.terrain.input.is_some() || editor.roadside_window.as_ref().is_some_and(|w| w.input.is_some()) { return false; }
     let shift = keys.contains(&K::ShiftLeft) || keys.contains(&K::ShiftRight);
     let ctrl = keys.contains(&K::ControlLeft) || keys.contains(&K::ControlRight);

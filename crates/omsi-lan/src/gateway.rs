@@ -56,7 +56,15 @@ pub fn open_public_gateway(session: &LanSession, info: omsi_net::ws::ServerInfo,
     let Some(udp) = session.local_addr() else { return };
     let target = SocketAddr::from(([127, 0, 0, 1], udp.port()));
     let port = if web_port == 0 { udp.port().saturating_add(10) } else { web_port };
-    let gateway = match omsi_net::ws::WsGateway::start(SocketAddr::from(([0, 0, 0, 0], port)), target, info.clone()).or_else(|_| omsi_net::ws::WsGateway::start(SocketAddr::from(([0, 0, 0, 0], 0)), target, info)) {
+    // (a web port taken: another one, and the log says which - the status page, the tunnel
+    // and the players' WebSockets are there instead)
+    let gateway = match omsi_net::ws::WsGateway::start(SocketAddr::from(([0, 0, 0, 0], port)), target, info.clone()).or_else(|e| {
+        let g = omsi_net::ws::WsGateway::start(SocketAddr::from(([0, 0, 0, 0], 0)), target, info);
+        if let Ok(g) = &g {
+            log::warn!("LAN: web port {port} cannot be used ({e}): the gateway (status page, WebSocket players, tunnel) is on port {} instead - change web_port or stop what uses {port}", g.addr.port());
+        }
+        g
+    }) {
         Ok(g) => g,
         Err(e) => {
             log::warn!("LAN: no WebSocket gateway: {e}");
@@ -146,7 +154,20 @@ pub fn open_public_gateway(session: &LanSession, info: omsi_net::ws::ServerInfo,
 /// offers only those): `only` when a server's list says, else every bus installed here -
 /// read in the background (it takes a moment over all content folders).
 /// `installed` lists every bus installed here (called on the thread, only when `only` is empty).
+/// A host that takes its players' buses (`mods::upload`) and has no list offers any bus:
+/// none is published, so the launcher limits nobody to the buses installed on the host. A
+/// dedicated server (`SERVER_VEHICLES` is set) takes them as its server.cfg says, read
+/// before this; a player's game hosting a session as `a_hosting_game_takes_uploads` says
+/// (`game::share_mods` switches it on only after this).
 pub fn publish_vehicles(only: Vec<String>, installed: impl FnOnce() -> Vec<String> + Send + 'static) {
+    let takes = match crate::server_cfg::SERVER_VEHICLES.get() {
+        Some(_) => crate::mods::upload::accepting(),
+        None => crate::mods::upload::a_hosting_game_takes_uploads(),
+    };
+    if only.is_empty() && takes {
+        log::info!("LAN: any bus is offered to joining players (the host takes the ones it lacks)");
+        return;
+    }
     let _ = std::thread::Builder::new().name("vehicle list".into()).spawn(move || {
         let list: Vec<String> = if only.is_empty() { installed() } else { only };
         log::info!("LAN: {} buses offered to joining players", list.len());
@@ -273,6 +294,10 @@ pub fn offers(offered: &std::collections::HashSet<String>, bus: &str) -> bool {
 }
 
 /// The port of the WebSocket gateway this game opened.
+pub fn web_port() -> Option<u16> {
+    port_of_gateway()
+}
+
 fn port_of_gateway() -> Option<u16> {
     WS_PATH.lock().ok()?.as_ref()?.gateway.as_ref().map(|g| g.addr.port())
 }
@@ -290,6 +315,25 @@ pub fn update_server_info(players: usize, time: &str, weather: &str) {
             }
         }
     }
+}
+
+/// The public server list's challenge, on the status page (`ServerInfo::list_challenge`).
+pub fn set_list_challenge(challenge: &str) {
+    if let Ok(w) = WS_PATH.lock() {
+        if let Some(g) = w.as_ref().and_then(|w| w.gateway.as_ref()) {
+            if let Ok(mut i) = g.info.lock() {
+                i.list_challenge = challenge.to_string();
+            }
+        }
+    }
+}
+
+/// What the status page says now (players, map, name ...): a copy.
+pub fn server_info_now() -> Option<omsi_net::ws::ServerInfo> {
+    let w = WS_PATH.lock().ok()?;
+    let g = w.as_ref()?.gateway.as_ref()?;
+    let i = g.info.lock().ok()?.clone();
+    Some(i)
 }
 
 /// A server run: its shared world now, for `GET /status`.
@@ -312,6 +356,25 @@ pub fn update_server_players(list: Vec<omsi_net::ws::PlayerInfo>) {
             }
         }
     }
+}
+
+/// A dedicated server's administration on the web gateway: `/api/admin/…` and the panel
+/// (`omsi_admin::http`), answered from the hub on the gateway's threads.
+struct AdminApi {
+    hub: Arc<omsi_admin::Hub>,
+    cfg: omsi_admin::WebCfg,
+}
+
+impl omsi_net::ws_api::HttpApi for AdminApi {
+    fn handle(&self, r: &omsi_net::ws_api::ApiRequest) -> Option<omsi_net::ws_api::ApiResponse> {
+        let req = omsi_admin::http::Request { method: r.method, path: r.path, query: r.query, headers: r.headers, body: r.body, peer: r.peer };
+        omsi_admin::http::handle(&self.hub, &self.cfg, &req).map(|a| omsi_net::ws_api::ApiResponse { status: a.status, content_type: a.content_type, body: a.body, headers: a.headers })
+    }
+}
+
+/// The web administration opens on every gateway of this process (who may reach it: `cfg`).
+pub fn open_admin_api(hub: Arc<omsi_admin::Hub>, cfg: omsi_admin::WebCfg) {
+    omsi_net::ws_api::set_api(Some(Arc::new(AdminApi { hub, cfg })));
 }
 
 /// A server run: the admin commands that came to the web gateway's `POST /admin`.

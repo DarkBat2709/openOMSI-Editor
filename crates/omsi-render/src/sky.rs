@@ -107,7 +107,7 @@ impl Renderer {
         textures: [TextureId; 3],
         clouds: Option<TextureId>,
     ) {
-        self.set_sky_textures_vanilla(scene, textures, clouds, None)
+        self.set_sky_textures_vanilla(scene, textures, clouds, None, None)
     }
 
     /// Sky gradients, the cloud field (`clouds`, the enhanced sky's and its weather's
@@ -119,6 +119,7 @@ impl Renderer {
         textures: [TextureId; 3],
         clouds: Option<TextureId>,
         vanilla_clouds: Option<TextureId>,
+        sun: Option<TextureId>,
     ) {
         let views: Vec<&wgpu::TextureView> =
             textures.iter().map(|t| &scene.textures[*t].view).collect();
@@ -176,6 +177,13 @@ impl Renderer {
                     binding: 10,
                     resource: self.sky.vanilla_sky_buf.as_entire_binding(),
                 },
+                wgpu::BindGroupEntry {
+                    binding: 11,
+                    resource: wgpu::BindingResource::TextureView(match sun {
+                        Some(s) => &scene.textures[s].view,
+                        None => &self.black_texture.view,
+                    }),
+                },
             ],
         });
         scene.sky_bind_group = Some(bg);
@@ -200,6 +208,8 @@ pub(crate) struct SkyRes {
     /// much of the sun the clouds let through over the camera now (smoothed).
     pub(crate) cloud_shape_cpu: Vec<u8>,
     pub(crate) cloud_sun: Option<f32>,
+    /// The clouds' shadow over the land, held in the sky table's texture (`cloud_field`).
+    pub(crate) cloud_field: FieldState,
     pub(crate) sky_mesh: (wgpu::Buffer, wgpu::Buffer, u32),
     pub(crate) sky_lut: wgpu::Texture,
     pub(crate) sky_lut_view: wgpu::TextureView,

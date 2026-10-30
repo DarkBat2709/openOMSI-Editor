@@ -251,6 +251,20 @@ impl PlayerDuty {
         self.arrived_late.filter(|_| self.at_stop)
     }
 
+    /// Close the stops called `names` on every trip of the duty - a diversion, roadworks -
+    /// with the way round them (`via`, "" when not said), and open the others again: the bus
+    /// does not call at a closed stop, and the duty goes on past it without counting it
+    /// missed. Returns how many stops it closed.
+    pub fn set_closed_stops(&mut self, names: &[String], via: &str) -> usize {
+        let mut n = 0;
+        for s in self.trips.iter_mut().flat_map(|t| t.stops.iter_mut()) {
+            let closed = names.iter().any(|c| c.trim().eq_ignore_ascii_case(s.name.trim()));
+            s.closed = closed.then(|| via.trim().to_string());
+            n += closed as usize;
+        }
+        n
+    }
+
     /// Places of stops the timetable did not know (their tiles were not loaded when the duty
     /// was made): the navigator reads the whole map.
     pub fn learn_places(&mut self, places: &HashMap<i64, glam::DVec3>) {
@@ -347,7 +361,7 @@ impl PlayerDuty {
                     self.next_stop = t
                         .stops
                         .iter()
-                        .position(|s| s.stops && s.position.map(|p| s.arr >= now + Self::approach_time(pos, p)).unwrap_or(false))
+                        .position(|s| s.calls() && s.position.map(|p| s.arr >= now + Self::approach_time(pos, p)).unwrap_or(false))
                         .unwrap_or(0);
                     log::info!(
                         "duty: no trip of the tour can be reached in time; trip {} ({}) from stop {} '{}'",
@@ -597,8 +611,9 @@ impl PlayerDuty {
         let day_time = self.duty_time(day_time);
         self.heading = bus.heading;
         self.position = Some(bus.position);
-        let served = self.advance(bus.position, day_time);
         let standing = bus.physics.velocity_kmh().abs() < 0.36;
+        let doors_open_here = Self::doors_open(bus) && standing;
+        let served = self.progress_at(bus.position, day_time, doors_open_here);
         if self.at_stop && Self::doors_open(bus) {
             self.passed.doors = true;
         } else if !self.at_stop && standing && Self::doors_open(bus) {
@@ -619,7 +634,7 @@ impl PlayerDuty {
         if self.trip_index + 1 < self.trips.len() && self.served_terminus.is_some() {
             self.set_trip(self.trip_index + 1);
             log::info!("duty: terminus served, on to trip {} {} to {}", self.trip_index + 1, self.trip().name, self.trip().terminus);
-            self.advance(bus.position, day_time);
+            self.progress_at(bus.position, day_time, doors_open_here);
         }
         self.feed_host(bus, day_time);
         served
@@ -744,20 +759,33 @@ impl PlayerDuty {
             }
         }
         let Some((k, _)) = best else { return };
+        // (a closed stop was not missed)
+        let missed = trip.stops[self.next_stop..k].iter().filter(|s| s.closed.is_none()).count();
+        if missed == 0 {
+            self.next_stop = k;
+            return;
+        }
         log::info!(
             "duty: trip {}: {} stop(s) passed without stopping, the bus at stop {} '{}' (it was due at {})",
             trip.name,
-            k - self.next_stop,
+            missed,
             k + 1,
             trip.stops[k].name.trim(),
             self.next_stop + 1
         );
-        self.skipped = Some((k - self.next_stop, self.next_stop + 1, k + 1));
+        self.skipped = Some((missed, self.next_stop + 1, k + 1));
         self.next_stop = k;
     }
 
-    /// The duty's progress with the bus at `pos` (see [`PlayerDuty::update`]).
+    /// [`Self::progress_at`] for a bus standing at `pos` with a door open (tests).
+    #[cfg(test)]
     pub(crate) fn advance(&mut self, pos: glam::DVec3, day_time: f64) -> Option<(f64, f64)> {
+        self.progress_at(pos, day_time, true)
+    }
+
+    /// The duty's progress with the bus at `pos` (see [`PlayerDuty::update`]);
+    /// `doors_open_here`: it stands with a door open.
+    pub(crate) fn progress_at(&mut self, pos: glam::DVec3, day_time: f64, doors_open_here: bool) -> Option<(f64, f64)> {
         if !self.placed {
             // (stops beyond the loaded tiles have no place yet: a few seconds for the
             // navigator's map, unless the bus stands at a stop of its trip)
@@ -814,8 +842,11 @@ impl PlayerDuty {
         let trip = &self.trips[self.trip_index];
         let last = trip.stops.len().saturating_sub(1);
         // the bus reached a later stop of the trip (skipped stops); before it has left a
-        // stop of the trip, not its last one (where the tour's previous trip may end)
-        if !self.at_stop {
+        // stop of the trip, not its last one (where the tour's previous trip may end).
+        // Reached means standing there with a door open: driving out of a terminal stand
+        // through the circle of a later stop of the same loop fast-forwarded the duty past
+        // every stop in between
+        if doors_open_here && !self.at_stop {
             self.catch_up(pos, forward_of(self.heading));
         }
         let trip = &self.trips[self.trip_index];
@@ -838,11 +869,11 @@ impl PlayerDuty {
                 } else if self.at_stop && gone > LEFT_STOP {
                     self.at_stop = false;
                     let left = self.next_stop;
-                    self.passed = PassedStop { doors: false, stop: (!self.passed.doors && stop.stops).then_some(left), stand: None };
+                    self.passed = PassedStop { doors: false, stop: (!self.passed.doors && stop.calls()).then_some(left), stand: None };
                     let late = day_time - stop.dep;
                     self.left_late = Some(late);
                     // (OMSI counts a stop only with its arrival: the original)
-                    if let (true, Some(arrived)) = (stop.stops, self.arrived_late.take()) {
+                    if let (true, Some(arrived)) = (stop.calls(), self.arrived_late.take()) {
                         served = Some((arrived, late));
                     }
                     self.next_stop = (self.next_stop + 1).min(last);

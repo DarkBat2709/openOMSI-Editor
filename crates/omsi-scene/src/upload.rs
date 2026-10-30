@@ -24,7 +24,7 @@ impl World {
                     .collect(),
                 p.splines
                     .iter()
-                    .map(|(_, st, _, _)| Arc::as_ptr(st) as usize)
+                    .map(|(_, st, _, _, _)| Arc::as_ptr(st) as usize)
                     .filter(|k| gpu.splines.contains_key(k))
                     .collect(),
                 p.trees
@@ -99,7 +99,7 @@ impl World {
                 }
             }
         }
-        for (_, st, _, _) in &p.splines {
+        for (_, st, _, _, _) in &p.splines {
             if have_splines.contains(&(Arc::as_ptr(st) as usize)) {
                 continue;
             }
@@ -113,10 +113,11 @@ impl World {
                 push(tex, &ot.texture_dirs(&self.root), &mut names);
             }
         }
-        // the painted ground layers (and their detail textures) of the tile
+        // the painted ground layers (and their detail textures) of the tile, the masks moved to `paint` once cut
         let ground_dirs = vec![self.root.clone()];
-        for (layer, _) in &p.paint_masks {
-            if let Some(gt) = crate::ground_paint::layers(self).get(*layer) {
+        let layers = p.paint_masks.iter().map(|m| m.0).chain(p.paint.iter().map(|m| m.0)).chain(p.wall_paint.iter().map(|m| m.0));
+        for layer in layers {
+            if let Some(gt) = crate::ground_paint::layers(self).get(layer) {
                 push(&gt.texture, &ground_dirs, &mut names);
                 push(&gt.detail_texture, &ground_dirs, &mut names);
             }
@@ -197,11 +198,7 @@ impl World {
         // that had nothing to do with the weather.
         let ground_dirs_ref: Vec<&Path> = ground_dirs.iter().map(|p| p.as_path()).collect();
         let ground_cfg = self.textures.cfg(&ground_tex, &ground_dirs_ref);
-        let ground_wet = if ground_cfg.moisture || ground_cfg.puddles {
-            1.0
-        } else {
-            0.0
-        };
+        let ground_wet = ground_cfg.wetness_kind();
         let plain_terrain_mat = renderer.add_terrain_material(
             scene,
             ground_id,
@@ -304,6 +301,8 @@ impl World {
         };
         for (mesh, o3d_mats, overrides) in &ot.meshes {
             let mut mats: Vec<MaterialId> = Vec::new();
+            // (once a mesh: asked again for every slot, the 294 slots of a St-Servan crossing took 30 ms)
+            let override_slots: Vec<Option<usize>> = overrides.iter().map(|o| omsi_sim::vehicle::override_slot(o3d_mats, o)).collect();
             for (slot, m) in o3d_mats.iter().enumerate() {
                 let tex_of = |gpu: &mut GpuCache,
                               scene: &mut Scene,
@@ -314,8 +313,9 @@ impl World {
                     t.textures.push(path);
                     Some(id)
                 };
-                let for_slot =
-                    |o: &&MaterialDef| omsi_sim::vehicle::override_slot(o3d_mats, o) == Some(slot);
+                let for_slot = |o: &&MaterialDef| {
+                    overrides.iter().zip(&override_slots).any(|(x, s)| std::ptr::eq(x, *o) && *s == Some(slot))
+                };
                 // a slot fed by [useTextTexture] / [useScriptTexture] gets a generated picture:
                 // the name in the mesh is a placeholder (the stop poles' Textfeld_1.bmp, the
                 // street signs' StrSchild_Text1.bmp), and looking for it on disk only wrote
@@ -468,9 +468,7 @@ impl World {
                 if tex.is_some() {
                     let dirs_ref: Vec<&Path> = dirs.iter().map(|p| p.as_path()).collect();
                     let c = self.textures.cfg(&m.texture, &dirs_ref);
-                    if c.moisture || c.puddles {
-                        extra.moisture = 1.0;
-                    }
+                    extra.moisture = c.wetness_kind();
                     if c.terrain_mapping {
                         t.terrain_slots.push((0, t.meshes.len(), slot));
                     }

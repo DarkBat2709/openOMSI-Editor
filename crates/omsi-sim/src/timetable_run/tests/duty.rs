@@ -69,6 +69,7 @@ fn ibox_busstop_is_prepositioned_when_the_timetable_jumps() {
             position: Some(glam::DVec3::new(i as f64 * 100.0, 0.0, 0.0)),
             dir: StopDir::default(),
             stops: true,
+            closed: None,
         })
         .collect();
     let mut duty = PlayerDuty {
@@ -626,6 +627,33 @@ fn stops_passed_without_stopping_are_told_once() {
 }
 
 #[test]
+fn closed_stops_passed_are_not_missed() {
+    let drive = |closed: &[&str]| {
+        let mut trip = planned(0.0, &[(0.0, 0.0, 0.0), (100.0, 60.0, 60.0), (500.0, 120.0, 120.0), (1000.0, 200.0, 200.0), (1500.0, 280.0, 280.0)]);
+        trip.set_dirs();
+        let mut d = PlayerDuty::new("5".into(), "1".into(), vec![trip], 0, 0, true);
+        (d.placed, d.heading) = (true, 90.0);
+        let names: Vec<String> = closed.iter().map(|s| s.to_string()).collect();
+        assert_eq!(d.set_closed_stops(&names, " via Bahnhof "), closed.len());
+        d.advance(glam::DVec3::new(0.0, 0.0, 0.0), 0.0);
+        d.advance(glam::DVec3::new(60.0, 0.0, 0.0), 30.0);
+        // the bus turns up at stop 4 (numbered from 1), round stops 2 and 3
+        d.advance(glam::DVec3::new(1000.0, 0.0, 0.0), 90.0);
+        assert_eq!(d.next_stop, 3);
+        d
+    };
+    let mut d = drive(&["s1", "S2"]);
+    assert_eq!(d.take_skipped(), None, "both closed: none missed");
+    assert_eq!(d.trip().stops[2].closed.as_deref(), Some("via Bahnhof"));
+    assert!(!d.trip().stops[1].calls() && d.trip().stops[3].calls());
+    // one of them closed: the other was missed
+    assert_eq!(drive(&["s2"]).take_skipped(), Some((1, 2, 4)));
+    // and an empty list opens them again
+    assert_eq!(d.set_closed_stops(&[], ""), 0);
+    assert!(d.trip().stops.iter().all(|s| s.closed.is_none()));
+}
+
+#[test]
 fn a_duty_starts_with_the_trip_that_fits_the_time() {
     // Spandau line 5, tour "Mo-Fr 3": a depot run 14:44-15:01, then 15:07 and 16:01
     let trips = vec![
@@ -999,4 +1027,28 @@ fn a_stop_passed_and_served_further_on_is_stepped_back_to() {
     d.advance(at(150.0), 55.0);
     d.step_back(at(260.0), 60.0);
     assert_eq!(d.next_stop, 2, "nearer to the next stop: no step back");
+}
+
+/// Passing through the circle of a stop further on is not reaching it: only standing there
+/// with a door open counts the stops in between as skipped.
+#[test]
+fn a_later_stop_counts_only_with_the_doors_open() {
+    let stops = [(0.0, 0.0, 0.0), (250.0, 50.0, 50.0), (600.0, 120.0, 120.0), (900.0, 190.0, 190.0), (1300.0, 270.0, 270.0), (1800.0, 360.0, 360.0)];
+    let mut trip = planned(0.0, &stops);
+    trip.set_dirs();
+    let mut duty = PlayerDuty::new("31".into(), "4".into(), vec![trip], 0, 0, true);
+    duty.placed = true;
+    duty.heading = 90.0;
+    let east = |x: f64| glam::DVec3::new(x, 0.0, 0.0);
+    duty.progress_at(east(0.0), 0.0, true);
+    duty.progress_at(east(40.0), 15.0, false);
+    assert_eq!(duty.next_stop, 1, "away from the first stop");
+    for (x, t) in [(895.0, 60.0), (900.0, 61.0), (906.0, 62.0)] {
+        duty.progress_at(east(x), t, false);
+    }
+    assert_eq!(duty.next_stop, 1, "rolled through the fourth stop's circle");
+    assert_eq!(duty.take_skipped(), None);
+    duty.progress_at(east(1301.0), 80.0, true);
+    assert_eq!(duty.next_stop, 4);
+    assert_eq!(duty.take_skipped(), Some((3, 2, 5)), "stops 2 to 4 passed, at stop 5");
 }

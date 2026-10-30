@@ -96,8 +96,9 @@ impl World {
         order.sort_by_key(|q| (q.tx, q.ty));
         // (Omsi.exe does not move the ground at all when it loads a map: the editor's "align
         // the terrain to the spline" wrote the heights into the tile's `.terrain`, and the
-        // flag left in the map only makes the spline cut its outline out of the ground -
-        // see `hole_rims`. Pulled onto the road again here, every vertex under it took
+        // flag left in the map describes the spline's terrain profile. The render mesh
+        // fits its solid backing separately in `cut_tile`. Pulled onto the road again
+        // here, every coarse vertex under it took
         // the height of whatever lay over it, and between those five-metre points the
         // ground's triangles cut through the camber and past the kerbs: a piece of road
         // gone under the grass, while beside it the ground stood lifted over the verge.
@@ -329,8 +330,9 @@ impl World {
             // (a `[helparrow]` object goes on: it is put up hidden, and drawn while the route
             // arrows are on - see `World::show_help_arrows`)
             if ot.sco.only_editor || ot.meshes.is_empty() {
-                // invisible sound sources (ambient sound objects) still run their script
-                if let (Some(program), true) = (&ot.program, ot.sco.sound.is_some()) {
+                // invisible sound sources (ambient sound objects) and children of a
+                // crossing naming one of its lights still run their script
+                if let (Some(program), Some(light_parent)) = (&ot.program, hidden_script(&ot, o, &index.traffic_light_parents)) {
                     let inst = omsi_sim::scenery::SceneryInstance::new(
                         program.clone(),
                         &ot.mesh_defs(),
@@ -346,7 +348,7 @@ impl World {
                         inst,
                         controller: None,
                         light_index: 0,
-                        light_parent: None,
+                        light_parent,
                         map_id: o.id,
                         variants: Vec::new(),
                         sounds: None,
@@ -357,6 +359,7 @@ impl World {
                         htmls: Vec::new(),
                         alpha_slots: Vec::new(),
                         alpha_last: Vec::new(),
+                        script_lamps: Vec::new(),
                     });
                 }
                 // An editor-only object still lays its paths out: OMSI's invisible
@@ -464,11 +467,12 @@ impl World {
         note_place_stats(stats, &st, &res, objects.len());
         self.tile_state.lock().insert(key, state);
         let light_map = self.tile_light_map(key, &st, layout, staged);
-        let (splines, ground_splines) = self.tile_splines(&st);
+        let (splines, ground_splines) = self.tile_splines(&st, &objects, staged, layout);
         Some(Prepared {
             tx,
             ty,
-            terrain: Some(build_terrain_mesh(terrain)),
+            // (`cut_tile` makes the ground: fitted to the aligned splines, or the saved mesh)
+            terrain: None,
             hole_walls: MeshData::default(),
             paint_cut: None,
             paint_masks: self.load_ground_paint(&st.path, (st.tx, st.ty)),
@@ -686,13 +690,68 @@ impl World {
     /// The tile's spline meshes for the GPU: their `[terrainmapping]` faces pooled apart,
     /// the rest batched.
     #[allow(clippy::type_complexity)]
-    fn tile_splines(&self, st: &StagedTile) -> (Vec<(Arc<MeshData>, Arc<SplineType>, bool, DVec3)>, Vec<Arc<MeshData>>) {
+    fn tile_splines(&self, st: &StagedTile, objects: &[PlacedObject], staged: &HashMap<(i32, i32), Arc<StagedTile>>, layout: &TileLayout) -> (Vec<(Arc<MeshData>, Arc<SplineType>, bool, DVec3, crate::spline_layers::SplineLayer)>, Vec<Arc<MeshData>>) {
         // the whole spline meshes go to the GPU from here (a later load reads the tile again)
         let meshes = st.meshes.lock().take().unwrap_or_default();
+        // (in the tile's order, before anything is split off or batched: a spline laid on an
+        // earlier one at its height, or on a `[surface]` object, is drawn over it, as in
+        // Omsi.exe)
+        let levels = if omsi_cfg::flags::OMSI_NO_DRAW_ORDER_DEPTH.is_set() {
+            vec![Default::default(); meshes.len()]
+        } else {
+            // the `[surface]` objects of this tile, and those of the tiles around it that
+            // reach into it (a lane near the edge lies on the next tile's junction)
+            let size = tile_size() as f32;
+            let mut ground: Vec<[glam::Vec3; 3]> = Vec::new();
+            let mut add = |ot: &ObjectType, pos: DVec3, xf: &Mat4, warped: Option<&Vec<MeshData>>, edge_only: bool| {
+                if !ot.sco.surface {
+                    return;
+                }
+                let at = (pos - st.origin).as_vec3();
+                let meshes: Vec<&MeshData> = match warped {
+                    Some(w) => w.iter().collect(),
+                    None => ot.meshes.iter().map(|(m, _, _)| m).collect(),
+                };
+                for m in meshes {
+                    let placed: Vec<glam::Vec3> = m.positions.iter().map(|v| at + xf.transform_point3(*v)).collect();
+                    if edge_only {
+                        let (lo, hi) = placed.iter().fold((glam::Vec3::splat(f32::MAX), glam::Vec3::splat(f32::MIN)), |(lo, hi), p| (lo.min(*p), hi.max(*p)));
+                        if hi.x < -1.0 || hi.y < -1.0 || lo.x > size + 1.0 || lo.y > size + 1.0 {
+                            continue;
+                        }
+                    }
+                    ground.extend(m.indices.chunks_exact(3).filter_map(|t| {
+                        let p = |i: u32| placed.get(i as usize).copied();
+                        Some([p(t[0])?, p(t[1])?, p(t[2])?])
+                    }));
+                }
+            };
+            for o in objects {
+                add(&o.ot, o.pos, &o.xf, o.warped.as_deref(), false);
+            }
+            for dx in -1..=1 {
+                for dy in -1..=1 {
+                    if (dx, dy) == (0, 0) {
+                        continue;
+                    }
+                    let nk = (st.tx + dx, st.ty + dy);
+                    let Some(n) = staged.get(&nk) else { continue };
+                    // (resolved now if it is not yet, as the terrain cut does: taken only when
+                    // ready, a lane came out right or not by the order the tiles loaded in)
+                    let Some(res) = self.resolve(nk, &Self::sources(layout, staged, nk)) else { continue };
+                    for (oi, (o, pose)) in n.objects.iter().zip(res.poses.iter()).enumerate() {
+                        let Some(Pose { pos, rot }) = *pose else { continue };
+                        add(&o.ot, pos, &rot, res.warped.get(&oi).map(|w| w.as_ref()), true);
+                    }
+                }
+            }
+            crate::spline_layers::spline_layers(&meshes.iter().map(|m| m.as_ref()).collect::<Vec<_>>(), &ground)
+        };
         let splines: Vec<_> = meshes
             .into_iter()
             .zip(st.splines.iter())
-            .map(|(m, sp)| (m, sp.ty.clone(), sp.casts_shadow, sp.sort_origin))
+            .zip(levels)
+            .map(|((m, sp), level)| (m, sp.ty.clone(), sp.casts_shadow, sp.sort_origin, level))
             .collect();
         let (splines, ground_splines) = if omsi_cfg::flags::OMSI_NO_GROUND_SPLINE_BATCHING.is_set()
             || omsi_cfg::flags::OMSI_NO_SPLINE_BATCHING.is_set()
@@ -702,7 +761,7 @@ impl World {
             let mut slots_by_type = HashMap::new();
             let mut rest = Vec::new();
             let mut ground = Vec::new();
-            for (mesh, ty, casts, sort_origin) in splines {
+            for (mesh, ty, casts, sort_origin, level) in splines {
                 let slots: &Vec<usize> = slots_by_type.entry(Arc::as_ptr(&ty) as usize).or_insert_with(|| {
                     let dirs = texture_dirs(&self.root, &ty.dir);
                     let dirs: Vec<&Path> = dirs.iter().map(|p| p.as_path()).collect();
@@ -711,13 +770,13 @@ impl World {
                         .map(|(i, _)| i).collect()
                 });
                 if slots.is_empty() {
-                    rest.push((mesh, ty, casts, sort_origin));
+                    rest.push((mesh, ty, casts, sort_origin, level));
                     continue;
                 }
                 let faces = terrain_ground(&mesh, slots, st.origin, Mat4::IDENTITY, st.origin);
                 if !faces.is_empty() { ground.push(Arc::new(faces)); }
                 let mesh = terrain_rest(&mesh, slots);
-                if !mesh.ranges.is_empty() { rest.push((Arc::new(mesh), ty, casts, sort_origin)); }
+                if !mesh.ranges.is_empty() { rest.push((Arc::new(mesh), ty, casts, sort_origin, level)); }
             }
             (rest, batch_ground_splines(ground))
         };
@@ -812,6 +871,16 @@ fn placed_object_lanes(
 }
 
 /// Whether a placed object is a traffic lamp: (crossing, light index, lit by any light).
+/// Whether an editor-only (or meshless) object runs its script, and if so the crossing
+/// light it reads (`ScriptedObject::light_parent`). A sound source does, and so does a
+/// child of a crossing that names one of its lights: it reads that light's phase as a
+/// visible lamp does. Gerolstein's "BU Gong" (light 4 of the station crossing) read phase
+/// 0, red, without it, and rang every two seconds day and night.
+fn hidden_script(ot: &ObjectType, o: &StagedObject, crossings: &hashbrown::HashSet<i64>) -> Option<Option<(i64, usize)>> {
+    let light = light_child_of(crossings, o.lamp_parent, &o.extra);
+    (ot.sco.sound.is_some() || light.is_some()).then_some(light)
+}
+
 fn object_lamp(ot: &ObjectType, o: &StagedObject, pos: DVec3, index: &MapIndex) -> Option<(i64, usize, bool)> {
     // (OMSI hands `TrafficLightPhase` to any child of a crossing whose first string
     // names one of its lights, `[trafficlight]` or not - see `names_traffic_light`;
@@ -844,9 +913,10 @@ fn object_lamp(ot: &ObjectType, o: &StagedObject, pos: DVec3, index: &MapIndex) 
 /// Legacy pole fixtures can put the virtual `[maplight]` inside the emitting mesh
 /// (Spandau's Ufo Big puts it above the pole cap, inside the head). The source was
 /// authored for an unoccluded light map, not as a bulb hidden behind opaque geometry.
-/// Require a pole and an enclosing emitting mesh. Directional effects must face
-/// away from the source; omnidirectional effects must share its exact position.
-/// An unrelated effect elsewhere on the same fixture does not qualify the source.
+/// Require a pole. A directional effect must face away from the source, inside an
+/// enclosing emitting mesh; an omnidirectional effect at the source's exact position is
+/// the lamp's own bulb wherever the fixture lies (St-Servan's Eclatec Index has it above
+/// its head). An unrelated effect elsewhere on the same fixture does not qualify the source.
 fn embedded_pole_light(ot: &ObjectType, source: glam::Vec3) -> bool {
     ot.sco.crash_mode_pole.is_some() && ot.meshes.iter().zip(&ot.mesh_def_index).any(|(mesh, &def)| {
         let md = &ot.model.meshes[def];
@@ -855,8 +925,9 @@ fn embedded_pole_light(ot: &ObjectType, source: glam::Vec3) -> bool {
                 source == glam::Vec3::from(effect.pos)
             } else {
                 (source - glam::Vec3::from(effect.pos)).dot(glam::Vec3::from(effect.dir)) < 0.0
+                    && mesh_encloses_light(&mesh.0, source)
             }
-        }) && mesh_encloses_light(&mesh.0, source)
+        })
     })
 }
 
@@ -889,6 +960,11 @@ fn object_lights(state: &mut TileState, ot: &ObjectType, pos: DVec3, xf: Mat4, l
         if lamp.is_some() && matches!(sw, LightSwitch::Variable(_)) {
             continue;
         }
+        // (and a lamp the object's own script switches follows its script, by day and by
+        // night: see `lamps_switched_by_script`)
+        if lamp.is_none() && script_switched(ot, &sw) {
+            continue;
+        }
         state.coronas.push(StaticCorona {
             corona: c,
             switch: sw,
@@ -907,18 +983,74 @@ fn object_lights(state: &mut TileState, ot: &ObjectType, pos: DVec3, xf: Mat4, l
         // colour is the brightness, so the intensity stays at one: an Esso sign
         // declared as 0.1 red is a glow by its pumps, not a red wash over the
         // whole street.
-        state.lights.push(omsi_render::PointLight {
+        // (A building's window glow is declared with a core of 60 or 120 m: filled at full colour that
+        // far round, the ground of the whole street glowed with it, evenly, from windows that light
+        // a few metres of their facade. The core is held to 15 m - a street lamp's is 12 - and the
+        // light falls off with the square of the distance beyond it. The baked light maps of the vanilla
+        // picture keep the authored radius.)
+        // (And a building's light is not a street lamp's: a lit room lights the ground outside a
+        // fifth as much - a courtyard ringed by lit windows came out as bright as the street under
+        // a lamp, as every window added a lamp's full colour.)
+        // (A source of 6 to 25 m - a floodlight mast's core is 20, a petrol station's canopy 10 and
+        // 20 - is held so for the plain picture, Vanilla and Vanilla+, as before. The Enhanced
+        // picture lights its ground by the lamps alone, not by the baked pools as well, and takes it
+        // as declared, at its own full colour: see `LightMode`.)
+        let window_glow = lamp.is_none() && ml.radius > 6.0;
+        let held = ml.radius.max(0.5).min(15.0);
+        let glow = if window_glow { 0.2 } else { 1.0 };
+        let shadow_owner = embedded.get(k).copied().unwrap_or(false).then_some(key);
+        let light = |core: f32, glow: f32, mode: omsi_render::LightMode| omsi_render::PointLight {
             position: p,
-            radius: ml.radius.max(0.5) * 6.0,
-            color: ml.color,
+            radius: core * 6.0,
+            color: [ml.color[0] * glow, ml.color[1] * glow, ml.color[2] * glow],
             intensity: 1.0,
-            core: ml.radius.max(0.5),
+            core,
             housed: true,
-            shadow_owner: embedded.get(k).copied().unwrap_or(false).then_some(key),
+            shadow_owner,
+            mode,
             ..Default::default()
-        });
-        state.light_owners.push(owner);
+        };
+        if window_glow && ml.radius <= 25.0 {
+            state.lights.push(light(held, glow, omsi_render::LightMode::Vanilla));
+            state.lights.push(light(ml.radius, 1.0, omsi_render::LightMode::Enhanced));
+        } else {
+            state.lights.push(light(held, glow, omsi_render::LightMode::Both));
+        }
+        state.light_owners.extend(std::iter::repeat_n(owner, if window_glow && ml.radius <= 25.0 {2} else {1}));
     }
+}
+
+/// A lamp of a scenery object whose brightness is a variable of the object's own script.
+fn script_switched(ot: &ObjectType, sw: &LightSwitch) -> bool {
+    matches!(sw, LightSwitch::Variable(v) if ot.program.as_ref().is_some_and(|p| p.has_script_var(v)))
+}
+
+/// The lamps of a scenery object (not a traffic light: its lamps glow with its phase) that
+/// its own script switches, with the variable that does: they follow that variable by day
+/// and by night, as in OMSI. Kept with the static lamps, which glow whenever it is dark,
+/// Gerolstein's departure boards showed their orange "due" and green "departing" lamps all
+/// night.
+pub(super) fn lamps_switched_by_script(ot: &ObjectType, pos: DVec3, xf: Mat4) -> Vec<crate::staging::ScriptLamp> {
+    if ot.program.is_none() {
+        return Vec::new();
+    }
+    // (the model's lamps, each with its switch, in the order they are made)
+    let named: Mutex<Vec<LightSwitch>> = Mutex::new(Vec::new());
+    let glows = model_lights_owned(&ot.model, &|_| xf, pos, &|var| {
+        named.lock().push(LightSwitch::parse(var));
+        1.0
+    }, &[]);
+    let named = named.into_inner();
+    let mut out = Vec::new();
+    for (glow, k) in glows {
+        let Some(switch) = named.get(k) else { continue };
+        if let LightSwitch::Variable(variable) = switch {
+            if script_switched(ot, switch) {
+                out.push(crate::staging::ScriptLamp { glow, variable: variable.clone(), level: 0.0 });
+            }
+        }
+    }
+    out
 }
 
 /// Add what placing a tile counted to the load statistics.
@@ -1074,7 +1206,7 @@ mod embedded_light_tests {
     }
 
     #[test]
-    fn omni_pole_sources_require_a_coincident_effect_inside_the_emitting_mesh() {
+    fn omni_pole_sources_require_a_coincident_effect() {
         let mut fixture = pole_fixture();
         let effect = &mut fixture.model.meshes[1].light_enh_2[0];
         effect.omni = true;
@@ -1089,12 +1221,12 @@ mod embedded_light_tests {
         assert!(!embedded_pole_light(&fixture, glam::Vec3::ZERO),
             "even a nearby but distinct omni effect does not qualify");
         fixture.model.meshes[1].light_enh_2[0].pos = [0.0, 0.0, 2.0];
-        assert!(!embedded_pole_light(&fixture, glam::Vec3::new(0.0, 0.0, 2.0)),
-            "a coincident source outside the fixture retains self-shadowing");
+        assert!(embedded_pole_light(&fixture, glam::Vec3::new(0.0, 0.0, 2.0)),
+            "a bulb above its fixture's head is not shadowed by it");
         fixture.model.meshes[1].light_enh_2[0].pos = [0.0; 3];
         add_cube(&mut fixture.meshes[0].0, 0.25, true);
-        assert!(!embedded_pole_light(&fixture, glam::Vec3::ZERO),
-            "an omni source in enclosed air is not embedded in emitting solid");
+        assert!(embedded_pole_light(&fixture, glam::Vec3::ZERO),
+            "a bulb in a lantern's glass box is not shadowed by it");
         fixture = pole_fixture();
         fixture.model.meshes[1].light_enh_2[0].omni = true;
         fixture.model.meshes[1].light_enh_2[0].pos = [0.0; 3];
@@ -1127,5 +1259,186 @@ mod embedded_light_tests {
             assert_eq!(placed.color, source.color);
             assert_eq!(placed.intensity, 1.0);
         }
+    }
+
+    /// A floodlight mast's core (20 m) and a petrol station's canopy are held, as before, for the
+    /// plain picture and as declared for the Enhanced one; a building's window glow, declared with
+    /// a core past 25 m, is held to 15 m and a fifth in both.
+    #[test]
+    fn floodlights_are_as_declared_in_enhanced_and_held_in_the_plain_picture() {
+        use omsi_render::LightMode;
+        let mut fixture = pole_fixture();
+        fixture.sco.crash_mode_pole = None;
+        fixture.sco.map_lights = vec![
+            omsi_scenery::sco::MapLight { pos: [0.0; 3], color: [1.0, 0.776, 0.46], radius: 20.0 },
+            omsi_scenery::sco::MapLight { pos: [8.0, 0.0, 0.0], color: [1.0; 3], radius: 60.0 },
+        ];
+        let mut state = TileState::default();
+        object_lights(&mut state, &fixture, DVec3::ZERO, Mat4::IDENTITY, None, 7, None);
+        assert_eq!(state.lights.len(), 3);
+        let [plain, enhanced, glow] = [&state.lights[0], &state.lights[1], &state.lights[2]];
+        assert_eq!((plain.mode, plain.core, plain.radius), (LightMode::Vanilla, 15.0, 90.0));
+        assert!((plain.color[0] - 0.2).abs() < 1e-6 && (plain.color[1] - 0.1552).abs() < 1e-4);
+        assert_eq!((enhanced.mode, enhanced.core, enhanced.radius), (LightMode::Enhanced, 20.0, 120.0));
+        assert_eq!(enhanced.color, [1.0, 0.776, 0.46]);
+        assert_eq!((glow.mode, glow.core, glow.radius), (LightMode::Both, 15.0, 90.0));
+        assert!((glow.color[0] - 0.2).abs() < 1e-6);
+        // a street lamp's source (a `lamp`) is a lamp's full colour, one light for both
+        let mut state = TileState::default();
+        object_lights(&mut state, &fixture, DVec3::ZERO, Mat4::IDENTITY, Some((3, 0, true)), 7, None);
+        assert!(state.lights.iter().all(|l| l.mode == LightMode::Both && l.color[0] == 1.0));
+    }
+}
+
+#[cfg(test)]
+mod hidden_script_tests {
+    use super::*;
+
+    fn editor_only(sound: bool) -> Arc<ObjectType> {
+        Arc::new(ObjectType {
+        editor_pick_bounds: Default::default(),
+            sco: SceneryObject { only_editor: true, sound: sound.then(|| "bell.cfg".to_string()), ..Default::default() },
+            model: Model::default(),
+            meshes: Vec::new(),
+            mesh_def_index: Vec::new(),
+            sound_path: Default::default(), model_dir: Default::default(),
+            mesh_visible: Vec::new(), mesh_pivots: Vec::new(),
+            mesh_shadow: Vec::new(), mesh_casts: Vec::new(), has_mouse_events: false, program: None,
+            lower_lods: Vec::new(), lod0_min: 0.0, paint_scheme_count: 0,
+            dynamic_textures: Vec::new(), holes: Vec::new(), deform: None,
+            collision: None, paint: false, camera: Default::default(),
+            collision_shape: Default::default(),
+            embedded_lights: Default::default(),
+        })
+    }
+
+    fn child(ot: &Arc<ObjectType>, parent: Option<i64>, extra: &[&str]) -> StagedObject {
+        StagedObject {
+            ot: ot.clone(),
+            id: 11,
+            place: Placement::Ground { x: 0.0, y: 0.0, z: 0.0, rot: [0.0; 3] },
+            rules: Vec::new(),
+            extra: extra.iter().map(|s| s.to_string()).collect(),
+            lamp_parent: parent,
+            parked: false,
+            map_object: true,
+            instance: 0,
+            key: 11,
+        }
+    }
+
+    /// An editor-only bell on a level crossing that names the crossing's light 3 runs its
+    /// script reading that light, as a visible lamp does; one naming no light (or of a
+    /// crossing without lights) is a plain sound source; a silent one naming no light runs
+    /// nothing.
+    #[test]
+    fn an_editor_only_crossing_child_reads_its_light() {
+        let crossings: hashbrown::HashSet<i64> = [500].into_iter().collect();
+        let bell = editor_only(true);
+        assert_eq!(hidden_script(&bell, &child(&bell, Some(500), &["3"]), &crossings), Some(Some((500, 3))));
+        assert_eq!(hidden_script(&bell, &child(&bell, Some(500), &["Platform"]), &crossings), Some(None));
+        assert_eq!(hidden_script(&bell, &child(&bell, Some(501), &["3"]), &crossings), Some(None));
+        let mute = editor_only(false);
+        assert_eq!(hidden_script(&mute, &child(&mute, Some(500), &["3"]), &crossings), Some(Some((500, 3))));
+        assert_eq!(hidden_script(&mute, &child(&mute, None, &["3"]), &crossings), None);
+    }
+}
+
+#[cfg(test)]
+mod script_lamp_tests {
+    use super::*;
+
+    /// A level crossing sign: its warning lamp "warn_blink" is a variable of its script
+    /// ({init} sets 0.4), its street lamp "street_lamp" is not.
+    fn crossing_sign() -> ObjectType {
+        let mut prog = omsi_script::Program::default();
+        let blink = prog.declare_script_var("warn_blink");
+        let init = omsi_script::compile::Block { ops: vec![omsi_script::Op::Push(0.4), omsi_script::Op::Store(blink)], ..Default::default() };
+        prog.blocks.push(init);
+        prog.init.push(0);
+        let lamp = |variable: &str, z: f32| omsi_model::LightEnh2 {
+            pos: [0.0, 0.3, z],
+            omni: false,
+            color: [255.0, 40.0, 0.0],
+            size: 0.12,
+            factor: 1.0,
+            variable: variable.to_string(),
+            ..Default::default()
+        };
+        let mesh = MeshDef { light_enh_2: vec![lamp("street_lamp", 5.5), lamp("warn_blink", 2.1)], ..Default::default() };
+        ObjectType {
+        editor_pick_bounds: Default::default(),
+            sco: SceneryObject::default(),
+            model: Model { meshes: vec![mesh], ..Default::default() },
+            meshes: Vec::new(),
+            mesh_def_index: Vec::new(),
+            sound_path: Default::default(), model_dir: Default::default(),
+            mesh_visible: Vec::new(), mesh_pivots: Vec::new(),
+            mesh_shadow: Vec::new(), mesh_casts: Vec::new(), has_mouse_events: false,
+            program: Some(Arc::new(prog)),
+            lower_lods: Vec::new(), lod0_min: 0.0, paint_scheme_count: 0,
+            dynamic_textures: Vec::new(), holes: Vec::new(), deform: None,
+            collision: None, paint: false, camera: Default::default(),
+            collision_shape: Default::default(),
+            embedded_lights: Default::default(),
+        }
+    }
+
+    fn placed(ot: &Arc<ObjectType>, at: DVec3, script_lamps: Vec<crate::staging::ScriptLamp>) -> ScriptedObject {
+        ScriptedObject {
+        map_labels: Vec::new(),
+            ty: ot.clone(),
+            pos: at,
+            xf: Mat4::IDENTITY,
+            instances: Vec::new(),
+            inst: omsi_sim::scenery::SceneryInstance::new(ot.program.clone().unwrap(), &[], omsi_sim::SimClock::default(), &[]),
+            controller: None,
+            light_index: 0,
+            light_parent: None,
+            map_id: 11,
+            variants: Vec::new(),
+            sounds: None,
+            tile: (2, -1),
+            var_parent: None,
+            texts: Vec::new(),
+            arrivals: false,
+            htmls: Vec::new(),
+            alpha_slots: Vec::new(),
+            alpha_last: Vec::new(),
+            script_lamps,
+        }
+    }
+
+    /// The warning lamp goes with the script (40 % bright after its {init}, dark when the
+    /// script sets 0, left out beyond the range); the street lamp stays a static lamp; on
+    /// a traffic light neither is static.
+    #[test]
+    fn script_lamps_glow_as_their_variable_says() {
+        let ot = Arc::new(crossing_sign());
+        let at = DVec3::new(-300.0, 45.0, 12.0);
+        let mut statics = TileState::default();
+        object_lights(&mut statics, &ot, at, Mat4::IDENTITY, None, 1, None);
+        let static_switches: Vec<_> = statics.coronas.iter().map(|c| c.switch.clone()).collect();
+        assert!(!static_switches.is_empty());
+        assert!(static_switches.iter().all(|s| *s == LightSwitch::Variable("street_lamp".into())), "{static_switches:?}");
+        let lamps = lamps_switched_by_script(&ot, at, Mat4::IDENTITY);
+        assert!(!lamps.is_empty() && lamps.iter().all(|l| l.variable == "warn_blink"));
+        let mut signal = TileState::default();
+        object_lights(&mut signal, &ot, at, Mat4::IDENTITY, Some((2, 1, false)), 1, None);
+        assert_eq!(signal.coronas.len(), 0);
+
+        let mut set = ScriptedSet::default();
+        set.push(placed(&ot, at, lamps));
+        let glows = |set: &ScriptedSet, camera: DVec3| {
+            let mut out = Vec::new();
+            crate::scripted::push_script_lamp_glows(&set.views, camera, 400.0, &mut out);
+            out.iter().map(|g| g.brightness).collect::<Vec<f32>>()
+        };
+        let near = at + DVec3::new(50.0, 0.0, 0.0);
+        assert!(glows(&set, near).iter().all(|b| (b - 0.4).abs() < 1e-5), "{:?}", glows(&set, near));
+        assert!(!glows(&set, near).is_empty());
+        assert!(glows(&set, at + DVec3::new(0.0, 450.0, 0.0)).is_empty(), "450 m off, beyond the range");
+        set.views[0].script_lamps.iter_mut().for_each(|l| l.level = 0.0);
+        assert!(glows(&set, near).is_empty());
     }
 }

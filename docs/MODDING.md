@@ -165,7 +165,29 @@ that camera sees from the rear section.
 - `[led_glow_effect]` after a `[matl]` (a number from 0 to 1) says how much an LED panel's
   dots glow in the enhanced picture: 1 the full `LED glow` setting, 0.5 half of it, 0 not at
   all (the slot is no LED panel). Without it openOMSI guesses: a slot with a `\S:n` script
-  mask and a white light map is taken for an LED panel. See FORMATS.md.
+  mask and a white light map is taken for an LED panel. See [file formats](FORMATS.md).
+- A mesh may carry **several visibility conditions** - no script needed for a mesh
+  shown by two variables at once:
+  - `[visible_range]` with a variable, the lowest and the highest value shows the mesh while
+    the variable is between them (both included): `[visible_range]` `gear` `1` `4`;
+  - once a mesh has a `[visible_range]`, a `!` or a `||`, every condition of a group must
+    hold; plain `[visible]` blocks alone keep OMSI 2's rule (the last one counts), so a mesh
+    shown by two variables at once writes one of them as a range round its value:
+    ```
+    [visible_range]
+    door_open
+    0.5
+    1.5
+
+    [visible]
+    lights_on
+    1
+    ```
+  - a `!` after the variable's name turns a condition round: `door_open !` then `1` shows
+    the mesh while the door is not open (with `[visible_range]` outside the range);
+  - a line `||` between two blocks starts another group of conditions: the mesh shows when
+    all of the conditions before it hold, or all of those after it, as `||` reads in a script.
+  A variable the vehicle does not have reads 0, as with OMSI 2's single `[visible]`.
 - `.o3d` files with 32-bit indices (the long-index flag) are drawn with their full vertex
   and face count; everything is drawn with 32-bit indices.
 - There is no limit on the number of meshes, materials, `[matl_change]` items, `[CTC]`
@@ -275,6 +297,30 @@ station), or `SndExt_Radio` (the station button, 0 = off) with `SndVol_Radio` (t
 0..1, up to 2). Dmitrij's "Magnitola" is served as it comes: while it shows its track,
 its `magnitola_1` (`frequency@station`, `@` the line break) gets the map's frequency for the
 place in its first line and the station and song in its second.
+
+## Weather of a real place
+
+A map can have live weather from Tomorrow.io: add an `openomsi_weather.cfg` beside its
+`global.cfg`. See [weather areas](WEATHER_REGIONS.md) for the format, the player's setup
+and the [community config editor](https://openomsi.mxnticek.eu/weather/).
+
+## Trolleybuses: poles, drive and a wire
+
+OMSI 2 has no overhead wire of its own; its trolleybus add-ons ship a plugin DLL that reads the
+bus's place out of Omsi.exe and cannot run here. openOMSI simulates the wire itself, and a
+trolleybus add-on needs two things to use it:
+
+* in the vehicle's `.bus`, a `[trolley_pole]` for each pole (the hinge on the roof, the boom's
+  length, spring force, mass, retriever and motor) and a drive: `[trolley_rheostat]` or
+  `[trolley_async]`. A vehicle that keeps its own scripted drive just adds the poles: its driving
+  torque then works on a wire and stops without one. A model with poles of its own says
+  `visible 0` and rotates them by the game's `Trolley_Pole<k>_Elev` and `_Azim` variables;
+* for a map, a `trolley.txt` beside its `global.cfg` (or in a mod's `maps/<name>/` folder for a
+  map that has none): the wire's spans with their sag, the sections and where they are dead,
+  the insulators and the switches.
+
+Every key and variable is in [TROLLEYBUS.md](TROLLEYBUS.md); the map's masts and hangers stay
+the map's own objects.
 
 ## What stays as in OMSI 2
 

@@ -32,11 +32,16 @@ use std::sync::Arc;
 pub mod camera_arm;
 pub mod driver;
 pub mod lights;
+pub mod mapgen;
+pub mod road_paint;
 pub mod money;
 pub mod puddles;
 pub mod rain;
 pub mod route_arrows;
 pub mod threads;
+pub mod trolley_derive;
+pub mod arc_fx;
+pub mod trolley_view;
 pub mod wheel_surface;
 pub mod window_wipers;
 
@@ -44,6 +49,7 @@ pub mod editor_splines;
 pub mod editor_paths;
 mod staging;
 mod batching;
+mod spline_layers;
 mod terrain_paint;
 mod sound_probe;
 mod world;
@@ -59,11 +65,27 @@ mod scripted;
 pub use scripted::DayKind;
 mod vehicle_materials;
 mod vehicle_types;
+mod freetex_reload;
+pub use freetex_reload::FreeTextureReloads;
+mod pane_uv;
+/// Mesh `i` of a vehicle type as the GPU takes it (the glass with its film's coordinates in
+/// metres, see `pane_uv`): for a mesh uploaded again after it was changed.
+pub fn gpu_mesh_of(vt: &omsi_sim::VehicleType, i: usize) -> Option<omsi_geometry::MeshData> {
+    pane_uv::gpu_mesh(vt, i).map(std::borrow::Cow::into_owned)
+}
 mod vehicles;
 pub mod lanes;
 mod junction_lanes;
 mod season_looks;
 pub mod host;
+pub mod head_idle;
+pub mod hud;
+pub mod editor;
+pub mod tiles;
+pub mod schedule_paper;
+pub mod check;
+pub mod export;
+pub mod camera_util;
 
 pub use staging::*;
 pub use batching::*;
@@ -107,3 +129,7 @@ pub mod ground_paint;
 pub mod roadside_objects;
 
 pub mod spline_preview;
+#[cfg(test)]
+mod terrain_benchmark;
+
+pub mod editor_diagnostics;

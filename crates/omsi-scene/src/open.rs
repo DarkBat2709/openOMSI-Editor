@@ -65,7 +65,7 @@ impl World {
             log::info!("sun: {:.3} N {:.3} E, UTC{:+}, {} summer time periods", place.latitude, place.longitude, place.timezone, place.dst.len());
         }
         omsi_sim::daylight::set_place(place);
-        let signal_routes = omsi_cfg::CfgFile::read(&omsi_cfg::resolve_path(&map_dir, "signalroutes.cfg"))
+        let mut signal_routes = omsi_cfg::CfgFile::read(&omsi_cfg::resolve_path(&map_dir, "signalroutes.cfg"))
             .map(|f| omsi_map::ailists::parse_signalroutes(&f))
             .unwrap_or_default();
         if !signal_routes.is_empty() {
@@ -122,9 +122,35 @@ impl World {
             }),
             ..Default::default()
         }));
+        let transit = {
+            let mut issues = Vec::new();
+            let t = omsi_transit::TransitData::load(&map_dir, &mut issues);
+            t.check(global.transport, &mut issues);
+            if !t.is_empty() {
+                log::info!("transport folder: {} ({} stations, {} routes, {} depots)", t.files.join(", "), t.stations.list.len(), t.routes.list.len(), t.depots.list.len());
+            }
+            for i in &issues {
+                if i.error {
+                    log::warn!("transport: {i}");
+                } else {
+                    log::info!("transport: {i}");
+                }
+            }
+            Arc::new(t)
+        };
+        // the signals of the transport folder's blocks are signals of the map: the same objects, the
+        // same `Signal` variable, shown by `signal_aspects`
+        for sig in &transit.signals.signals {
+            if let (Some(object), Some(_)) = (sig.object, sig.block.as_ref()) {
+                if !signal_routes.iter().any(|r| r.signal.0 == object) {
+                    signal_routes.push(omsi_map::ailists::SignalRoute { signal: (object, 0), ..Default::default() });
+                }
+            }
+        }
         Ok(World {
             root: root.to_path_buf(),
             editor_tiles: Mutex::new(HashMap::new()),
+            transit,
             global,
             map_dir,
             parklist: Mutex::new(HashMap::new()),
@@ -141,6 +167,7 @@ impl World {
             data,
             vehicle_gpu: Mutex::new(HashMap::new()),
             vehicle_textures: Default::default(),
+            freetex_reloads: Default::default(),
             vehicle_meshes: Default::default(),
             vehicle_ready: Default::default(),
             upgrades_pending: Default::default(),
@@ -610,16 +637,16 @@ pub fn navigation_map_of(root: &Path, tiles: &[(i32, i32, PathBuf)], chrono_dirs
         .clone()
     };
     #[allow(clippy::type_complexity)]
-    let parts: Vec<(Vec<Lane>, Vec<(i64, DVec3)>, Vec<(DVec3, f64, String)>, Vec<(Vec<DVec3>, f32)>, Vec<SplineCurve>)> = tiles
+    let parts: Vec<(Vec<Lane>, Vec<(i64, DVec3)>, Vec<(DVec3, f64, String)>, Vec<(Vec<DVec3>, f32)>, Vec<SplineCurve>, Vec<(DVec3, String)>)> = tiles
         .par_iter()
         .map(|(tx, ty, path)| {
             let (tx, ty) = (*tx, *ty);
             let mut lanes = Vec::new();
             let mut positions = Vec::new();
             let mut signs = Vec::new();
-            let mut roads = Vec::new();let mut road_curves=Vec::new();
+            let mut roads = Vec::new();let mut road_curves=Vec::new();let mut names=Vec::new();
             let Some(tile) = omsi_world::map_index::read_tile(path, chrono_dirs) else {
-                return (lanes, positions, signs, roads,road_curves);
+                return (lanes, positions, signs, roads,road_curves,names);
             };
             let origin2 = DVec2::new(tx as f64 * tile_size(), ty as f64 * tile_size());
             let terrain = Terrain::load(&tile_companion(&path, ".terrain")).unwrap_or_else(|_| Terrain::flat());
@@ -661,14 +688,35 @@ pub fn navigation_map_of(root: &Path, tiles: &[(i32, i32, PathBuf)], chrono_dirs
                 };
                 // street name signs carry the street's name as their text
                 if is_street_sign(&o.file) {
-                    if let Some(name) = o.extra.first().map(|t| t.trim()).filter(|t| t.chars().filter(|c| c.is_alphabetic()).count() >= 3) {
-                        signs.push((DVec3::new(x, y, o.pos[2] + ground()), o.rot[0], name.to_string()));
+                    if let Some(name) = o.extra.first().map(|t| clean_sign_text(t)).filter(|t| t.chars().filter(|c| c.is_alphabetic()).count() >= 3) {
+                        signs.push((DVec3::new(x, y, o.pos[2] + ground()), o.rot[0], name));
                     }
                 }
                 let Some(sco) = sco_of(&o.file) else {
                     positions.push((o.id, DVec3::new(x, y, o.pos[2] + ground())));
                     continue;
                 };
+                // a name plate of another kind than the stock street sign (an add-on's own
+                // sign, a sign with the name on its own object), or a bus stop named after its
+                // street: a weaker hint of the street's name (see `street_name_of`)
+                if !is_street_sign(&o.file) {
+                    let plate = {
+                        let f = o.file.to_ascii_lowercase();
+                        ["schild", "sign", "name", "plate", "tafel"].iter().any(|k| f.contains(k))
+                    };
+                    if plate || sco.is_bus_stop {
+                        for t in o.extra.iter().take(3) {
+                            if let Some(n) = street_name_of(t) {
+                                if plate {
+                                    signs.push((DVec3::new(x, y, o.pos[2] + ground()), o.rot[0], n));
+                                } else {
+                                    names.push((DVec3::new(x, y, o.pos[2] + ground()), n));
+                                }
+                                break;
+                            }
+                        }
+                    }
+                }
                 let absolute = sco.absolute_height();
                 let pos = DVec3::new(x, y, if absolute { o.pos[2] } else { o.pos[2] + ground() });
                 positions.push((o.id, pos));
@@ -676,20 +724,21 @@ pub fn navigation_map_of(root: &Path, tiles: &[(i32, i32, PathBuf)], chrono_dirs
                     lanes.extend(object_lanes(&sco, pos, [o.rot[0], 0.0, 0.0], None, (tx, ty), o.id, &o.rules));
                 }
             }
-            (lanes, positions, signs, roads,road_curves)
+            (lanes, positions, signs, roads,road_curves,names)
         })
         .collect();
     let mut lanes = Vec::new();
     let mut positions = HashMap::new();
     let mut signs = Vec::new();
     let mut roads = Vec::new();
-    let mut road_curves=Vec::new();
-    for (l, p, s, r,c) in parts {
+    let mut road_curves=Vec::new();let mut names=Vec::new();
+    for (l, p, s, r,c,n) in parts {
         road_curves.extend(c);
         lanes.extend(l);
         positions.extend(p);
         signs.extend(s);
         roads.extend(r);
+        names.extend(n);
     }
     crate::editor_paths::attach_roads(&mut lanes,&road_curves,false);
     log::info!("navigation map: {} roads without a path for cars", roads.len());
@@ -703,7 +752,7 @@ pub fn navigation_map_of(root: &Path, tiles: &[(i32, i32, PathBuf)], chrono_dirs
         slis.lock().len(),
         t0.elapsed().as_secs_f64()
     );
-    NavigationMap { lanes, road_surfaces: roads, places: positions, signs }
+    NavigationMap { lanes, road_surfaces: roads, places: positions, signs, names }
 }
 
 /// The whole map for the navigator (see [`World::navigation_map`]).
@@ -716,6 +765,51 @@ pub struct NavigationMap {
     pub places: HashMap<i64, DVec3>,
     /// Street name signs: where, the object's heading and the name on it.
     pub signs: Vec<(DVec3, f64, String)>,
+    /// Weaker hints of a street's name: bus stops named after the street they stand in.
+    pub names: Vec<(DVec3, String)>,
+}
+
+/// A sign's text without the codes the sign's script reads off it: Berlin's plates write
+/// "F_Hamburger Str" (the `F_` picks the plate's face), others an underscore for a space.
+pub fn clean_sign_text(text: &str) -> String {
+    let t = text.trim();
+    let mut c = t.chars();
+    let t = match (c.next(), c.next()) {
+        (Some(a), Some('_')) if a.is_ascii_alphabetic() => &t[2..],
+        _ => t,
+    };
+    t.replace('_', " ").split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
+/// A text that reads as a street's name, cleaned (a stop's "U Rathaus Spandau" is no street,
+/// "Heerstr/Wilhelmstr" names a crossing, "S+U Bf. Zoo" a station): the words maps write
+/// streets with, in the languages OMSI maps are made in.
+pub fn street_name_of(text: &str) -> Option<String> {
+    let cleaned = clean_sign_text(text);
+    let t = cleaned.trim_matches(|c: char| c == '"' || c == '\'');
+    if t.contains('/') || t.contains('|') || t.chars().filter(|c| c.is_alphabetic()).count() < 4 || t.chars().count() > 48 {
+        return None;
+    }
+    let lower = t.to_lowercase();
+    let words: Vec<&str> = lower.split(|c: char| c.is_whitespace() || c == '-' || c == ',').filter(|w| !w.is_empty()).collect();
+    let first = *words.first()?;
+    let ends = [
+        // German, Dutch, Scandinavian
+        "straße", "strasse", "str.", "str", "weg", "allee", "platz", "damm", "ring", "chaussee", "gasse", "ufer", "steig", "pfad", "zeile", "promenade", "markt", "brücke", "bruecke", "steinweg", "straat", "laan", "plein", "gracht", "gatan", "gata", "vägen", "vej", "gade", "veien",
+        // English
+        "road", "rd", "rd.", "street", "st", "st.", "lane", "avenue", "ave", "drive", "way", "close", "crescent", "hill", "place", "square", "terrace", "grove", "gardens", "row", "walk", "parade", "broadway", "boulevard", "highway", "bypass", "mews", "court",
+        // Romance
+        "rue", "via", "viale", "piazza", "calle", "avenida", "rua", "strada", "bulevar",
+    ];
+    let starts = ["rue", "avenue", "boulevard", "chemin", "via", "viale", "piazza", "calle", "avenida", "rua", "ul.", "ul", "ulica", "aleja", "al.", "plac", "ulice", "náměstí", "třída", "улица", "ул.", "проспект", "пр.", "шоссе", "переулок", "бульвар", "площадь", "вулиця", "вул."];
+    let last = *words.last()?;
+    let ok = words.len() >= 2 && (ends.contains(&last) || starts.contains(&first))
+        || ends.iter().any(|e| e.len() >= 4 && last.len() > e.len() + 2 && last.ends_with(e))
+        || (last.len() > 5 && (last.ends_with("str") || last.ends_with("str.")))
+        || words.iter().any(|w| ["utca", "út", "útja", "ulica", "улица", "проспект", "шоссе", "переулок"].contains(w));
+    // (a station named after its street is still a station: "U Rathaus", "S Spandau")
+    let station = ["u", "s", "s+u", "u+s", "bf", "bf.", "bhf", "bhf.", "hbf"].contains(&first);
+    (ok && !station).then(|| t.to_string())
 }
 
 /// Whether an asset name describes a road surface. Match whole filename tokens so objects
@@ -724,13 +818,13 @@ pub(super) fn road_surface_name(file: &str) -> bool {
     let base = file.replace('\\', "/").rsplit('/').next().unwrap_or("").to_ascii_lowercase();
     let stem = base.rsplit_once('.').map(|(s, _)| s).unwrap_or(&base);
     let tokens: Vec<&str> = stem.split(|c: char| !c.is_ascii_alphanumeric() && c != 'ß').filter(|t| !t.is_empty()).collect();
-    let excludes = ["light", "lamp", "sign", "schild", "rail", "track", "gleis", "tram", "strab", "wire", "mast", "wall", "fence", "leitplanke", "gehweg", "side", "bord", "pavement", "fahrrad", "radweg", "cycle", "parking", "parkplatz", "gruen", "gras"];
+    let excludes = ["light", "lamp", "sign", "schild", "rail", "track", "gleis", "tram", "strab", "wire", "mast", "wall", "fence", "leitplanke", "gehweg", "side", "bord", "pavement", "fahrrad", "radweg", "cycle", "parking", "parkplatz", "gruen", "gras", "trottoir", "pieton"];
     if tokens.iter().any(|t| excludes.iter().any(|x| t.contains(x))) {
         return false;
     }
     stem.starts_with("str_")
         || tokens.iter().any(|t| {
-            ["str", "strasse", "straße", "road", "roads", "street", "streets", "fahrbahn", "pflaster", "kopfstein", "cobble"].contains(t)
+            ["str", "strasse", "straße", "road", "roads", "street", "streets", "fahrbahn", "pflaster", "kopfstein", "cobble", "route", "routes", "rue", "chaussee", "bitume"].contains(t)
                 || t.starts_with("asph")
         })
 }
@@ -784,7 +878,7 @@ fn object_program(
     has_mouse_events: bool,
 ) -> Option<Arc<omsi_script::Program>> {
     let animated = mesh_def_index.iter().any(|d| {
-        !model.meshes[*d].animations.is_empty() || model.meshes[*d].visible.is_some()
+        !model.meshes[*d].animations.is_empty() || model.meshes[*d].visible_groups().next().is_some()
     });
     let has_freetex = mesh_def_index.iter().any(|d| {
         model.meshes[*d].materials.iter().any(|o| !o.item && o.freetex.is_some())
@@ -796,6 +890,7 @@ fn object_program(
         || animated
         || has_mouse_events
         || sco.sound.is_some()
+        || !sco.scripts.lua.is_empty()
     {
         Some(Arc::new(omsi_sim::scenery::compile_scenery(
             root,

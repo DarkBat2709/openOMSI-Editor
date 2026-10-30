@@ -173,6 +173,9 @@ pub struct MaterialExtra {
     /// variable, a vehicle mesh's `[visible]`: it glows by day as well (warning lamps,
     /// dashboard displays), not only at night.
     pub night_switched: bool,
+    /// A blended lamp with a completely clear diffuse placeholder takes its coverage
+    /// from the active night texture. The unpowered material keeps its own alpha.
+    pub night_alpha: bool,
     /// A display's text (`[useTextTexture]`): in the enhanced picture it glows a little
     /// by itself, as a lit matrix does, instead of taking only the light that reaches it
     /// under the bus's front overhang, where it was hardly readable by day.
@@ -229,6 +232,12 @@ pub struct MaterialExtra {
     /// enhanced picture lights it by its normals, not as leaves lit from every side and
     /// glowing with the sun through them (people shone in the sun).
     pub solid: bool,
+    /// A blended slot that also keeps Omsi.exe's alpha test: `[matl_alpha] 1` sets
+    /// ALPHATESTENABLE with ALPHAREF 0x80 and leaves ALPHABLENDENABLE as the draw before
+    /// left it (0x7ffd6c), so a livery's tinted window glass (alpha 129 to 254) is blended
+    /// and its clear glass (128 and less) cut away. Drawn solid, the tinted panes were black
+    /// (#2609, #2624); blended without the cut, the clear glass was a grey film.
+    pub alpha_cut: bool,
     /// Windy trees: foliage the wind moves - the height (mesh units) of the pivot where the
     /// crown leaves the trunk (nothing below it moves), of the crown's top, and how much the
     /// tree gives to the wind (1 a broadleaf). `None`: not foliage.
@@ -501,7 +510,7 @@ impl Renderer {
             uniform.ambient[3] = if texture.is_none() { -1.0 } else { snow_texture_flag(scene, texture) };
         }
         let slot = |t: Option<TextureId>| {
-            t.and_then(|t| scene.textures.get(t).map(|g| (t, g.gen)))
+            t.and_then(|t| scene.textures.get(t).map(|g| (t, g.generation)))
                 .unwrap_or((usize::MAX, 0))
         };
         let key = BindKey {
@@ -734,6 +743,7 @@ impl Renderer {
         let mode = match alpha {
             AlphaMode::Opaque => 0.0,
             AlphaMode::Test => 1.0,
+            AlphaMode::Blend if extra.alpha_cut => 3.0,
             AlphaMode::Blend => 2.0,
         };
         // a mirror's glass shows a picture this renderer drew (`add_render_texture`): the
@@ -779,11 +789,14 @@ impl Renderer {
                 envmap.map(|e| e.1).unwrap_or(0.0),
                 moisture,
                 // bit 1: a [matl_envmap_mask]; bit 2: a [matl_transmap]; bit 4: a vehicle's
-                // part that may be metal; bit 8: a body, never foliage (see the shaders)
+                // part that may be metal; bit 8: a body, never foliage; bit 16: the active
+                // night texture supplies a clear vehicle material's coverage
                 (if env_mask.is_some() { 1.0 } else { 0.0 })
                     + if extra.transmap_declared || transmap.is_some() { 2.0 } else { 0.0 }
                     + if extra.metal_ok { 4.0 } else { 0.0 }
-                    + if extra.solid { 8.0 } else { 0.0 },
+                    + if extra.solid { 8.0 } else { 0.0 }
+                    + if extra.night_alpha && alpha == AlphaMode::Blend && nightmap.is_some()
+                        && !extra.transmap_declared && transmap.is_none() { 16.0 } else { 0.0 },
             ],
             emissive: [emissive[0], emissive[1], emissive[2], if extra.rain_film { 2.0 } else if extra.glass { 1.0 } else if extra.led && extra.led_sign { -3.0 } else if extra.led { -2.0 } else if extra.display { -1.0 } else { 0.0 }],
             specular: extra.specular,
@@ -820,7 +833,7 @@ impl Renderer {
             glow: [if lightmap.is_some() { extra.glow.max(0.0) } else { 0.0 }, extra.led_glow.map_or(1.0, |g| g.clamp(0.0, 1.0)), 0.0, 0.0],
         };
         let slot = |t: Option<TextureId>| {
-            t.and_then(|t| scene.textures.get(t).map(|g| (t, g.gen)))
+            t.and_then(|t| scene.textures.get(t).map(|g| (t, g.generation)))
                 .unwrap_or((usize::MAX, 0))
         };
         let key = BindKey {

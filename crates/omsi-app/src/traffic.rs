@@ -11,6 +11,7 @@ mod mirror;
 mod parked;
 mod population;
 mod setup;
+mod table;
 mod trains;
 
 use anyhow::Result;
@@ -64,6 +65,8 @@ pub struct Traffic {
     pub(crate) riding_sounds: Option<(u64, omsi_audio::SoundSet)>,
     /// `[sound_ai]` configurations by file.
     pub(crate) sound_cfgs: HashMap<std::path::PathBuf, Option<Arc<omsi_vehicle::SoundCfg>>>,
+    /// Shared script environment for existing AI and for their next `{init}`.
+    pub script_environment: Option<([f32; 22], glam::Vec3, f32)>,
     /// What each vehicle definition (by its file) is heard with, its paths resolved once:
     /// a car waiting for its clips looked them all up on the disk again every frame, and a
     /// car without a usable sound configuration did so as long as it was near.
@@ -72,6 +75,15 @@ pub struct Traffic {
     /// frames counted, and the seconds each far lamp's script is owed, by script.
     pub(crate) lamp_turn: u32,
     pub(crate) lamp_owed: HashMap<usize, f32>,
+    /// Every car as a row under an id of its own, written after each step (`write_table`):
+    /// what the LAN host tells its clients.
+    pub(crate) table: omsi_net::traffic_table::TrafficTable,
+    /// The content folder the table names vehicle files by.
+    pub(crate) table_root: std::path::PathBuf,
+    /// Whether the table is written: only a LAN host reads it (set each frame by the caller).
+    pub(crate) table_on: bool,
+    /// The traffic time the buses' line and destination were last written to the table.
+    pub(crate) table_meta_t: f32,
 }
 
 impl std::ops::Deref for Traffic {
@@ -90,7 +102,7 @@ impl std::ops::DerefMut for Traffic {
 impl Traffic {
     /// The simulation, with no car heard yet (and none drawn: its `TrafficView` starts
     /// afresh where it is put in place).
-    fn with_sim(sim: TrafficSim) -> Traffic {
+    fn with_sim(sim: TrafficSim, root: &Path) -> Traffic {
         Traffic {
             sim,
             events: Vec::new(),
@@ -101,9 +113,14 @@ impl Traffic {
             orphan_sounds: Vec::new(),
             riding_sounds: None,
             sound_cfgs: HashMap::new(),
+            script_environment: None,
             sound_plans: HashMap::new(),
             lamp_turn: 0,
             lamp_owed: HashMap::new(),
+            table: Default::default(),
+            table_root: root.to_path_buf(),
+            table_on: false,
+            table_meta_t: f32::NEG_INFINITY,
         }
     }
 
@@ -123,6 +140,19 @@ impl Traffic {
         for id in std::mem::take(&mut self.sim.retired) {
             self.orphan_sounds.extend(self.sounds.remove(&id));
             self.events.push(TrafficEvent::Retired { id });
+        }
+        self.write_table();
+    }
+
+    /// Refresh shared script inputs even while paused, and keep them for new vehicles.
+    pub fn set_script_environment(&mut self, values: [f32; 22], wind: glam::Vec3, street: f32) {
+        self.script_environment = Some((values, wind, street));
+        if !self.sim.mirror {
+            for car in &mut self.sim.cars {
+                car.vehicle.host.apply_ai_globals(&values);
+                car.vehicle.host.wind = wind;
+                car.vehicle.host.street_cond = street;
+            }
         }
     }
 

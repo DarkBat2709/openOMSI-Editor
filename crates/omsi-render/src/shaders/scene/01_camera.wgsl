@@ -18,14 +18,15 @@ struct Camera {
     post: vec4<f32>,         // x enhanced, y time, zw sun ndc
     inside_a: vec4<f32>,     // player vehicle box: origin xyz, sin(heading)
     inside_b: vec4<f32>,     // cos(heading), half extents xyz
-    inside_c: vec4<f32>,     // box centre offset xyz, w = 1 when there is a box
+    inside_c: vec4<f32>,     // box centre offset xyz, w = 1 when there is a box, 2 with the eye in it
     flags: vec4<f32>,        // x detail texturing, y enhanced graphics, z never set (see fs_main's end), w close cascade half range
     light_view_proj_close: mat4x4<f32>,
     wind: vec4<f32>,         // the player's vehicle's velocity (m/s, world): the airstream on its glass
-    // Enhanced: the street lamps' shadow maps (the tiles under the far map), and the
-    // lights they belong to (-1: none)
-    lamp_view_proj: array<mat4x4<f32>, 4>,
-    lamp_shadow: vec4<f32>,
+    // Enhanced: the lamps' shadow maps (the tiles under the far map; zero where nothing is
+    // drawn) and where the tiles lie: x a tile's side, y tiles to a row, z the far map's
+    // texture height, w the number of tiles (`LampAtlas::uniform`)
+    lamp_view_proj: array<mat4x4<f32>, 56>,
+    lamp_atlas: vec4<f32>,
     // Windy trees: xy the weather's wind (m/s, world; 0 with the setting off), zw how far
     // the air has carried the gusts since the start (m, modulo PATTERN_PERIOD)
     tree_wind: vec4<f32>,
@@ -39,6 +40,13 @@ struct Camera {
     // angles across and up; z: its first record in the light buffer), see enhanced.wgsl
     // `cookie_light`
     cookies: array<vec4<f32>, 8>,
+    // Enhanced: the lights of the player's saloon that have a shadow map (their places in the
+    // light buffer, 4 a vector, -1 for none): see `cabin_visibility`
+    cabin_lamps: array<vec4<f32>, 4>,
+    // x: the textures' mip bias (FSR 1: negative, see `CameraUniform::lod`)
+    lod: vec4<f32>,
+    // the classic picture's headlight (`CameraUniform::spot`, see `classic_spot`)
+    spot: array<vec4<f32>, 4>,
 };
 
 // 1 when the point lies inside the player's vehicle (its [boundingbox], shrunk a little so
@@ -143,6 +151,36 @@ fn fn_box_local(world: vec3<f32>) -> vec3<f32> {
     let sh = camera.inside_a.w;
     let ch = camera.inside_b.x;
     return vec3<f32>(d.x * ch - d.y * sh - camera.inside_c.x, d.x * sh + d.y * ch - camera.inside_c.y, d.z - camera.inside_c.z);
+}
+
+fn own_vehicle_blocks(p: vec3<f32>, l: vec3<f32>) -> bool {
+    if (camera.inside_c.w < 1.5) {
+        return false;
+    }
+    let a = fn_box_local(l);
+    let d = fn_box_local(p) - a;
+    let h = camera.inside_b.yzw - vec3<f32>(0.15);
+    if (all(abs(a) < h)) {
+        return false;
+    }
+    var t0 = 0.0;
+    var t1 = 1.0;
+    for (var k = 0; k < 3; k = k + 1) {
+        let o = a[k];
+        let dk = d[k];
+        let hk = h[k];
+        if (abs(dk) < 1e-6) {
+            if (abs(o) >= hk) {
+                return false;
+            }
+        } else {
+            let lo = (-hk - o) / dk;
+            let hi = (hk - o) / dk;
+            t0 = max(t0, min(lo, hi));
+            t1 = min(t1, max(lo, hi));
+        }
+    }
+    return t1 > t0;
 }
 
 // 1 where the weather reaches the point. The cab test above reaches 0.6 m below the

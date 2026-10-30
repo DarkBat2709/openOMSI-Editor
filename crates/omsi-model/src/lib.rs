@@ -89,6 +89,11 @@ pub struct MaterialDef {
     pub use_text_texture: Option<i32>,
     pub alphascale: Option<String>,
     pub freetex: Option<(String, String)>,
+    /// Every `[matl_freetex]` (texture, string variable) of the record in order: Omsi.exe
+    /// appends each to the record's own list (0x5f54de), and a `[matl_item]` starts with a
+    /// copy of the slot's list, so an item shows the plain slot's free pictures beside the
+    /// ones it adds, and none of another item's. `freetex` is the last of them.
+    pub freetexes: Vec<(String, String)>,
     pub lightmap: Option<(String, String)>,
     /// Every `[matl_lightmap]` of the material in order (OMSI keeps them all, a
     /// texture and a variable each: the LiAZ's saloon has one per lighting circuit);
@@ -136,6 +141,9 @@ impl MaterialDef {
                 self.border_color = base.border_color;
             }
         }
+        if self.freetexes.is_empty() {
+            self.freetexes = base.freetexes.clone();
+        }
         if self.lightmaps.is_empty() && !base.lightmaps.is_empty() {
             self.lightmaps = base.lightmaps.clone();
             self.lightmap = base.lightmap.clone();
@@ -176,6 +184,44 @@ pub struct LightEnh2 {
     pub bitmap: Option<String>,
 }
 
+/// One condition of a mesh's visibility (see [`MeshDef::visible_any`]).
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct VisibleCond {
+    pub variable: String,
+    /// `[visible]`: the value (met within 0.5 of it, as the original compares); `[visible_range]`:
+    /// the lowest value.
+    pub lo: f32,
+    /// `[visible_range]`: the highest value (both ends included).
+    pub hi: f32,
+    pub range: bool,
+    /// Written `var !`: met when the plain condition is not.
+    pub not: bool,
+}
+
+impl VisibleCond {
+    /// Whether the condition holds with its variable at `x`.
+    pub fn holds(&self, x: f32) -> bool {
+        let met = if self.range { x >= self.lo && x <= self.hi } else { (x - self.lo).abs() < 0.5 };
+        met != self.not
+    }
+}
+
+impl MeshDef {
+    /// The groups of `visible_any` that hold conditions (the mark `||` leaves is not one).
+    pub fn visible_groups(&self) -> impl Iterator<Item = &Vec<VisibleCond>> {
+        self.visible_any.iter().filter(|g| !g.is_empty())
+    }
+
+    /// Whether the mesh is shown with its variables read by `var`. A condition on a
+    /// missing variable is ignored; a declared variable at zero is still compared.
+    /// None: the mesh has no condition.
+    pub fn visible_by(&self, var: impl Fn(&str) -> Option<f32>) -> Option<bool> {
+        let mut groups = self.visible_groups().peekable();
+        groups.peek()?;
+        Some(groups.any(|g| g.iter().all(|c| var(&c.variable).is_none_or(|x| c.holds(x)))))
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct MeshDef {
     pub file: String,
@@ -188,7 +234,16 @@ pub struct MeshDef {
     pub smooth_skin: bool,
     pub anim_parent: Option<String>,
     pub animations: Vec<Animation>,
+    /// `[visible] var value`: the mesh's last plain condition (what the original reads).
     pub visible: Option<(String, f32)>,
+    /// Every visibility condition of the mesh (openOMSI, #729): the mesh is shown when all
+    /// conditions of any one group hold. Several `[visible]` and `[visible_range] var min
+    /// max` blocks of a mesh make one group (all must hold; with plain `[visible]` blocks
+    /// alone the last one counts, as in the original), a variable written with `!`
+    /// after it (`door_open !`) negates its condition, and a line `||` between two blocks
+    /// starts the next group (either may hold). Empty: no condition. (An empty group is
+    /// the mark a `||` leaves before its condition: see [`MeshDef::visible_groups`].)
+    pub visible_any: Vec<Vec<VisibleCond>>,
     pub illumination: Vec<i32>,
     pub illumination_interior: Vec<i32>,
     pub materials: Vec<MaterialDef>,
@@ -510,12 +565,31 @@ impl Model {
             }
         }
         m.tidy_interior_lamps();
+        m.tidy_visible();
         m
+    }
+
+    pub fn tidy_visible(&mut self) {
+        for m in &mut self.meshes {
+            let groups = m.visible_any.iter().filter(|g| !g.is_empty()).count();
+            if groups == 1 && m.visible_any.iter().flatten().all(|c| !c.range && !c.not) {
+                if let Some(last) = m.visible_any.iter().flatten().last().cloned() {
+                    m.visible_any = vec![vec![last]];
+                }
+            }
+        }
     }
 
     /// Handle one `[newanim]` sub-command line (one of [`ANIM_TOKENS`]): it goes to the
     /// last animation of the current mesh, wherever it stands after the `[newanim]`.
     pub fn handle_token(&mut self, t: &str, r: &mut CfgReader) {
+        // `||` between two `[visible]` blocks: the next conditions are another group (#729)
+        if t == "||" {
+            if let Some(m) = self.meshes.last_mut().filter(|m| m.visible_any.last().is_some_and(|g| !g.is_empty())) {
+                m.visible_any.push(Vec::new());
+            }
+            return;
+        }
         let origin = match t {
             "origin_trans" => Some(AnimOrigin::Trans(r.f32s::<3>())),
             "origin_rot_x" => Some(AnimOrigin::RotX(r.f32())),
@@ -778,11 +852,23 @@ impl Model {
                     m.animations.push(Animation::default());
                 }
             }
-            "visible" => {
-                let v = r.str().to_string();
-                let val = r.f32();
+            "visible" | "visible_range" => {
+                // (`var !`: the condition negated, an openOMSI extension like the range)
+                let line = r.str().trim().to_string();
+                let not = line.ends_with('!');
+                let v = line.trim_end_matches('!').trim().to_string();
+                let lo = r.f32();
+                let (hi, range) = if k == "visible_range" { (r.f32(), true) } else { (lo, false) };
                 if let Some(m) = self.cur_mesh() {
-                    m.visible = Some((v, val));
+                    if !range && !not {
+                        m.visible = Some((v.clone(), lo));
+                    }
+                    if m.visible_any.is_empty() {
+                        m.visible_any.push(Vec::new());
+                    }
+                    if let Some(g) = m.visible_any.last_mut() {
+                        g.push(VisibleCond { variable: v, lo: lo.min(hi), hi: lo.max(hi), range, not });
+                    }
                 }
             }
             "illumination" => {
@@ -1015,6 +1101,7 @@ impl Model {
                 let t = r.str().to_string();
                 let v = r.str().to_string();
                 if let Some(m) = self.cur_matl() {
+                    m.freetexes.push((t.clone(), v.clone()));
                     m.freetex = Some((t, v));
                 }
             }
@@ -1152,7 +1239,7 @@ impl Model {
 /// the way it compares keywords (so the EN92 ignition key's tab-indented origin lines, the
 /// BR481 mirrors' `origin_rot_Y` and the F90 lorry's indented, switched-off second rear axle
 /// are free text), anywhere after the `[newanim]` they belong to.
-pub const ANIM_TOKENS: &[&str] = &["origin_trans", "origin_rot_x", "origin_rot_y", "origin_rot_z", "origin_from_mesh", "anim_rot", "anim_trans", "offset", "delay", "maxspeed"];
+pub const ANIM_TOKENS: &[&str] = &["origin_trans", "origin_rot_x", "origin_rot_y", "origin_rot_z", "origin_from_mesh", "anim_rot", "anim_trans", "offset", "delay", "maxspeed", "||"];
 
 /// One `[newtexchangemaster]` of a `[texchanges]` file: the texture name used in the mesh,
 /// the script variable that picks a replacement, and the replacements themselves.
@@ -1223,6 +1310,45 @@ pub fn load_texchanges(base: &Path, files: &[String]) -> Vec<TexChangeMaster> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn missing_visible_names_ignore_comparisons_but_declared_zero_is_compared() {
+        for value in 0..=2 {
+            let model = super::Model::parse(&omsi_cfg::CfgFile::from_str(
+                "visibility.cfg",
+                &format!("[mesh]\nindicator.o3d\n[visible]\nmissing\n{value}\n"),
+            ));
+            let mesh = &model.meshes[0];
+            assert_eq!(mesh.visible_by(|_| None), Some(true));
+            assert_eq!(mesh.visible_by(|_| Some(0.0)), Some(value == 0));
+        }
+        assert_eq!(super::MeshDef::default().visible_by(|_| None), None);
+    }
+
+    /// `[visible]` conditions combined (#729): plain `[visible]` blocks alone keep the last,
+    /// with a range they all hold, a `!` turns one round, `||` between blocks gives another
+    /// group; one alone is as before.
+    #[test]
+    fn several_visible_conditions_combine() {
+        let text = "[mesh]\na.o3d\n[visible]\ndoor\n1\n[visible]\nlight\n1\n\n[mesh]\ne.o3d\n[visible_range]\ndoor\n1\n1\n[visible]\nlight\n1\n\n[mesh]\nb.o3d\n[visible_range]\ngear\n1\n4\n\n[mesh]\nc.o3d\n[visible]\ndoor !\n1\n||\n[visible]\nlight\n1\n\n[mesh]\nd.o3d\n[visible]\ndoor\n2\n";
+        let m = super::Model::parse(&omsi_cfg::CfgFile::from_str("model.cfg", text));
+        let vars = |door: f32, light: f32, gear: f32| move |n: &str| match n {
+            "door" => Some(door),
+            "light" => Some(light),
+            "gear" => Some(gear),
+            _ => None,
+        };
+        let shown = |i: usize, d, l, g| m.meshes[i].visible_by(vars(d, l, g)).unwrap();
+        assert!(shown(0, 1.0, 1.0, 0.0) && !shown(0, 1.0, 0.0, 0.0) && shown(0, 0.0, 1.0, 0.0));
+        assert_eq!(m.meshes[0].visible, Some(("light".to_string(), 1.0)));
+        assert!(shown(1, 1.0, 1.0, 0.0) && !shown(1, 1.0, 0.0, 0.0) && !shown(1, 0.0, 1.0, 0.0));
+        assert!(shown(2, 0.0, 0.0, 1.0) && shown(2, 0.0, 0.0, 4.0) && !shown(2, 0.0, 0.0, 5.0) && !shown(2, 0.0, 0.0, 0.0));
+        assert!(shown(3, 0.0, 0.0, 0.0) && shown(3, 1.0, 1.0, 0.0) && !shown(3, 1.0, 0.0, 0.0));
+        assert!(shown(4, 2.0, 0.0, 0.0) && !shown(4, 1.0, 0.0, 0.0));
+        assert_eq!(m.meshes[4].visible, Some(("door".to_string(), 2.0)));
+        assert_eq!(m.meshes[3].visible, Some(("light".to_string(), 1.0)));
+        assert!(m.unknown_keywords.is_empty(), "{:?}", m.unknown_keywords);
+    }
+
 
     #[test]
     fn compatibility_fixture_preserves_material_slots_and_variant_inheritance() {
@@ -1397,6 +1523,21 @@ mod tests {
             assert!(m.text_textures.iter().all(|t| t.full_color == want), "{flag}");
             assert_eq!(m.text_textures.len(), 2);
         }
+    }
+
+    /// Each `[matl_item]` keeps the slot's free textures and adds its own; what one item
+    /// adds stays out of the slot and out of the other items.
+    #[test]
+    fn free_textures_are_listed_per_record() {
+        let text = "[mesh]\npanel.o3d\n[matl_change]\nface.dds\n0\npanel_power\n[matl_freetex]\nface.dds\npanel_face\n[matl_item]\n[matl_nightmap]\nglow_off.bmp\n[matl_freetex]\nglow_off.bmp\npanel_glow\n[matl_item]\n[matl_lightmap]\nlit.bmp\npanel_lit\n";
+        let m = Model::parse(&CfgFile::from_str("model.cfg", text));
+        let mats = &m.meshes[0].materials;
+        let plain = mats.iter().find(|x| !x.item && x.change.is_none()).unwrap();
+        let items: Vec<&MaterialDef> = mats.iter().filter(|x| x.item).collect();
+        let vars = |d: &MaterialDef| d.freetexes.iter().map(|f| f.1.clone()).collect::<Vec<_>>();
+        assert_eq!(vars(plain), ["panel_face"]);
+        assert_eq!(vars(items[0]), ["panel_face", "panel_glow"]);
+        assert_eq!(vars(items[1]), ["panel_face"]);
     }
 
     /// A `[matl_item]` is a copy of the material before it: the SD77's lit roller blind

@@ -6,7 +6,7 @@ import shutil
 import tempfile
 import zipfile
 
-VERSION = '0.8.8.1'
+VERSION = '0.8.9-pre'
 NAME = f'openOMSI-Editor-{VERSION}-windows-x64'
 RUNTIME = ('vcruntime140.dll', 'vcruntime140_1.dll', 'msvcp140.dll')
 DXC_FILES = ('dxcompiler.dll', 'dxil.dll', 'LICENCE-MIT.txt', 'LICENSE-LLVM.txt', 'LICENSE-MS.txt')
@@ -29,7 +29,7 @@ if errorlevel 1 (
   exit /b 1
 )
 '''
-HELP = '''openOMSI Editor - 0.8.8.1 - Windows x64
+HELP = '''openOMSI Editor - 0.8.9-pre - Windows x64
 
 ENGLISH
 1. Right-click the downloaded ZIP and choose Extract All. Do not run inside the ZIP.
@@ -52,7 +52,7 @@ Troubleshooting: keep all DLLs beside openomsi.exe; extract the whole ZIP again 
 is missing. Do not download individual DLLs from third-party DLL websites.
 A warning about an unknown publisher is possible; this preview is not code-signed.
 Download only from the project release and compare the supplied SHA256 checksum.
-Windows 11 VM: DirectX 12 software-renderer startup, Grundorf display, camera use and normal exit tested. Full gameplay and affected physical GPUs still need confirmation.
+Windows validation includes CI checks; a manual Windows gameplay test of 0.8.9-pre remains pending.
 
 DEUTSCH
 1. Rechtsklick auf die ZIP-Datei, dann Alle extrahieren. Nicht direkt im ZIP starten.
@@ -75,7 +75,7 @@ Bei fehlenden DLLs das komplette ZIP erneut entpacken. Alle DLLs gehoeren neben 
 Keine einzelnen DLLs von fremden Downloadseiten beziehen. Diese Vorabversion ist nicht
 signiert; eine Meldung ueber einen unbekannten Herausgeber ist deshalb moeglich.
 Nur vom Projekt-Release herunterladen und die SHA256-Pruefsumme vergleichen.
-Windows-11-VM: DirectX-12-Softwarestart, Grundorf-Anzeige, Kamera und normales Beenden getestet. Vollstaendiger Spieltest und Bestaetigung auf betroffenen Grafikkarten stehen aus.
+Windows-Pruefung umfasst CI-Tests; ein manueller Windows-Spieltest von 0.8.9-pre steht noch aus.
 '''
 
 
@@ -112,7 +112,7 @@ def package(source, binary, runtime, output, revision, dxc):
         (root/'start-editor.cmd').write_bytes(START.replace('\n', '\r\n').encode('ascii'))
         (root/'START-HERE.txt').write_bytes(HELP.replace('\n', '\r\n').encode('ascii'))
         (root/'VERSION-EDITOR.txt').write_text(
-            f'Editor {VERSION}\nopenOMSI-Basis 0.3.33\nQuellstand: {revision}\nWindows x64 portable preview\n', encoding='utf-8')
+            f'Editor {VERSION}\nopenOMSI-Basis 0.3.45\nQuellstand: {revision}\nWindows x64 portable preview\n', encoding='utf-8')
         with zipfile.ZipFile(archive, 'x', zipfile.ZIP_DEFLATED) as zipout:
             for p in sorted(root.rglob('*')):
                 if p.is_file():

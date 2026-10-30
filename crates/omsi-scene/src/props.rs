@@ -1039,14 +1039,19 @@ impl World {
                 }
                 let done = self.upgrades_done.clone();
                 let restore = restores.contains(&path);
+                let reloads = self.freetex_reloads.clone();
                 // (off the frame's pool: see `threads`)
                 crate::threads::background_pool().spawn(move || {
-                    if let Some(t) = load_texture_key(&path, true) {
+                    let tracked = reloads.tracks(&path);
+                    let before = tracked.then(|| crate::freetex_reload::FileStamp::read(&path)).flatten();
+                    if let Some(t) = load_texture_key(&path, true)
+                        .filter(|_| !tracked || crate::freetex_reload::FileStamp::read(&path) == before)
+                    {
                         // (a texture over the budget comes back whatever it is, and so
                         // does one put up at half its size meanwhile: see
                         // `omsi_texture::gpu::halved_for_now`)
                         if t.format.is_compressed() || restore || (t.width >= 256 && t.height >= 256) {
-                            done.lock().push((path, Arc::new(t)));
+                            done.lock().push((path, Arc::new(t), before));
                             return;
                         }
                     }
@@ -1061,23 +1066,45 @@ impl World {
                             has_alpha: false,
                             gpu_mips: false,
                         }),
+                        before,
                     ));
                 });
             }
         }
         let mut swapped: Vec<TextureId> = Vec::new();
+        let mut refreshed = 0;
+        let mut rebound_reload = 0;
+        // One ready file at most per frame, under the existing upload deadline.
+        // All cached material variants keep referring to this same texture id.
+        if deadline.is_none_or(|d| std::time::Instant::now() < d) {
+            if let Some(reload) = self.freetex_reloads.next() {
+                let id = self.vehicle_textures.lock().get(&reload.path).map(|e| e.0);
+                if id == Some(reload.id) && self.freetex_reloads.accepts(&reload.path, Some(reload.stamp)) {
+                    self.textures.release(&reload.path);
+                    self.freetex_reloads.remember(reload.id, reload.data.clone());
+                    if renderer.refresh_texture(scene, reload.id, &reload.data) {
+                        swapped.push(reload.id);
+                        rebound_reload = 1;
+                    }
+                    refreshed = 1;
+                }
+            }
+        }
         loop {
             if deadline
                 .map(|d| std::time::Instant::now() >= d)
                 .unwrap_or(false)
-                && !swapped.is_empty()
+                && (!swapped.is_empty() || refreshed > 0)
             {
                 break;
             }
-            let Some((path, data)) = self.upgrades_done.lock().pop() else {
+            let Some((path, data, stamp)) = self.upgrades_done.lock().pop() else {
                 break;
             };
             self.upgrades_pending.lock().remove(&path);
+            if !self.freetex_reloads.accepts(&path, stamp) {
+                continue;
+            }
             // the texture is still up under that name (it may have gone meanwhile)
             let vid = self.vehicle_textures.lock().get(&path).map(|e| e.0);
             let id = match vid {
@@ -1090,6 +1117,9 @@ impl World {
                 continue;
             }
             renderer.replace_texture(scene, id, &data);
+            if self.freetex_reloads.snapshot(id).is_some() {
+                self.freetex_reloads.remember(id, data.clone());
+            }
             if let Some(e) = self.gpu.lock().textures.get_mut(&path) {
                 e.bytes = scene.texture_bytes_of(id);
                 e.format = data.format;
@@ -1119,7 +1149,7 @@ impl World {
                 log::info!("textures: {} compressed ones swapped in, {rebound} materials rebound in {:.1} ms", ids.len(), t.elapsed().as_secs_f64() * 1000.0);
             }
         }
-        n
+        n + refreshed - rebound_reload
     }
 
     /// OMSI's `[texmemlimit]`: the scenery and vehicle textures may take `bytes` on the GPU
@@ -1620,13 +1650,20 @@ pub(super) fn stand_in_mesh(m: &MeshData, defs: &[MaterialDef], xf: &Mat4, pos: 
     if width > 2.0 * loaded {
         return true;
     }
-    if width <= loaded || m.positions.is_empty() {
+    if width <= FAR_BACKDROP_MIN || m.positions.is_empty() {
         return false;
     }
     // a picture that never hides what is drawn after it, wherever it starts: a backdrop
-    if !defs.is_empty() && defs.iter().all(|d| d.no_z_write || d.no_z_check) {
+    let never_hides = !defs.is_empty() && defs.iter().all(|d| d.no_z_write || d.no_z_check);
+    if never_hides && width > loaded {
         return true;
     }
+    // A mesh modelled wholly beyond the tiles OMSI loads with its object is seen in OMSI
+    // only from those tiles, whatever its size past a few streets': London's Walworth Road
+    // junction carries a copy of the Elephant & Castle buildings some 1.2 km north of it,
+    // a backdrop for the view from there, and drawn from everywhere it stood across London
+    // Road at the line 45 terminus. A small part far off is no backdrop and keeps its
+    // object in the far view.
     // Measure the offset in the model's own frame, before heading rotates its bounds:
     // the world AABB of a diagonal card can include its origin although the card is
     // wholly far away. Small offset parts and ordinary long models keep the far view.
@@ -1638,6 +1675,10 @@ pub(super) fn stand_in_mesh(m: &MeshData, defs: &[MaterialDef], xf: &Mat4, pos: 
     );
     xf.transform_vector3(nearest).length() as f64 > loaded
 }
+
+/// The width (m) from which a mesh wholly beyond the tiles loaded with its object is a
+/// backdrop for them (`stand_in_mesh`): a block of a few streets, not a house or a sign.
+const FAR_BACKDROP_MIN: f64 = 150.0;
 
 /// World bounds (min x, min y, max x, max y) of a mesh placed with `xf` at `origin`.
 pub(super) fn mesh_bounds(m: &MeshData, xf: &Mat4, origin: DVec3) -> [f64; 4] {

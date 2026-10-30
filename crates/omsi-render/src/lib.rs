@@ -21,7 +21,7 @@ pub mod clouds;
 mod cookies;
 pub use cookies::{Cookie, COOKIE_LAYERS};
 mod gpu_memory;
-pub use gpu_memory::GpuMemory;
+pub use gpu_memory::{Ceiling, GpuMemory};
 mod passes;
 mod device_selection;
 use passes::{Encoders, FrameArgs, FrameEnv, PassTimers, StageClock};
@@ -69,6 +69,24 @@ pub type MeshId = usize;
 pub type TextureId = usize;
 pub type MaterialId = usize;
 
+/// RCAS's strength for the FSR sharpening slider (0..1): its whole range onto 0..0.8 of AMD's
+/// lobe. Measured on a GCN card, AMD's strongest (1.0) grained the gauges and outlined the
+/// bus and the trees, 0.8 was as sharp as the standard upscaler and clean - so that is 100 %.
+pub(crate) fn fsr1_rcas_strength(slider: f32) -> f32 {
+    0.8 * slider.clamp(0.0, 1.0)
+}
+
+/// Optional FSR1 experiment from the environment (`OMSI_FSR1`), read once for the run (the
+/// setting itself can change while the game runs: `Renderer::set_upscaler`). The standard
+/// upscaler and all shader pipelines stay as-is when neither asks for it.
+pub(crate) fn fsr1_enabled() -> bool {
+    static ENABLED: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *ENABLED.get_or_init(|| {
+        omsi_cfg::flags::OMSI_FSR1.var()
+            .is_some_and(|v| matches!(v.to_ascii_lowercase().as_str(), "1" | "true" | "on"))
+    })
+}
+
 /// The enhanced path's post pipelines (post.wgsl).
 struct PostPipelines {
     down_first: wgpu::RenderPipeline,
@@ -80,6 +98,8 @@ struct PostPipelines {
     tonemap: wgpu::RenderPipeline,
     tonemap_encoded: wgpu::RenderPipeline,
     fxaa: wgpu::RenderPipeline,
+    /// The picture as absolute radiance at half size, for the next frame's bounced light.
+    history: wgpu::RenderPipeline,
 }
 
 /// The pipelines of the main pass for one colour target format: the swap chain's, and
@@ -95,6 +115,8 @@ struct PassPipelines {
     /// The snowfall (snow.wgsl), opaque over the scene (premultiplied); none with
     /// `basic_pipelines`.
     snow_pipeline: Option<wgpu::RenderPipeline>,
+    /// The rainfall (rain.wgsl), as the snowfall; with `basic_pipelines` on computers too.
+    rain_fall_pipeline: Option<wgpu::RenderPipeline>,
     sky_pipeline: wgpu::RenderPipeline,
 }
 
@@ -106,6 +128,9 @@ pub struct Renderer {
     material_layout: wgpu::BindGroupLayout,
     pass: PassPipelines,
     hdr_pass: Option<PassPipelines>,
+    /// Enhanced colour/mask without desktop ray-reflection surface attachments.
+    hdr_eye_pass: Option<PassPipelines>,
+    eye_pipeline_kit: Option<pipelines::passes::EyePipelineKit>,
     reflection_pass: Option<PassPipelines>,
     overlay_pipeline: wgpu::RenderPipeline,
     overlay_layout: wgpu::BindGroupLayout,
@@ -128,10 +153,20 @@ pub struct Renderer {
     /// its own depth laid first (see `encode_prefill`), so that its costly shading runs
     /// once per visible surface.
     prepass_msaa_pipelines: Option<[wgpu::RenderPipeline; 6]>,
+    prepass_eye_pipelines: Option<[wgpu::RenderPipeline; 6]>,
+    /// The ground albedo pass's pipelines (see `SceneBase::ground_pipeline_at`); none where
+    /// the enhanced path is left out or on OpenGL.
+    ground_pipelines: Option<[wgpu::RenderPipeline; 8]>,
+    /// Whether the camera group's slot 8 (the AO's picture) holds the ground albedo picture
+    /// instead - while the ambient occlusion is off, see `ground_should_bind`.
+    ground_bound: std::cell::Cell<bool>,
     /// Ambient occlusion and its blur; none on OpenGL (GLES), whose shading language cannot
     /// read a depth texture texel by texel - the pipelines failed there, AO off or not (#422).
     ssao_pipeline: Option<wgpu::RenderPipeline>,
     blur_pipeline: Option<wgpu::RenderPipeline>,
+    /// (into two-channel targets: see `pipelines::ssao::Ssao`)
+    plain_ssao_pipeline: Option<wgpu::RenderPipeline>,
+    plain_blur_pipeline: Option<wgpu::RenderPipeline>,
     /// The settings this renderer was built with.
     pub options: RenderOptions,
     puddles: Option<puddles::Pipelines>,
@@ -164,6 +199,8 @@ pub struct Renderer {
     pub light_map_next: std::cell::Cell<bool>,
     /// Mipmap generation on the GPU (a blit per level).
     mip_pipeline: wgpu::RenderPipeline,
+    /// The same for text and script textures (`MipAverage::Independent`).
+    mip_text_pipeline: wgpu::RenderPipeline,
     mip_layout: wgpu::BindGroupLayout,
     mip_sampler: wgpu::Sampler,
     /// The headset's pictures: the heading (degrees) the `[matl_envmap]` sphere maps are
@@ -178,6 +215,9 @@ pub struct Renderer {
     /// GPU time per pass (OMSI_GPU_TIMERS, when the device has timestamp queries): the
     /// mirrors and the window's picture apart, each timed on its own.
     gpu_timers: [Option<GpuTimers>; 2],
+    /// Pictures drawn since start, the mirrors' and the window's (as `gpu_timers`): a mirror's
+    /// GPU time is measured one picture at a time, and a frame may draw two.
+    pictures: std::cell::Cell<[u64; 2]>,
     /// Seconds spent per stage of `render_inner` since start (OMSI_PROFILE).
     pub stats: std::cell::RefCell<std::collections::BTreeMap<&'static str, f64>>,
     /// What the window's pictures drew since start, summed (OMSI_PROFILE): instances that
@@ -228,7 +268,7 @@ pub const MSAA: u32 = 4;
 pub const SHADOW_SIZE: u32 = 2048;
 
 /// What the renderer is built with: the user's graphics settings.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct RenderOptions {
     /// Samples per pixel: 1 (off), 2, 4 or 8.
     pub msaa: u32,
@@ -241,6 +281,14 @@ pub struct RenderOptions {
     /// The 3D picture of the window drawn at this fraction of its size and scaled up
     /// (0.5..1); 0 = automatic: full size up to `AUTO_SCALE_PIXELS`, smaller above.
     pub render_scale: f32,
+    /// Experimental FSR1 spatial upscaler (at the start, or later with `set_upscaler`).
+    pub fsr1: bool,
+    /// RCAS sharpening strength, from 0 (none) to 1.
+    pub fsr_sharpness: f32,
+    /// VR: each eye is drawn at this fraction of its headset image and scaled up to it (by
+    /// FSR 1, or the standard upscaler with FSR 1 off); 1 = drawn at the image's size.
+    /// Set by `start_xr`: below 1 only when VR started with FSR 1.
+    pub xr_scale: f32,
     /// Uncompressed texture files (BMP, TGA, JPG) are compressed to BC1/BC3 on loading
     /// where the device takes block formats and the result is close to the picture
     /// (DXT files always go up as blocks there).
@@ -261,6 +309,12 @@ pub struct RenderOptions {
     /// The mirrors of an Enhanced picture are shaded as the picture is (the settings'
     /// `mirror_quality=enhanced`), not with the plain light (see `Renderer::render_inner`).
     pub mirror_enhanced: bool,
+    /// The mirrors show the sun's shadows (the window's shadow maps, as they were last drawn,
+    /// are looked up from the mirror's camera: no shadow pass of their own).
+    pub mirror_shadows: bool,
+    /// The mirrors show the smoke and spray particles as the window last had them (OMSI's
+    /// `No PS in reflections`, turned round).
+    pub mirror_particles: bool,
     /// Only the meshes the models mark `[shadow]` cast sun shadows, as in OMSI 2 (else every
     /// solid mesh does).
     pub omsi_shadow_casters: bool,
@@ -278,14 +332,29 @@ pub struct RenderOptions {
     /// they are built where the texture layout supports them. Native desktop backends
     /// keep them available for switching modes in-game.
     pub no_enhanced: bool,
-    /// The launcher's preview (the showroom), which always draws Vanilla+ (see
-    /// `showroom::lighting_for`): no enhanced pipelines, reflection probe or cloud noise
-    /// are made for it, on any device.
+    /// The launcher's preview (the showroom) in plain graphics: no enhanced pipelines,
+    /// reflection probe or cloud noise are made for it, on any device.
     pub preview_only: bool,
     /// Enhanced+: the enhanced path with ray-traced sun shadows, ambient occlusion and
     /// reflections, where the device can trace rays (hardware ray queries); elsewhere the
     /// enhanced picture as it is.
     pub ray_tracing: bool,
+    /// The Enhanced picture's street-scale light: the sky's occlusion by houses and trees
+    /// over 18 m, and the light the surfaces send to each other (the settings'
+    /// `street_light`). `None`: as the chip allows (off on a small or shared one, see
+    /// `gpu_memory::lighter_picture`).
+    pub street_light: Option<bool>,
+    /// Which lights cast shadows in the Enhanced picture (the settings' `light_shadows`): 0
+    /// none, 1 the street lamps (looking down) and the vehicles' headlamps, 2 every light - the
+    /// spots too, along their own axis, and the lamps that shine every way in cube maps.
+    pub light_shadows: u8,
+    /// The clouds' shadow over the land and the sun's shafts through a broken sky (the settings'
+    /// `cloud_shadows`).
+    pub cloud_shadows: bool,
+    /// The glare round bright lights and the lamps' halo in the night air (the settings'
+    /// `light_glow`).
+    pub light_glow: bool,
+    pub max_scene: Option<(u32, u32)>,
 }
 
 impl Default for RenderOptions {
@@ -296,18 +365,28 @@ impl Default for RenderOptions {
             shadow_size: SHADOW_SIZE,
             ssao: true,
             render_scale: 0.0,
+            fsr1: false,
+            xr_scale: 1.0,
+            fsr_sharpness: 0.8,
             compress_textures: true,
             gpu_texture_compression: true,
             fxaa: true,
             min_obj_size: 0.013,
             max_obj_dist: 0.0,
             mirror_enhanced: false,
+            mirror_shadows: false,
+            mirror_particles: false,
             omsi_shadow_casters: false,
             shadow_blobs: true,
             reflections: true,
             no_enhanced: false,
             preview_only: false,
             ray_tracing: false,
+            street_light: None,
+            light_shadows: 1,
+            cloud_shadows: false,
+            light_glow: false,
+            max_scene: None,
         }
     }
 }
@@ -351,7 +430,8 @@ const HDR_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba16Float;
 /// The colour targets of a pipeline drawing into `format`: Enhanced and classic puddle
 /// shading draw into `HDR_FORMAT` with the screen mask beside it,
 /// written by the scene's own shader only (`mask`), coverage-blended where the colour is.
-fn color_targets(format: wgpu::TextureFormat, blend: Option<wgpu::BlendState>, write: wgpu::ColorWrites, mask: bool, gbuf: bool) -> Vec<Option<wgpu::ColorTargetState>> {
+fn color_targets_for(format: wgpu::TextureFormat, blend: Option<wgpu::BlendState>, write: wgpu::ColorWrites, mask: bool, gbuf: bool,
+    surfaces: bool) -> Vec<Option<wgpu::ColorTargetState>> {
     let mut v = vec![Some(wgpu::ColorTargetState { format, blend, write_mask: write })];
     if format == HDR_FORMAT {
         v.push(Some(wgpu::ColorTargetState {
@@ -362,7 +442,7 @@ fn color_targets(format: wgpu::TextureFormat, blend: Option<wgpu::BlendState>, w
             }),
             write_mask: if mask { wgpu::ColorWrites::ALL } else { wgpu::ColorWrites::empty() },
         }));
-        if rt_gbuf() {
+        if surfaces {
             // (premultiplied by the reflection's weight, the shader's alpha)
             let over = blend.map(|_| wgpu::BlendState {
                 color: wgpu::BlendComponent { src_factor: wgpu::BlendFactor::One, dst_factor: wgpu::BlendFactor::OneMinusSrcAlpha, operation: wgpu::BlendOperation::Add },
@@ -391,10 +471,36 @@ const SHADOW_CLOSE_MAX: u32 = 2048;
 
 impl Renderer {
 
-    fn main_pass(&self, enhanced: bool, reflections: bool) -> &PassPipelines {
-        if enhanced { self.hdr_pass.as_ref().unwrap() }
+    /// Compile Enhanced+ colour-only pipelines once, when a headset session starts.
+    /// Desktop-only renderers never compile the headset variants.
+    pub fn prepare_xr_eye_pipelines(&mut self) {
+        if let Some(kit) = self.eye_pipeline_kit.take() {
+            let (pass, prefill) = kit.build(&self.device);
+            self.prepass_eye_pipelines = Some(prefill);
+            self.hdr_eye_pass = Some(pass);
+        }
+    }
+
+    fn main_pass(&self, enhanced: bool, reflections: bool, eye_color: bool) -> &PassPipelines {
+        if enhanced && eye_color {
+            self.hdr_eye_pass
+                .as_ref()
+                .or(self.hdr_pass.as_ref())
+                .unwrap()
+        } else if enhanced { self.hdr_pass.as_ref().unwrap() }
         else if reflections { self.reflection_pass.as_ref().unwrap() }
-        else { &self.pass }
+        else { &self.pass
+        }
+    }
+
+    fn prefill_pipelines(&self, eye_color: bool) -> Option<&[wgpu::RenderPipeline; 6]> {
+        if eye_color {
+            self.prepass_eye_pipelines
+                .as_ref()
+                .or(self.prepass_msaa_pipelines.as_ref())
+        } else {
+            self.prepass_msaa_pipelines.as_ref()
+        }
     }
 
     pub fn format(&self) -> wgpu::TextureFormat {
@@ -404,6 +510,7 @@ impl Renderer {
     /// The fraction of a window of this size the 3D picture is drawn at (`render_scale`).
     pub fn scene_scale(&self, width: u32, height: u32) -> f32 {
         let s = scene_scale_for(self.options.render_scale, width, height);
+        let s = scene_scale_within(s, self.options.max_scene, width, height);
         // (a fixed render scale is the player's choice: the governor works on automatic)
         if self.options.render_scale > 0.0 {
             s
@@ -426,6 +533,62 @@ impl Renderer {
 
     pub fn dynamic_scale(&self) -> f32 {
         self.scale.dynamic_scale.get()
+    }
+
+    /// The upscaler, its sharpening and the render scale while the game runs: FSR 1's
+    /// passes are built the first time it is asked for (nothing for whoever never does).
+    /// False when FSR 1 was asked for and the driver has just refused it (said once): the
+    /// standard upscaler stays, and it is not tried again in this run.
+    pub fn set_upscaler(&mut self, fsr1: bool, sharpness: f32, render_scale: f32) -> bool {
+        self.scale.upscaler_asked = (fsr1, sharpness, render_scale);
+        self.options.fsr_sharpness = sharpness;
+        self.options.render_scale = render_scale;
+        let mut refused_now = false;
+        if fsr1 && self.scale.fsr.is_none() && !self.scale.fsr_refused {
+            match pipelines::upscale::build_fsr(&self.device, self.format, &self.scale.upscale_layout) {
+                Some(p) => self.scale.fsr = Some(p),
+                None => (self.scale.fsr_refused, refused_now) = (true, true),
+            }
+        }
+        self.options.fsr1 = fsr1 && self.scale.fsr.is_some();
+        // Keep compiled pipelines for quick toggles, but release full-resolution images
+        // while neither RCAS nor FSR needs them. They are recreated on the next draw.
+        if !self.options.fsr1 || fsr1_rcas_strength(sharpness) == 0.0 {
+            self.scale.fsr_target.get_mut().clear();
+        }
+        !refused_now
+    }
+
+    /// FSR 1, its sharpening and the render scale as last asked for (`set_upscaler`; at the
+    /// start, the settings'): a menu change of something else leaves the upscaler alone.
+    pub fn upscaler_asked(&self) -> (bool, f32, f32) {
+        self.scale.upscaler_asked
+    }
+
+    /// VR starts with eyes of `eye_scale` (the eye resolution): the headset image's size as
+    /// a share of the runtime's recommendation. With FSR 1 on and built, the image is
+    /// full-sized and each eye is drawn at `eye_scale` of it and scaled up by FSR 1 (by
+    /// the standard upscaler if FSR 1 is turned off later); else the image itself is that
+    /// small and the runtime scales it, as before. `OMSI_OPENXR_SCALE` takes the place of
+    /// `eye_scale` here, and only here (read again for the headset image as well, it shrank
+    /// the image and FSR 1 shrank the eyes within it a second time).
+    pub fn start_xr(&mut self, eye_scale: f32) -> f32 {
+        let eye_scale = omsi_cfg::flags::OMSI_OPENXR_SCALE.parse::<f32>().filter(|s| s.is_finite()).unwrap_or(eye_scale).clamp(0.5, 1.0);
+        let fsr = self.options.fsr1 && self.scale.fsr.is_some() && eye_scale < 0.999;
+        self.options.xr_scale = if fsr { eye_scale } else { 1.0 };
+        if fsr { 1.0 } else { eye_scale }
+    }
+
+    /// The fraction of the headset's image an eye is drawn at (`start_xr`), when below 1.
+    pub(crate) fn xr_fsr_scale(&self) -> Option<f32> {
+        let s = self.options.xr_scale.clamp(0.5, 1.0);
+        (s < 0.999).then_some(s)
+    }
+
+    /// FSR 1 upscales the window's picture now (asked for, built, and the picture drawn
+    /// smaller than the window).
+    pub fn fsr_active(&self, width: u32, height: u32) -> bool {
+        self.options.fsr1 && self.scale.fsr.is_some() && self.scene_size(width, height) != (width, height)
     }
 
     /// The size the 3D scene is drawn at for a window of this size.
@@ -460,6 +623,10 @@ fn scene_scale_for(requested: f32, width: u32, height: u32) -> f32 {
     } else {
         (AUTO_SCALE_PIXELS / pixels).sqrt().clamp(0.5, 1.0)
     }
+}
+
+fn scene_scale_within(s: f32, max_scene: Option<(u32, u32)>, width: u32, height: u32) -> f32 {
+    max_scene.map_or(s, |(w, h)| s.min(w as f32 / width as f32).min(h as f32 / height as f32).max(0.5))
 }
 
 /// Is `p` inside a vehicle's `[boundingbox]` (origin, heading in degrees, w l h cx cy cz)?

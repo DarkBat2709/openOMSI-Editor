@@ -87,7 +87,8 @@ impl ExposureLog {
                 let bits = u16::from_le_bytes([view[0], view[1]]);
                 let metered = half_to_f32(bits);
                 let (pre, m) = self.pending;
-                let ev = ((m[1] - metered) * m[0]).clamp(-m[2], m[3]) + m[4];
+                let gap = m[1] - metered;
+                let ev = (gap * if gap > 0.0 { shortfall_adaptation(pre, m[3], m[0]).1 } else { m[0] }).clamp(-m[2], m[3]) + m[4];
                 if ev.is_finite() {
                     self.ev = ev;
                 }
@@ -142,6 +143,25 @@ pub(crate) fn half_to_f32(b: u16) -> f32 {
 }
 
 impl Renderer {
+    /// Whether the street-scale light (the wide occlusion and the bounced light) is on: the
+    /// setting's, or as the chip allows (`RenderOptions::street_light`).
+    pub(crate) fn street_light(&self) -> bool {
+        self.options.street_light.unwrap_or(true)
+    }
+
+    /// Whether the lamps' shadow atlas holds the cube maps' tiles (made when the game started with
+    /// *Light has shadows: Every light*); without them that setting takes the street lamps' level
+    /// until the next start.
+    pub fn lamp_cube_maps(&self) -> bool {
+        self.shadows.lamp_atlas.has_cubes()
+    }
+
+    /// The lightning strikes since the last call, as (seconds until the thunder is heard,
+    /// distance in m, direction): the sound plays the thunder of what the picture showed.
+    pub fn take_strikes(&mut self) -> Vec<(f32, f32, [f32; 2])> {
+        std::mem::take(&mut self.tone.lightning.strikes).into_iter().map(|s| (s.delay, s.distance, s.dir)).collect()
+    }
+
     /// Change the dynamic parameters of an instance. `slot_alpha` entries beyond the mesh's
     /// slot count are ignored; missing ones keep 1.0.
     pub fn set_params(
@@ -212,6 +232,7 @@ impl Renderer {
         scene.params_buf = None;
         scene.camera_bind_group = None;
         scene.shadow_bind_group = None;
+        scene.precip_bind_group = None;
     }
 
     /// Rebuild the pipelines and targets without multisampling after a GPU error with it.
@@ -224,9 +245,34 @@ impl Renderer {
             self.options.msaa,
             self.adapter_name
         );
-        // Release render targets before building their single-sample replacements. Keeping
-        // the old targets alive while the new renderer is built can turn a recoverable OOM
-        // into another allocation failure.
+        if let Some(c) = CEILING.lock().unwrap_or_else(|e| e.into_inner()).as_mut() {
+            c.msaa = 1;
+        }
+        let options = RenderOptions {
+            msaa: 1,
+            ..self.options
+        };
+        self.rebuild_in_place(scene, options);
+    }
+
+    pub fn rebuild_with(&mut self, scene: &mut Scene, options: RenderOptions) -> bool {
+        let options = match ceiling() {
+            Some(c) => RenderOptions { msaa: c.msaa_for(options.msaa), ssao: options.ssao && c.ssao, shadow_size: options.shadow_size.clamp(512, c.shadow_size), ..options },
+            None => options,
+        };
+        let options = if options.ray_tracing && options.msaa > 4 && !omsi_cfg::flags::OMSI_FULL_GPU.is_set() { RenderOptions { msaa: 4, ..options } } else { options };
+        if options == self.options {
+            return false;
+        }
+        log::info!("graphics rebuilt: {}x MSAA, shadow map {}, SSAO {}", options.msaa, options.shadow_size, options.ssao);
+        self.rebuild_in_place(scene, options);
+        true
+    }
+
+    fn rebuild_in_place(&mut self, scene: &mut Scene, options: RenderOptions) {
+        // Release render targets before building their replacements. Keeping the old
+        // targets alive while the new renderer is built can turn a recoverable OOM into
+        // another allocation failure.
         self.targets.depth = None;
         self.targets.msaa_targets.clear();
         self.targets.ao = None;
@@ -235,10 +281,6 @@ impl Renderer {
         self.targets.triple_targets = None;
         self.targets.glass_picture = None;
         self.targets.target_use.clear();
-        let options = RenderOptions {
-            msaa: 1,
-            ..self.options
-        };
         let mesh_pages = self.mesh_pages;
         *self = Renderer { mesh_pages, ..self.rebuilt(options) };
         scene.dirty = true;
@@ -246,6 +288,7 @@ impl Renderer {
         scene.params_buf = None;
         scene.camera_bind_group = None;
         scene.shadow_bind_group = None;
+        scene.precip_bind_group = None;
     }
 
     /// Render the scene into `target` (which must have the renderer's format).
@@ -415,7 +458,8 @@ impl Renderer {
 
     /// Render one OpenXR view using the headset's asymmetric projection matrix.
     /// The matrix uses the same reversed depth range as the desktop camera. The
-    /// second eye reuses the first eye's shadow atlas when both share an origin.
+    /// second eye reuses the first eye's shadow atlas when both share an origin,
+    /// while each eye keeps its own visibility and LOD history between frames.
     pub fn render_xr_eye(
         &mut self,
         scene: &mut Scene,
@@ -427,7 +471,18 @@ impl Renderer {
         projection: Mat4,
         second_eye: bool,
     ) {
+        self.swap_xr_culling(second_eye as usize);
         self.render_inner(scene, target, width, height, camera, lighting, false, None, Some(projection), second_eye);
+        self.swap_xr_culling(second_eye as usize);
+    }
+
+    fn swap_xr_culling(&mut self, eye: usize) {
+        // As with triple-screen panels, an eye must use its own previous view,
+        // and leave the desktop's history intact when returning from the draw.
+        let history = &mut self.history.xr_culling[eye];
+        std::mem::swap(self.history.cull_drawn.get_mut(), &mut history.drawn);
+        std::mem::swap(self.history.object_sizes.get_mut(), &mut history.sizes);
+        std::mem::swap(self.history.object_sizes_scratch.get_mut(), &mut history.scratch);
     }
 
     /// Composite the shared game menu and a world-positioned pointer into each eye.
@@ -627,6 +682,9 @@ impl Renderer {
         }
         // OMSI_GPU_TIMERS: GPU time per pass, one frame at a time
         self.collect_gpu_timers();
+        let mut pictures = self.pictures.get();
+        pictures[with_overlays as usize] += 1;
+        self.pictures.set(pictures);
         let mut timers = PassTimers {
             set: self.gpu_timers[with_overlays as usize]
                 .as_ref()
@@ -649,6 +707,11 @@ impl Renderer {
         clock.stage(self, "shadow items", "mirror.shadow items");
         let visible = self.cull_view(scene, &f, &mut clock);
         let mut plan = self.batch_draws(scene, &f, &visible, Vec::new());
+        if plan.ground.active() {
+            // (the frame's uniform was written with the flag off: the base is lit from the ground picture)
+            let lod = [self.fsr_mip_bias(&f), 1.0, 0.0, 0.0];
+            self.queue.write_buffer(&self.camera_buf, std::mem::offset_of!(CameraUniform, lod) as u64, bytemuck::bytes_of(&lod));
+        }
         // (the shadow casters' entries after the passes' own: the main pass's batches keep
         // their places in the list while only the shadows change, and its bundles are kept)
         let at = plan.list.len() as u32;
@@ -686,7 +749,12 @@ impl Renderer {
         };
         self.encode_shadow_maps(&mut enc.shadow, scene, &sh, &shadow_batches, &mut timers);
         self.encode_lamp_shadows(&mut enc.shadow, scene, &f, &shadow_batches, &mut timers);
-        self.encode_depth_prepass(&mut enc.prepass, scene, &f, &plan.prepass_batches, &mut timers);
+        self.encode_precip_map(&mut enc.shadow, scene, &sh, &shadow_batches, &mut timers);
+        let prepass_batches = if self.shares_prepass_depth(&f, &plan) { plan.prefill_batches() } else { &plan.prepass_batches };
+        self.encode_depth_prepass(&mut enc.prepass, scene, &f, prepass_batches, &mut timers);
+        if plan.ground.active() {
+            self.encode_ground(&mut enc.prepass, scene, &plan.ground, &mut timers);
+        }
         if f.enhanced && f.lead_view && f.prepass_on && self.device_lost().is_none() {
             if let (Some(s), Some(ao)) = (self.tone.lamp_sight.as_mut(), self.targets.ao.as_ref()) {
                 s.encode(&self.device, &self.queue, &mut enc.prepass, &ao.depth_view, vp_mat, f.ro, f.cam_rel);
@@ -697,7 +765,16 @@ impl Renderer {
         }
         self.encode_sky_cube(&mut enc.prepass, scene, &f, probe_redraw, &mut timers);
         self.encode_probe(&mut enc.prepass, scene, probe_redraw, &mut timers);
-        let main_parts = self.encode_main_pass(&mut enc.picture, scene, &f, &plan, &main_bundles, &mut timers);
+        let mut main_parts = self.encode_main_pass(&mut enc.picture, scene, &f, &plan, &main_bundles, &mut timers);
+        // Turning the recorded passes into Metal commands is the costliest CPU step of a
+        // frame (wgpu checks every draw): the shadow maps, the prepass, the main pass and
+        // the passes after it are finished side by side on helper threads and this one.
+        let big =
+            shadow_batches.iter().map(|b| b.len()).sum::<usize>() + plan.prepass_batches.len() > 64 || !main_parts.is_empty();
+        if big && !f.env.no_post_split {
+            let rest = self.device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: Some("after the main pass") });
+            main_parts.push(std::mem::replace(&mut enc.picture, rest));
+        }
         let puddles_on = self.encode_scene_reflections(&mut enc.picture, scene, &f, &plan, &cu, &mut timers);
         self.encode_fog_lamps(&mut enc.picture, scene, &f, vp_mat, puddles_on, &mut timers);
         self.encode_rain_film(&mut enc.picture, scene, &f, &plan.rain_batches, puddles_on);
@@ -707,11 +784,6 @@ impl Renderer {
         }
         self.encode_upscale(&mut enc.picture, scene, &f, &mut timers);
         clock.stage(self, "encode", "mirror.encode");
-        // Turning the recorded passes into Metal commands is the costliest CPU step of a
-        // frame (wgpu checks every draw): the shadow maps and the prepass are finished on
-        // helper threads while this one finishes the picture.
-        let big =
-            shadow_batches.iter().map(|b| b.len()).sum::<usize>() + plan.prepass_batches.len() > 64 || !main_parts.is_empty();
         self.finish_and_submit(enc, main_parts, big, with_overlays, &mut clock, timers);
     }
 
@@ -737,11 +809,12 @@ impl Renderer {
         camera: &Camera,
         lighting: &Lighting,
     ) -> Result<(Vec<u8>, Option<Vec<f32>>)> {
-        self.depth_readback = true;
+        let copies = self.adapter.as_ref().map_or(!gl_backend(), |a| a.get_downlevel_capabilities().flags.contains(wgpu::DownlevelFlags::DEPTH_TEXTURE_AND_BUFFER_COPIES));
+        self.depth_readback = copies;
         let px = self.render_image(scene, width, height, camera, lighting, None);
         self.depth_readback = false;
         let px = px?;
-        let tex = self.targets.ao.as_ref().filter(|a| a.size == (width, height)).map(|a| a.depth_tex.clone());
+        let tex = self.targets.ao.as_ref().filter(|a| copies && a.size == (width, height)).map(|a| a.depth_tex.clone());
         let depth = match tex {
             Some(t) => {
                 // (a backend that cannot copy depth back: the picture without it)
@@ -807,11 +880,13 @@ impl Renderer {
         let view = tex.create_view(&Default::default());
         // a picture on its own: the enhanced exposure is where the light puts it at once
         self.instant_exposure = true;
+        let max_scene = self.options.max_scene.take();
         if let Some(rig) = rig {
             self.render_triple(scene, &view, width, height, camera, lighting, rig);
         } else {
             self.render(scene, &view, width, height, camera, lighting);
         }
+        self.options.max_scene = max_scene;
         self.instant_exposure = false;
         let mut out = self.read_texture(&tex, wgpu::TextureAspect::All)?;
         // BGRA surfaces → swap
@@ -908,4 +983,14 @@ pub(crate) struct ToneMapping {
     /// The enhanced lighting uniform as last written (`prepare_enhanced`), for the passes
     /// that decide on the CPU whether they have anything to draw (`shafts_seen`).
     pub(crate) enh_last: crate::uniforms::EnhancedUniform,
+    /// The thunderstorm's flashes (`Lightning`) and the strikes the sound has not yet taken.
+    pub(crate) lightning: crate::lighting::Lightning,
+    /// This frame's flash (stepped for every pipeline, drawn by the Enhanced one).
+    pub(crate) flash: crate::lighting::Flash,
+    /// The last frame of the window's picture the bounced light read back: its view and
+    /// projection, render origin, size and where it looked (see `bounce_history`).
+    pub(crate) bounce_prev: Option<(Mat4, DVec3, (u32, u32), Vec3, Vec3)>,
+    /// From a view-space point to the last frame's clip space, and whether that picture can
+    /// be read (0 or 1), for the AO pass.
+    pub(crate) bounce_reproj: ([[f32; 4]; 4], f32),
 }

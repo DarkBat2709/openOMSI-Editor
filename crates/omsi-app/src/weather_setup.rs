@@ -15,6 +15,12 @@ pub(crate) fn load_weather(args: &Args) -> omsi_content::weather::Weather {
 /// [`load_weather`], and the physical model's run when the weather is the model's, for the
 /// session to keep in its `SkyState` and carry on with its clock.
 pub(crate) fn load_weather_run(args: &Args) -> (omsi_content::weather::Weather, Option<crate::weather_model::ModelRun>) {
+    if crate::weather_tomorrow::selected(args.weather.as_deref()) {
+        let w = CustomWeather::default().to_weather();
+        omsi_sim::host::set_ambient_weather(w.temp.0, w.temp.1);
+        publish_page_weather(&w);
+        return (w, None);
+    }
     // no weather chosen, or `natural`: the physical model (weather_model.rs)
     if crate::weather_model::is_natural(args.weather.as_deref()) {
         let (run, w) = crate::weather_model::ModelRun::start(&crate::situation::start_clock(args));
@@ -126,7 +132,11 @@ pub(crate) fn setup_sky(
     });
     *sky_clouds = ty.filter(|_| vanilla.is_some()).map(|t| (kind.clone(), t));
     let vanilla = vanilla.map(|img| renderer.add_texture(scene, &img, true));
-    renderer.set_sky_textures_vanilla(scene, [ids[0], ids[1], ids[2]], clouds, vanilla);
+    let sun = omsi_texture::decode_file(&omsi_cfg::resolve_path(&args.root, "Texture\\sonne.bmp"))
+        .map_err(|e| log::warn!("sun texture: {e}"))
+        .ok()
+        .map(|img| renderer.add_texture(scene, &img, false));
+    renderer.set_sky_textures_vanilla(scene, [ids[0], ids[1], ids[2]], clouds, vanilla, sun);
 }
 
 /// A `[cloudtype]` of `Weather/clouds.cfg`: its texture (under `Texture\`), the metres of
@@ -415,6 +425,7 @@ pub(crate) fn weather_lighting(
     w: &omsi_content::weather::Weather,
     cloud_drift: [f64; 4],
     wetness: f32,
+    snow_cover: f32,
     shadows: bool,
     sky: &SkyState,
 ) -> omsi_render::Lighting {
@@ -432,9 +443,19 @@ pub(crate) fn weather_lighting(
         density,
         kind,
         rate,
-        if w.snow { 1.0 } else { 0.0 },
+        // (the weather's own snow cover, or what the snowfalls have laid so far)
+        if w.snow { 1.0 } else { snow_cover },
     );
-    lighting.roads_clear = w.snow && !w.snow_on_road;
+    // (the roads are kept clear unless the weather says the snow lies on them: the traffic
+    // and the gritters keep them black while the roofs and the verges turn white)
+    lighting.roads_clear = !w.snow_on_road;
+    // a thunderstorm: towering clouds over a warm shower (thunder in a snowfall is a rarity
+    // not worth making up); the physical model says how active it is itself, below
+    {
+        let c = w.clouds.0.to_ascii_lowercase();
+        let thundery = (c.contains("cumulus 3") || c.contains("cumulonimbus") || c.contains("gewitter") || c.contains("thunder")) && kind == 1 && rate > 0.45 && w.temp.0 > 8.0;
+        lighting.storm = if thundery { ((rate - 0.25) * 1.3).clamp(0.3, 1.0) } else { 0.0 };
+    }
     if let Some(custom)=CustomWeather::parse(&w.path.to_string_lossy()){
         let k=custom.brightness;
         lighting.sun_intensity*=k;
@@ -470,6 +491,10 @@ pub(crate) fn weather_lighting(
         lighting.sun_intensity = 1.0 - closed;
         lighting.veil = m.veil;
         lighting.air = Some([m.haze, m.angstrom, m.aerosol_height]);
+        lighting.cloud_layer = Some([m.cu_base, m.cu_top]);
+        lighting.alto = m.alto;
+        lighting.deck_tau = Some(m.deck_tau);
+        lighting.storm = m.storm;
         lighting.shadows = shadows && closed < 0.5 && w.fog.0 > 350.0;
     }
     lighting
@@ -595,6 +620,16 @@ pub(crate) fn from_report(s: &str) -> Option<omsi_content::weather::Weather> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn tomorrow_starts_with_fallback_without_a_natural_model() {
+        let args = Args::try_parse_from(["openomsi", "--weather", "tomorrow"]).unwrap();
+        let (weather, model) = load_weather_run(&args);
+        assert!(model.is_none(), "natural weather must not overwrite observations");
+        assert_eq!(weather.name, "Custom weather");
+        assert!(!weather.snow);
+        assert!(weather.temp.0.is_finite());
+    }
 
     #[test]
     fn the_weather_drifts_the_classic_clouds_over_the_renderers_tiling() {

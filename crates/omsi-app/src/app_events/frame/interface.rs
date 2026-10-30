@@ -55,6 +55,18 @@ impl App {
         // (not under the open game menu: the pause menu's rail covers the left
         // edge, and the navigator's panel stood out from under it)
         let nav_hidden = !vr_active && self.menus.game_menu.is_some();
+        // (a plugin's panel for the navigator's board, as tall as it was laid out last: the
+        // navigator makes room for it and says where it goes - under its map, or the whole
+        // frame for one that fills it, its map where the panel has it)
+        if let Some(n) = self.menus.navigator.as_mut() {
+            let docked = self.integrations.plugin_panels.docked;
+            n.dock = docked.filter(|d| !d.frame).map(|d| d.height);
+            n.frame_panel = docked.filter(|d| d.frame).map(|d| navigator::FramePanel {
+                height: d.height,
+                map: d.map.map(|m| navigator::FrameMap { rect: m.rect, cards: m.cards }),
+                background: d.background,
+            });
+        }
         self.frame_navigator(dt, hud, vr_active, nav_hidden, vr_nav_display);
         // the Lua plugins' panels (`omsi.ui`): over the picture and the navigator,
         // under the game's own interface; not under its menus, nor in VR
@@ -95,6 +107,14 @@ impl App {
                 say(note_key(&t), t, NoticeKind::Action);
             }
         }
+        // the latest `$msg` of the player's bus scripts, which OMSI writes on the screen: a
+        // note while the script keeps saying it and for a few seconds after (AI vehicles'
+        // messages are not shown)
+        let script_says = self.player.as_ref().and_then(|p| p.vehicle.host.fresh_message(SCRIPT_MESSAGE_SECS));
+        // (one note whose text follows the script: a value it prints changes every frame)
+        if let Some(text) = script_says {
+            say("bus script message".to_string(), text.to_string(), NoticeKind::Info);
+        }
         // what is under the cursor, in the player's language (the scripts only
         // know internal, mostly German names)
         let names = describe::names(&self.args.root, &self.settings.language);
@@ -123,21 +143,43 @@ impl App {
             if selection_description.as_deref() == Some(msg.as_str()) { *left = 0.0; }
             *left -= dt;
             if *left > 0.0 {
-                let kind = message_kind(msg);
+                let kind = message_kind(&omsi_ui::i18n::english(msg));
                 say(format!("message {msg}"), msg.clone(), kind);
             }
         }
         self.service_msg = self.service_msg.take().filter(|(_, l)| *l > 0.0);
         if let Some(lan) = self.net.lan.as_ref() {
-            for t in lan::hud_lines(lan).into_iter().chain(self.sound.voice.as_ref().and_then(|v| v.hud_line())) {
+            for t in lan::hud_lines(lan) {
                 say(t.clone(), t, NoticeKind::Info);
+            }
+            if let Some(v) = self.sound.voice.as_ref() {
+                for t in v.notices() {
+                    say(t.clone(), t, NoticeKind::Info);
+                }
+                // our own key: what we are transmitting on, and who is talking to us
+                let tr = |s: &str| omsi_ui::tr(s).into_owned();
+                match v.transmitting() {
+                    Some(omsi_voice::Channel::Radio) => say("voice transmit".into(), tr("Voice: you are talking on the radio"), NoticeKind::Action),
+                    Some(omsi_voice::Channel::Nearby) => say("voice transmit".into(), tr("Voice: you are talking to the players nearby"), NoticeKind::Action),
+                    None => {}
+                }
+                if self.settings.voice_talker_list {
+                    for (id, name, channel) in &v.talking {
+                        let how = match channel {
+                            omsi_voice::Channel::Radio => tr("on the radio"),
+                            omsi_voice::Channel::Nearby => tr("nearby"),
+                        };
+                        let name = if name.is_empty() { format!("#{id}") } else { name.clone() };
+                        say(format!("voice talker {id}"), format!("{name} - {how}"), NoticeKind::Info);
+                    }
+                }
             }
         }
         if let Some(h) = self.session.humans.as_ref() {
             if let Some(hint) = h.hint() {
                 say(hint.clone(), hint, NoticeKind::Action);
             } else if let Some((name, value)) = &h.request {
-                let t = format!("Passenger wants: {name}  {value:.2}");
+                let t = omsi_ui::tr("Passenger wants: {name}  {value:.2}").replace("{name}", name).replace("{value:.2}", &format!("{value:.2}"));
                 say(t.clone(), t, NoticeKind::Action);
             }
             if let Some((paid, value)) = h.paid {
@@ -145,7 +187,7 @@ impl App {
                 say(t.clone(), t, NoticeKind::Info);
             }
             if let Some(owed) = h.change_due {
-                let t = format!("Change due: {owed:.2}");
+                let t = omsi_ui::tr("Change due: {owed:.2}").replace("{owed:.2}", &format!("{owed:.2}"));
                 say(t.clone(), t, NoticeKind::Action);
             }
         }
@@ -160,6 +202,10 @@ impl App {
         }
         self.menus.note_watch.frame(dt, &said, &mut self.menus.notices);
         self.integrations.update_watch.tick(&mut self.menus.notices);
+        if let Some((before, text, left)) = omsi_lan::mods::upload::notice() {
+            self.menus.notices.retain(|n| n.text != before);
+            crate::ui::push_notice(&mut self.menus.notices, crate::ui::Notice { kind: crate::ui::NoticeKind::Info, text, left, total: left });
+        }
         for n in self.menus.notices.iter_mut() {
             n.left -= dt;
         }
@@ -242,6 +288,20 @@ impl App {
                 }
                 _ => nav.clear_route(),
             }
+            if let Some(sch) = self.session.schedule.as_ref() {
+                if nav.map_net().is_some() && !nav.stop_names_learnt() {
+                    nav.learn_stop_names(&sch.stop_names());
+                }
+            }
+            // the timetable's vehicles the traffic does not drive, where the timetable has them
+            if let (Some(sch), true) = (self.session.schedule.as_ref(), nav.show_ai && (nav.enabled || nav.map_open())) {
+                let cars: Vec<(DVec3, String)> = match self.session.traffic.as_ref().filter(|_| nav.live_due(dt)) {
+                    Some(t) => t.cars.iter().filter(|c| !c.gone && c.bus.is_some()).map(|c| (c.vehicle.position, c.vehicle.host.tt_line.clone())).collect(),
+                    None => Vec::new(),
+                };
+                let ground = self.world.as_ref().map(|w| w.data());
+                nav.update_live(sch, self.clock.time, dt, &cars, &|p| ground.as_ref().is_some_and(|d| d.has_ground(p.x, p.y)));
+            }
             let (outside_temp, inside_temp) = match p {
                 Some(p) => vehicle_temperatures(p),
                 None => {
@@ -259,7 +319,8 @@ impl App {
                 (None, None) => return,
             };
             let frame = navigator::NavFrame {
-                traffic: self.session.traffic.as_ref(),
+                traffic: self.session.traffic.as_deref(),
+                touch: crate::platform::touch_controls(),
                 players: self.net.lan.as_ref().map(|l| crate::lan::nav_players(&self.net.remotes, l.my_id)).unwrap_or_default(),
                 bus: at,
                 heading,
@@ -274,6 +335,7 @@ impl App {
                 stop_requested: p.is_some_and(|p| navigator::stop_requested(&p.vehicle)),
                 time: self.clock.time,
                 weekday: self.clock.weekday(),
+                date: self.clock.date_code(),
                 language: &self.settings.language,
                 screen: if vr_active {
                     (1440.0, 1440.0)
@@ -341,6 +403,7 @@ impl App {
                 dt,
                 backdrop: ui::backdrop(settings.ui_opacity),
                 navigator: self.menus.navigator.as_ref().and_then(|n| n.screen_rect()),
+                dock: self.menus.navigator.as_ref().and_then(|n| n.dock_slot).map(|(r, scale, placed, frame)| crate::plugin_ui::Dock { width: r[2], room: r[3], scale, at: placed.then(|| glam::Vec2::new(r[0], r[1])), frame }),
             };
             let mut state = plugin_ui.borrow_mut();
             self.integrations.plugin_panels.frame(r, scene, &mut state, &frame);
@@ -358,9 +421,10 @@ impl App {
         plugin_focus: bool,
         notes: &[String],
         tooltip: Option<String>,
-        menu_lines: Vec<(&'static str, &'static str)>,
+        menu_lines: Vec<crate::app_impl::MenuLine>,
         menu_tabs: Option<(Vec<String>, usize)>,
     ) {
+        let menu_lines: Vec<(&str, &str)> = menu_lines.iter().map(|(id, label, _)| (*id, label.as_ref())).collect();
         // (the steering cross: before the renderer and the scene are borrowed)
         let steer_cross = self.steer_cross_point();
         self.refresh_perf_overlay();
@@ -375,12 +439,19 @@ impl App {
                 lines: &self.net.remotes.chat.lines,
                 typing: self.net.remotes.chat.typing.as_deref(),
                 error: self.net.remotes.chat.error(),
+                open_key: self
+                    .input
+                    .game_keys
+                    .iter()
+                    .find(|b| b.action.eq_ignore_ascii_case("chat_open"))
+                    .map(|b| (b.scan_code != 0).then(|| crate::keys::key_name(b.scan_code as i64, b.modifier as i64)))
+                    .unwrap_or_else(|| Some("/".into())),
             });
             ui.chat.hidden = self.net.remotes.chat.hidden;
             let mut tags = if self.settings.name_tags {
                 let voice = self.sound.voice.as_ref();
-                let speaks = |name: &str, id: u32| voice.is_some_and(|v| v.speaks(name, id));
-                let on_radio = |name: &str, id: u32| voice.is_some_and(|v| v.on_radio(name, id));
+                let speaks = |_name: &str, id: u32| voice.is_some_and(|v| v.speaks(id).is_some());
+                let on_radio = |_name: &str, id: u32| voice.is_some_and(|v| v.speaks(id) == Some(omsi_voice::Channel::Radio));
                 let rig = (self.settings.triple.enabled
                     && !self.settings.vr_requested())
                 .then(|| {
@@ -442,10 +513,34 @@ impl App {
             let menu_disabled: &[&str] = &[];
             let (menu_kind, menu_head, menu_preview) = crate::game_lists::menu_extras(self.menus.list_kind.as_ref(), self.menus.admin_list.as_deref(), chooser_sel, self.session.schedule.as_ref().or(self.session.timetable_book.as_ref()), self.clock.time);
             crate::telemetry::publish(self.player.as_ref(), self.session.duty.as_ref(), self.session.humans.as_ref(), self.paused, self.session.schedule.as_ref(), self.session.traffic.as_ref());
+            let mz_view = (self.settings.milezero && self.menus.game_menu.is_none()).then(|| {
+                let m = &self.sound.milezero;
+                let song = m.song().unwrap_or_default();
+                let (cx, cy) = self.input.cursor;
+                let over = ui.mz.rect.is_some_and(|q| cx >= q[0] && cx < q[2] && cy >= q[1] && cy < q[3]);
+                ui::MzView {
+                    title: song.title,
+                    artist: song.artist,
+                    dj: song.dj,
+                    duration: song.duration,
+                    light: self.menus.navigator.as_ref().map_or(self.settings.nav_light, |n| n.light),
+                    art: song.cover,
+                    elapsed: m.elapsed(),
+                    playing: m.is_playing(),
+                    loading: m.loading(),
+                    quality: m.quality(),
+                    typing: m.typing.clone(),
+                    status: m.request_status(),
+                    hover: over || m.typing.is_some(),
+                }
+            });
+            let mz_gap = if mz_view.is_some() { ui.mz.extent } else { 0.0 };
             let frame = ui::Frame {
                 scale,
                 ui_scale: ui::size_factor(h, scale, self.settings.ui_scale, self.settings.ui_scale_window),
                 opacity: ui::backdrop(self.settings.ui_opacity),
+                light: self.settings.nav_light,
+                sizes: self.settings.hud_sizes,
                 width: w,
                 height: h,
                 cursor: (self.input.cursor.0 - hud[0], self.input.cursor.1),
@@ -492,13 +587,19 @@ impl App {
                 chat_size: self.settings.chat_size,
                 tags,
                 notices: &self.menus.notices,
-                notice_anchor: self.menus.navigator.as_ref().and_then(|n| n.screen_rect()),
+                notice_anchor: self.menus.navigator.as_ref().and_then(|n| n.screen_rect()).map(|mut a| {
+                    // (the MileZero card stands between the navigator and the notices)
+                    if a[1] > h * 0.5 { a[1] -= mz_gap } else { a[3] += mz_gap }
+                    a
+                }),
+                milezero: mz_view.as_ref(),
+                nav_rect: self.menus.navigator.as_ref().and_then(|n| n.screen_rect()),
                         };
                         let editor_visible = self.menus.editor.is_some() && self.menus.game_menu.is_none() && !vr_active;
                         let editor_hud = self.menus.editor.as_ref().filter(|_| editor_visible).map(|ed| (
                             ed.spline_mode, ed.terrain.active,
                             self.world.as_ref().map(|world| ed.describe(world)).unwrap_or_default(),
-                            ed.catalog.is_none() && ed.tile_window.is_none() && ed.text_window.is_none() && ed.junction_window.is_none() && ed.roadside_window.is_none() && ed.sidewalk_window.is_none() && ed.construction_window.is_none() && ed.traffic_window.is_none() && ed.placing_asset.is_none() && !ed.splines.connection_active(),
+                            ed.route_window.is_none() && ed.catalog.is_none() && ed.tile_window.is_none() && ed.text_window.is_none() && ed.junction_window.is_none() && ed.roadside_window.is_none() && ed.sidewalk_window.is_none() && ed.construction_window.is_none() && ed.traffic_window.is_none() && ed.placing_asset.is_none() && !ed.splines.connection_active(),
                         ));
                         ui.draw_editor_hud(r, scene, editor_hud.as_ref().map(|(mode, terrain, description, expand)|
                             (*mode, *terrain, description.as_str(), *expand)), scale * frame.ui_scale, hud, self.input.cursor);
@@ -508,12 +609,12 @@ impl App {
                             .filter(|_| self.menus.game_menu.is_none() && !vr_active);
                         let replace = self.menus.editor.as_ref().is_some_and(|ed| ed.spline_mode && ed.splines.connection_can_replace());
                         let tools = self.menus.editor.as_ref().filter(|ed| editor_visible && ed.spline_mode && !ed.terrain.active
-                            && ed.catalog.is_none() && ed.tile_window.is_none() && ed.text_window.is_none() && ed.junction_window.is_none() && ed.roadside_window.is_none() && ed.sidewalk_window.is_none() && ed.construction_window.is_none() && ed.traffic_window.is_none() && ed.placing_asset.is_none() && !ed.splines.connection_active())
+                            && ed.route_window.is_none() && ed.catalog.is_none() && ed.tile_window.is_none() && ed.text_window.is_none() && ed.junction_window.is_none() && ed.roadside_window.is_none() && ed.sidewalk_window.is_none() && ed.construction_window.is_none() && ed.traffic_window.is_none() && ed.placing_asset.is_none() && !ed.splines.connection_active())
                             .map(|ed| (ed.splines.selected.is_some(), ed.splines.selection_filter));
-                        let dock = self.menus.editor.as_ref().filter(|ed| editor_visible && ed.catalog.is_none() && ed.tile_window.is_none() && ed.text_window.is_none() && ed.junction_window.is_none() && ed.roadside_window.is_none() && ed.sidewalk_window.is_none() && ed.construction_window.is_none() && ed.traffic_window.is_none())
+                        let dock = self.menus.editor.as_ref().filter(|ed| editor_visible && ed.route_window.is_none() && ed.catalog.is_none() && ed.tile_window.is_none() && ed.text_window.is_none() && ed.junction_window.is_none() && ed.roadside_window.is_none() && ed.sidewalk_window.is_none() && ed.construction_window.is_none() && ed.traffic_window.is_none())
                             .map(|ed| (ed.spline_mode, ed.placing_asset.is_none() && !ed.splines.connection_active()));
                         let objects=self.menus.editor.as_ref().filter(|ed|editor_visible && !ed.spline_mode && !ed.terrain.active
-                            && ed.catalog.is_none() && ed.tile_window.is_none() && ed.text_window.is_none() && ed.junction_window.is_none() && ed.roadside_window.is_none() && ed.sidewalk_window.is_none() && ed.construction_window.is_none() && ed.traffic_window.is_none()).map(|ed|(
+                            && ed.route_window.is_none() && ed.catalog.is_none() && ed.tile_window.is_none() && ed.text_window.is_none() && ed.junction_window.is_none() && ed.roadside_window.is_none() && ed.sidewalk_window.is_none() && ed.construction_window.is_none() && ed.traffic_window.is_none()).map(|ed|(
                                 self.world.as_ref().is_some_and(|w|ed.can_copy(w)),ed.clipboard.is_some(),ed.last_object.is_some(),
                                 ed.repeat_objects,ed.placing_asset.is_some()));
                         if self.menus.editor.as_ref().is_none_or(|ed| ed.roadside_window.is_none() && ed.sidewalk_window.is_none() && ed.construction_window.is_none() && ed.traffic_window.is_none()) {
@@ -524,6 +625,7 @@ impl App {
                         }
                         let dimensions=self.menus.editor.as_mut().filter(|_|editor_visible);
                         ui.draw_spline_dimensions(r,scene,dimensions,scale*frame.ui_scale,hud,self.input.cursor);
+                        ui.draw_route_editor(r,scene,self.menus.editor.as_mut().filter(|_|editor_visible),scale*frame.ui_scale,hud,self.input.cursor);
                         let construction=self.menus.editor.as_mut().filter(|e|e.catalog.is_none()).filter(|_|editor_visible);
                         ui.draw_construction_window(r,scene,construction,scale*frame.ui_scale,hud,self.input.cursor);
                         let sidewalk=self.menus.editor.as_mut().filter(|e|e.catalog.is_none()).and_then(|e|e.sidewalk_window.as_mut()).filter(|_|editor_visible);
@@ -548,6 +650,10 @@ impl App {
                     }
     }
 }
+
+/// How long (seconds of play) a `$msg` of the player's bus scripts stays a note after the
+/// script last said it.
+const SCRIPT_MESSAGE_SECS: f64 = 4.0;
 
 /// The kind of card a message of the game's is (`App::service_msg`): what went wrong is an
 /// alert, a key to press is to do, a slow driver a warning, a change made is done, the

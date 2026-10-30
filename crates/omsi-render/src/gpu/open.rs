@@ -117,7 +117,9 @@ impl Renderer {
         };
         // a small or shared graphics chip gets a lighter picture (see `lighter_picture`)
         GL_BACKEND.store(info.backend == wgpu::Backend::Gl, std::sync::atomic::Ordering::Relaxed);
-        let (options, lighter) = gpu_memory::lighter_picture(&info, vram, options);
+        let options = gpu_memory::lighter_picture(&info, vram, options);
+        let most = gpu_memory::ceiling(&info, vram);
+        *CEILING.lock().unwrap_or_else(|e| e.into_inner()) = Some(if intel_vulkan_safe { gpu_memory::Ceiling { msaa: 1, ssao: false, shadow_size: most.shadow_size.min(2048), ..most } } else { most });
         let shadow_size = options
             .shadow_size
             .clamp(512, if intel_vulkan_safe { 2048 } else { 8192 });
@@ -214,6 +216,8 @@ impl Renderer {
         // the driver's compiled pipelines kept for the next start (Vulkan, OpenGL)
         if !intel_vulkan_safe {
             required_features |= pipeline_cache::wanted(&adapter);
+            // (the vehicles' blank display textures cleared on the GPU, `add_blank_texture`)
+            required_features |= adapter.features() & wgpu::Features::CLEAR_TEXTURE;
         }
         // Enhanced+: hardware ray queries where the device has them (Apple silicon from the
         // M3/A17 on, RTX and RDNA 2 cards and newer through Vulkan and Direct3D 12 - with DXC,
@@ -237,11 +241,15 @@ impl Renderer {
                 label: Some("omsi"),
                 required_features,
                 required_limits: limits,
-                // (a card of up to 4 GB gets the allocator's small blocks: the large ones
-                // left hundreds of MB reserved and unused, and 2 GB cards lost the device to
-                // "Out of memory" in the first frames with the textures well under budget,
-                // #332, #295)
-                memory_hints: if lighter || vram.is_some_and(|v| v <= 4200) { wgpu::MemoryHints::MemoryUsage } else { wgpu::MemoryHints::Performance },
+                // (the allocator's small blocks, 8-64 MB, for every card: a block goes back
+                // to the driver only once it is empty, and with the scenery's thousands of
+                // textures coming and going a 128-256 MB block of the performance hint hardly
+                // ever was. They left hundreds of MB reserved and unused, 2 GB cards lost the
+                // device to "Out of memory" in the first frames with the textures well under
+                // budget, #332, #295, and a 12 GB card held 13 GB in 63 blocks for 8 GB of
+                // textures and buffers and paged, #2295. A few hundred blocks are well under
+                // a driver's allocation limit, NVIDIA's 4096.)
+                memory_hints: wgpu::MemoryHints::MemoryUsage,
                 // (the ray queries are still an experimental feature of wgpu)
                 experimental_features: if ray_query { unsafe { wgpu::ExperimentalFeatures::enabled() } } else { wgpu::ExperimentalFeatures::disabled() },
                 ..Default::default()
@@ -277,6 +285,9 @@ impl Renderer {
             .filter(|&n| n <= wanted)
             .find(|&n| supported(n))
             .unwrap_or(1);
+        if let Some(c) = CEILING.lock().unwrap_or_else(|e| e.into_inner()).as_mut() {
+            c.sample_counts = [1, 2, 4, 8].into_iter().filter(|&n| supported(n)).fold(0, |m, n| m | n);
+        }
         if msaa != wanted {
             log::warn!("{}x MSAA is not supported by {} (the device takes {:?} samples for {:?}, {:?} for the HDR target, {:?} for depth); using {}x", wanted, info.name, flags_of(format).supported_sample_counts(), format, flags_of(targets[1]).supported_sample_counts(), flags_of(DEPTH_FORMAT).supported_sample_counts(), msaa);
         }
@@ -381,6 +392,12 @@ impl Opened {
                 log::warn!("{}: the graphics device was lost while the chosen MSAA was tried again ({why}); keeping to what worked before", info.name);
                 return Box::pin(Renderer::new_on(adapter, None, Some(format), asked_options)).await;
             }
+            if basic_pipelines() && rainfall_pipeline() {
+                log::warn!("{}: the graphics device was lost while the basic pipelines were made ({why}); opening it again without the rainfall", info.name);
+                RAINFALL_LEFT_OUT.store(true, std::sync::atomic::Ordering::Relaxed);
+                fallback_store(&name, Some((1, true)));
+                return Box::pin(Renderer::new_on(adapter, None, Some(format), asked_options)).await;
+            }
             if basic_pipelines() {
                 return Err(anyhow!("the graphics device was lost while the pipelines were made: {why}"));
             }
@@ -475,7 +492,11 @@ impl Renderer {
             match errors.iter().flatten().chain(&caught).next() {
                 None => {
                     if msaa != options.msaa || basic {
-                        log::warn!("{}: drawing with {}x MSAA{}", info.name, msaa, if basic { ", without the snowfall, the lamps in the fog and the street lamps' shadows" } else { "" });
+                        log::warn!("{}: drawing with {}x MSAA{}", info.name, msaa, match (basic, rainfall_pipeline()) {
+                            (true, true) => ", without the snowfall, the lamps in the fog and the street lamps' shadows",
+                            (true, false) => ", without the snowfall, the rainfall, the lamps in the fog and the street lamps' shadows",
+                            _ => "",
+                        });
                     }
                     // (a fallback that worked is the first try next time; the full set
                     // working again forgets it)
@@ -513,25 +534,36 @@ impl Renderer {
         }
         let scene = scene::SceneBase::new(&device, leave_out_enhanced);
         let hdr_format = wgpu::TextureFormat::Rgba16Float;
-        let shadows = shadows::build(&device, &scene, shadow_size);
+        let shadows = shadows::build(&device, &scene, shadow_size, !leave_out_enhanced && !options.no_enhanced, options.light_shadows >= 2);
         let defaults = defaults::build(&device, &queue, options.anisotropy);
         let (coronas, corona_texture) = coronas::Coronas::new(&device, &queue, &scene);
-        let snow = coronas::Snow::new(&device, &scene.camera_layout);
+        let precip = crate::passes::PrecipMap::new(&device);
+        let snow = coronas::Precip::snow(&device, &scene.camera_layout, &precip.view);
+        let rain = coronas::Precip::rain(&device, &scene.camera_layout, &precip.view);
         drop(corona_texture);
         let sky = sky::SkyBase::new(&device, &queue, &scene.camera_layout, !leave_out_enhanced);
-        let passes = passes::PassKit { device: &device, scene: &scene, coronas: &coronas, snow: &snow, sky: &sky, msaa }
-            .build(format, hdr_format, leave_out_enhanced);
+        let sky_pipelines = sky.pipeline_base();
+        let kit = passes::PassKit { device: &device, scene: &scene, coronas: &coronas, snow: &snow, rain: &rain, sky: &sky_pipelines, msaa };
+        let eye_pipeline_kit = (!leave_out_enhanced && options.ray_tracing).then(|| passes::EyePipelineKit::new(&kit));
+        let passes = kit.build(format, hdr_format, leave_out_enhanced);
         let (sky_sampler, sky_mesh) = sky::dome(&device, &queue);
         let overlays = overlays::Overlays::new(&device, format, msaa);
         let gl = GL_BACKEND.load(std::sync::atomic::Ordering::Relaxed);
         let ssao = ssao::ssao(&device, gl);
         let fog_lamps = ssao::fog_lamps(&device, &scene.camera_layout, hdr_format, gl);
         let prepass = scene::prepass(&device, &scene, msaa, !leave_out_enhanced);
+        let ground_pipelines = (!gl && !leave_out_enhanced && !sixteen_texture_units()).then(|| std::array::from_fn(|i| scene.ground_pipeline_at(&device, i)));
         let mip = mip::build(&device);
         let post = post::build(&device, format, hdr_format, &defaults.white_texture);
         let enhanced = enhanced::build(&device, &queue, hdr_format, &defaults.camera_buf, &sky, !leave_out_enhanced);
         let (overlay_pipeline_1x, xr_ui_pipeline) = overlays.single_sampled(&device, format);
-        let upscale = upscale::build(&device, format);
+        let upscale = upscale::build(&device, format, options.fsr1 || crate::fsr1_enabled());
+        // (asked for at the start and refused: not tried again from the menu)
+        let fsr_refused = (options.fsr1 || crate::fsr1_enabled()) && upscale.fsr.is_none();
+        // (OMSI_FSR1: FSR 1 from the start whatever the settings say - the menu can still turn
+        // it off; what the settings asked for is kept, so that only a change of theirs does)
+        let upscaler_asked = (options.fsr1, options.fsr_sharpness, options.render_scale);
+        let options = RenderOptions { fsr1: (options.fsr1 || crate::fsr1_enabled()) && upscale.fsr.is_some(), ..options };
         let gpu_timers = [GpuTimers::new(&device), GpuTimers::new(&device)];
         // GLES cannot reliably read the depth buffer (the same limitation as SSAO).
         let puddles = (!gl && !passes.leave_out_enhanced).then(|| {
@@ -548,11 +580,18 @@ impl Renderer {
                 evicted_at: std::time::Instant::now(),
                 hdr_targets: HashMap::new(),
                 ao: None,
+                ground: None,
                 depth: None,
                 msaa_targets: HashMap::new(),
             },
             scale: Upscale {
                 upscale_pipeline: upscale.upscale_pipeline,
+                fsr: upscale.fsr,
+                fsr_target: std::cell::RefCell::new(Vec::new()),
+                fsr_refused,
+                upscaler_asked,
+                fsr_raw_bg: Default::default(),
+                fsr_mip_bias_off: Default::default(),
                 copy_pipeline: upscale.copy_pipeline,
                 panel_pipeline: upscale.panel_pipeline,
                 upscale_layout: upscale.layout,
@@ -561,6 +600,7 @@ impl Renderer {
             },
             sky: SkyRes {
                 sky_lut: enhanced.sky_lut,
+                cloud_field: FieldState::default(),
                 sky_lut_view: enhanced.sky_lut_view,
                 sky_state: None,
                 city_glow: None,
@@ -587,6 +627,8 @@ impl Renderer {
                 corona_bind_group: coronas.bind_group,
                 snow_buf: snow.buf,
                 snow_bind_group: snow.bind_group,
+                rain_buf: rain.buf,
+                rain_bind_group: rain.bind_group,
                 smoke_bind_group: coronas.smoke_bind_group,
                 corona_textures: Vec::new(),
                 pictures_taken: (0, 0),
@@ -611,21 +653,31 @@ impl Renderer {
                 view_lamps: None,
                 exposure: None,
                 enh_last: bytemuck::Zeroable::zeroed(),
+                lightning: crate::lighting::Lightning::new(7),
+                flash: Default::default(),
+                bounce_prev: None,
+                bounce_reproj: (Mat4::ZERO.to_cols_array_2d(), 0.0),
             },
             shadows: ShadowRes {
                 shadow_far_cache: std::cell::Cell::new((Mat4::IDENTITY, 0, DVec3::ZERO, Vec3::ZERO)),
                 shadow_near_cache: std::cell::Cell::new((Mat4::IDENTITY, 0, DVec3::ZERO, Vec3::ZERO)),
+                shadow_close_cache: std::cell::Cell::new((Mat4::IDENTITY, DVec3::ZERO, Vec3::ZERO)),
                 xr_shadow_cache: std::cell::Cell::new(None),
                 shadow_clear_pipeline: shadows.clear_pipeline,
                 lamp_tiles: Default::default(),
+                cabin_motion: Default::default(),
+                precip,
                 shadow_view: shadows.view,
                 shadow_view_far: shadows.view_far,
+                lamp_atlas: shadows.lamp_atlas,
+                lamp_matrices: std::cell::RefCell::new(vec![Mat4::ZERO; LAMP_SHADOWS]),
                 shadow_sampler: shadows.sampler,
                 shadow_layout: scene.shadow_layout,
                 shadow_pipelines: shadows.pipelines,
             },
             history: ViewHistory {
                 triple_culling: Default::default(),
+                xr_culling: Default::default(),
                 flicker: std::cell::RefCell::new(HashMap::new()),
                 main_bundles: Default::default(),
                 mirror_bundles: Default::default(),
@@ -642,6 +694,7 @@ impl Renderer {
             },
             _device_poller: DevicePoller::start(&device),
             mip_pipeline: mip.pipeline,
+            mip_text_pipeline: mip.text_pipeline,
             mip_layout: mip.layout,
             mip_sampler: mip.sampler,
             clamp_sampler: defaults.clamp_sampler,
@@ -668,8 +721,13 @@ impl Renderer {
             ao_buf: ssao.buf,
             prepass_pipelines: prepass.pipelines,
             prepass_msaa_pipelines: prepass.msaa_pipelines,
+            prepass_eye_pipelines: prepass.eye_pipelines,
+            ground_pipelines,
+            ground_bound: std::cell::Cell::new(false),
             ssao_pipeline: ssao.ssao_pipeline,
             blur_pipeline: ssao.blur_pipeline,
+            plain_ssao_pipeline: ssao.plain_ssao_pipeline,
+            plain_blur_pipeline: ssao.plain_blur_pipeline,
             device,
             queue,
             adapter_name,
@@ -677,6 +735,8 @@ impl Renderer {
             material_layout: scene.material_layout,
             pass: passes.pass,
             hdr_pass: passes.hdr_pass,
+            hdr_eye_pass: passes.hdr_eye_pass,
+            eye_pipeline_kit,
             reflection_pass: passes.reflection_pass,
             overlay_pipeline: overlays.pipeline,
             overlay_layout: overlays.layout,
@@ -691,6 +751,7 @@ impl Renderer {
             env_heading: Default::default(),
             blend_by_origin: false,
             gpu_timers,
+            pictures: Default::default(),
             stats: Default::default(),
             counts: Default::default(),
             frame_draws: (0, 0),

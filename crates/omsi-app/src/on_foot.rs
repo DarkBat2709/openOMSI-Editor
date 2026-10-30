@@ -11,6 +11,9 @@
 //! feet on the ground, turning, sitting down on a seat and getting up are the passengers'
 //! own, eased as theirs are; the camera eases into each new view instead of cutting.
 
+mod door_requests;
+mod ground;
+
 use crate::humans::{AvatarCmd, BusId, Humans};
 use crate::App;
 use glam::{DVec2, DVec3};
@@ -23,10 +26,15 @@ use winit::keyboard::KeyCode;
 pub(crate) const AVATAR_KEY: u32 = 0;
 pub(crate) const REMOTE_KEY: u32 = 1_000_000;
 
-/// Walking and running pace (m/s), how quickly the walker gets to it (1/s), jump speed.
-const WALK: f64 = 1.45;
-const RUN: f64 = 4.3;
-const ACCEL: f64 = 7.0;
+/// Walking and sprinting pace (m/s: a walk is 1.4, a hurried walk 1.8, a jog 3 and a sprint
+/// 4 or more), how quickly the walker gets up to it and how quickly it stops (m/s^2: a
+/// person needs a second to reach a run and a few steps to stop, they do not start and stop
+/// at once), steering in the air (1/s). `OMSI_FOOT_WALK` and `OMSI_FOOT_RUN` set the paces.
+const WALK: f64 = 1.4;
+const RUN: f64 = 3.8;
+const ACCEL: f64 = 3.6;
+const BRAKE: f64 = 6.5;
+const AIR_STEER: f64 = 1.0;
 const JUMP: f64 = 4.0;
 /// How far the eyes go down kneeling (m: from a standing person's 1.6 to about a metre), and
 /// the shuffle on the knees (m/s).
@@ -36,6 +44,20 @@ const KNEEL_WALK: f64 = 0.5;
 const DOOR_REACH: f64 = 3.2;
 /// The walker's radius against walls and vehicles (m).
 const RADIUS: f64 = 0.28;
+/// The highest step the feet take (m).
+const STEP: f64 = 0.45;
+/// The steepest ground walked up as ground, as a gradient (tan 50 degrees); anything
+/// steeper is climbed no more than a step above the walker's last footing.
+const MAX_WALK_GRADIENT: f64 = 1.191_753_6;
+/// The gradient is taken between points this far either side (m), so that a kerb's edge
+/// reads as a step and not as a wall.
+const GRADIENT_HALF_SPAN: f64 = 0.25;
+/// How far (m) a people's path may be above or below the walker's feet and still lead
+/// them: a staircase's step, not the street under a bridge.
+const PATH_REACH: f64 = 1.0;
+/// How near (m) the step must be to the place a people's path crosses a collision box for
+/// the box to be no wall there: the gate, not the fence.
+const GATE_REACH: f64 = 1.5;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum FootCam {
@@ -86,6 +108,14 @@ pub(crate) struct OnFoot {
     pub kneel: bool,
     /// How far down the eyes are on their way (0 standing .. 1 kneeling).
     pub crouch: f32,
+    pub door_request: Option<omsi_sim::people::DoorRequest>,
+    pub door_request_send: f32,
+    /// Height of the last ground the walker stood on that was not too steep to walk; None
+    /// out of a bus or the cab until the ground stepped onto gives it.
+    pub footing: Option<f64>,
+    /// The bus the walker rides in and its heading when last looked at: the view turns with
+    /// the bus by what it turned since (#3093), the walker's own look on top of that.
+    pub bus_turn: Option<(BusId, f64)>,
 }
 
 /// What a walk leads to once walked.
@@ -187,10 +217,73 @@ impl OnFoot {
         if self.kneel {
             KNEEL_WALK
         } else if run {
-            RUN
+            omsi_cfg::flags::OMSI_FOOT_RUN.parse::<f64>().filter(|v| v.is_finite()).map_or(RUN, |v| v.clamp(1.0, 12.0))
         } else {
-            WALK
+            omsi_cfg::flags::OMSI_FOOT_WALK.parse::<f64>().filter(|v| v.is_finite()).map_or(WALK, |v| v.clamp(0.3, 6.0))
         }
+    }
+}
+
+/// The ground's gradient at `at` (rise over run, any direction), from the heights
+/// `height_at` finds `GRADIENT_HALF_SPAN` east, west, north and south of it; where it finds
+/// none, the height `at` has (`here`) stands in.
+fn ground_gradient(height_at: impl Fn(f64, f64) -> Option<f64>, at: DVec2, here: f64) -> f64 {
+    let span = GRADIENT_HALF_SPAN;
+    let [east, west, north, south] = [(span, 0.0), (-span, 0.0), (0.0, span), (0.0, -span)].map(|(dx, dy)| height_at(at.x + dx, at.y + dy).unwrap_or(here));
+    (east - west).hypot(north - south) / (2.0 * span)
+}
+
+/// Ground at height `g` with gradient `gradient` is too steep for the feet when it is
+/// steeper than walkable ground and higher than a step over the last `footing`.
+fn too_steep_to_climb(g: f64, gradient: f64, footing: f64) -> bool {
+    gradient > MAX_WALK_GRADIENT && g > footing + STEP
+}
+
+/// The view turns with the bus the walker rides in, by what the bus turned since the last
+/// look; the walker's own look stays an offset from the bus's heading.
+fn turn_with_bus(f: &mut OnFoot, heading: Option<(BusId, f64)>) {
+    if let (Some((b, h)), Some((was, h0))) = (heading, f.bus_turn) {
+        if b == was {
+            let d = wrap(h - h0) as f32;
+            f.yaw = (f.yaw + d).rem_euclid(360.0);
+            f.eye_yaw = (f.eye_yaw + d).rem_euclid(360.0);
+        }
+    }
+    f.bus_turn = heading;
+}
+
+/// What the eyes' glide is still behind by (`behind`) is kept while it lasts and let go of
+/// after.
+fn keep_lag(f: &mut OnFoot, settling: bool, behind: DVec3, dt: f64) {
+    if settling {
+        f.lag = behind;
+    } else {
+        f.lag *= (-dt * 9.0).exp();
+        if f.lag.length() < 0.001 {
+            f.lag = DVec3::ZERO;
+        }
+    }
+}
+
+/// The walker's velocity a step nearer `want`: at a limited acceleration (the steps a person
+/// takes to get going and to stop, the same in any direction, so that a turn is a curve
+/// and not a snap), less steering still in the air.
+fn approach_velocity(vel: DVec2, want: DVec2, dt: f64, grounded: bool) -> DVec2 {
+    let dv = want - vel;
+    let len = dv.length();
+    if len < 1e-9 {
+        return want;
+    }
+    if !grounded {
+        return vel + dv * (1.0 - (-dt * AIR_STEER).exp());
+    }
+    // (slowing down, or turning against the way one goes, takes the stronger push)
+    let rate = if want.length() < vel.length() - 1e-6 || want.dot(vel) < 0.0 { BRAKE } else { ACCEL };
+    let step = rate * dt;
+    if len <= step {
+        want
+    } else {
+        vel + dv / len * step
     }
 }
 
@@ -370,6 +463,10 @@ impl App {
             arrive: None,
             kneel: false,
             crouch: 0.0,
+            door_request: None,
+            door_request_send: 0.0,
+            footing: None,
+            bus_turn: None,
         });
         self.view = "foot".into();
         self.service_msg = Some(("On foot: W A S D walk, Shift runs, C kneels, F4 free camera / F1 back, G sits down (by the driver's place: back at the wheel), Ctrl+Shift+G steps out of the bus".into(), 7.0));
@@ -466,7 +563,7 @@ impl App {
         }
         let name = format!("{} {}", p.vehicle.ty.def.manufacturer, p.vehicle.ty.def.type_name);
         self.start_on_foot(stand.0, stand.1);
-        self.service_msg = Some((format!("{} removed: you are on foot (Esc menu: Place a vehicle, or G at a bus's driver's door)", name.trim()), 6.0));
+        self.service_msg = Some((omsi_ui::i18n::tr_fill("{} removed: you are on foot (Esc menu: Place a vehicle, or G at a bus's driver's door)", &[("{}", &name.trim())]), 6.0));
     }
 
     /// On foot at `pos` without a bus of one's own (the vehicle removed, or the session
@@ -500,6 +597,10 @@ impl App {
             arrive: None,
             kneel: false,
             crouch: 0.0,
+            door_request: None,
+            door_request_send: 0.0,
+            footing: None,
+            bus_turn: None,
         });
         self.view = "foot".into();
     }
@@ -941,7 +1042,7 @@ pub(crate) fn take_placed(
     if let (Some(cam), Some(p)) = (view.camera.as_ref(), player.player.as_ref()) {
         *view.camera = Some(p.camera("driver", cam));
     }
-    *ui.service_msg = Some((format!("Now driving: {}", name.trim()), 4.0));
+    *ui.service_msg = Some((omsi_ui::i18n::tr_fill("Now driving: {name}", &[("{name}", &name.trim())]), 4.0));
 }
 
 /// Back at the wheel of the own bus.
@@ -983,7 +1084,12 @@ pub(crate) fn tick(cx: &mut OnFootCx, dt: f32) {
     let Some(mut f) = cx.people.on_foot.take() else { return };
     let dt64 = dt as f64;
     f.ease_crouch(dt);
-    let key = |k: KeyCode| cx.input.keys.contains(&k);
+    let shift = cx.input.keys.contains(&KeyCode::ShiftLeft) || cx.input.keys.contains(&KeyCode::ShiftRight);
+    let ctrl = cx.input.keys.contains(&KeyCode::ControlLeft) || cx.input.keys.contains(&KeyCode::ControlRight);
+    let alt = cx.input.keys.contains(&KeyCode::AltLeft) || cx.input.keys.contains(&KeyCode::AltRight);
+    let modifier = omsi_content::input::chord(shift, ctrl, alt);
+    let key = |k: KeyCode| cx.input.keys.contains(&k) && !omsi_input::keys::dik_code(k).is_some_and(|scan|
+        cx.input.game_keys.iter().any(|b| b.action == "pax_door_request" && crate::input_script::binding_is_key(b, k, scan, modifier & !omsi_input::keys::own_modifier_bit(k))));
     if key(KeyCode::ArrowLeft) {
         f.yaw -= 90.0 * dt;
     }
@@ -1018,6 +1124,7 @@ pub(crate) fn tick(cx: &mut OnFootCx, dt: f32) {
         f.seat = None;
         f.lift = 0.0;
         f.vz = 0.0;
+        f.footing = None;
         f.pos = tr.from.lerp(tr.to, k);
         f.vel = (tr.to - tr.from).truncate() / tr.dur as f64;
         if f.vel.length() > 0.1 {
@@ -1055,9 +1162,7 @@ pub(crate) fn tick(cx: &mut OnFootCx, dt: f32) {
         }
         let run = key(KeyCode::ShiftLeft) || key(KeyCode::ShiftRight);
         let want = dir.normalize_or_zero() * f.pace(run);
-        // (in the air only a little steering)
-        let k = 1.0 - (-dt64 * if f.grounded() { ACCEL } else { 1.0 }).exp();
-        f.vel += (want - f.vel) * k;
+        f.vel = approach_velocity(f.vel, want, dt64, f.grounded());
         if f.vel.length() < 0.02 && want == DVec2::ZERO {
             f.vel = DVec2::ZERO;
         }
@@ -1123,37 +1228,27 @@ pub(crate) fn tick(cx: &mut OnFootCx, dt: f32) {
             let z = f.pos.z;
             let probe = Obb { center: next, half: DVec2::splat(3.0), heading: 0.0, z0: z - 1.0, z1: z + 2.5, velocity: DVec2::ZERO, mass: 0.0, pole: None, id: -1 };
             let walls = w.data.peek().lists.collision.obstacles_near(&probe);
-            let mut boxes: Vec<Obb> = walls.into_iter().filter(|o| o.z0 < z + 1.6 + f.lift && o.z1 > z + 0.45 + f.lift).collect();
+            // The ways the map gives the passengers are the walker's too (a gate in a fence, a
+            // doorway, a staircase, a ramp): a wall a people's path goes through is no wall
+            // there, and the path's height is the floor where the ground says otherwise.
+            let net = cx.traffic.traffic.as_ref().map(|t| &t.net);
+            // (only at the crossing next to the step: a long fence with a gate at its far end
+            // stays a wall along the rest of its length)
+            let mut boxes: Vec<Obb> = walls
+                .into_iter()
+                .filter(|o| o.z0 < z + 1.6 + f.lift && o.z1 > z + 0.45 + f.lift)
+                .filter(|o| {
+                    let (s, c) = o.heading.sin_cos();
+                    !net.is_some_and(|n| n.path_through_box(o.center, o.half + DVec2::splat(RADIUS), DVec2::new(c, -s), DVec2::new(s, c), z + f.lift, PATH_REACH, next, GATE_REACH))
+                })
+                .collect();
             boxes.extend(vehicle_boxes(next, 20.0, cx.player.player.as_ref(), cx.player.placed, cx.traffic.traffic.as_ref(), cx.net));
             for _ in 0..2 {
                 for o in &boxes {
                     next = push_out(next, o, RADIUS);
                 }
             }
-            match w.walk_height_reach(next.x, next.y, z + f.lift, 1.0) {
-                Some(g) if g - (z + f.lift) > 0.45 => {
-                    // too high a step: stay (and lose the speed into it)
-                    next = f.pos.truncate();
-                    f.vel *= 0.3;
-                }
-                Some(g) => {
-                    let feet = z + f.lift;
-                    if g >= feet - 0.02 || f.grounded() && feet - g < 0.4 {
-                        // on the ground (down a kerb the feet follow it)
-                        f.pos.z = g;
-                        if f.vz <= 0.0 {
-                            f.lift = 0.0;
-                        } else {
-                            f.lift = (feet - g).max(0.0);
-                        }
-                    } else {
-                        // stepped off something high: falling
-                        f.pos.z = g;
-                        f.lift = feet - g;
-                    }
-                }
-                None => {}
-            }
+            ground::settle_on_ground(&mut f, w, net, z, &mut next);
         }
         f.pos.x = next.x;
         f.pos.y = next.y;
@@ -1161,6 +1256,7 @@ pub(crate) fn tick(cx: &mut OnFootCx, dt: f32) {
         if f.inside.is_some() {
             f.vz = 0.0;
             f.lift = 0.0;
+            f.footing = None;
         }
         if f.vz > 0.0 || f.lift > 0.0 {
             f.vz -= 9.81 * dt64;
@@ -1194,6 +1290,11 @@ pub(crate) fn tick(cx: &mut OnFootCx, dt: f32) {
             }
         }
     }
+    // riding, the view is fixed to the bus, not to the world: it turns with the bus (the
+    // walker's own look stays an offset from the bus's heading)
+    let riding = f.seat.map(|s| s.0).or(f.inside.map(|i| i.0));
+    let bus_heading = riding.and_then(|b| cx.people.humans.as_ref().and_then(|h| h.bus_heading(b)).map(|h| (b, h)));
+    turn_with_bus(&mut f, bus_heading);
     // the camera, out of the eyes (the free camera moves by itself)
     if let (Some(cam), false) = (cx.view.camera.as_mut(), free) {
         let eye = body.map(|b| b.2).unwrap_or(f.pos + DVec3::new(0.0, 0.0, 1.62 + f.lift)) + f.eye_drop();
@@ -1204,24 +1305,25 @@ pub(crate) fn tick(cx: &mut OnFootCx, dt: f32) {
         let settling = f.settle > 0.0;
         f.settle = (f.settle - dt).max(0.0);
         let u = (1.0 - f.settle as f64).clamp(0.0, 1.0);
-        let rate = 4.0 + 14.0 * u * u * (3.0 - 2.0 * u);
+        let ease = u * u * (3.0 - 2.0 * u);
+        let rate = 4.0 + 14.0 * ease;
         let k = 1.0 - (-dt64 * rate).exp();
+        // across the ground the eyes follow the head closely; up and down a kerb, a step
+        // or a bus's stair they glide (a third of a second), as eyes do on a person's
+        // stride, so that the picture does not jump with each step the legs take
+        let k_up = 1.0 - (-dt64 * (4.0 + 6.0 * ease)).exp();
         let at = match f.eye {
-            Some(e) if (e - want).length() < 60.0 => e + (want - e) * k,
+            Some(e) if (e - want).length() < 60.0 => {
+                let d = want - e;
+                DVec3::new(e.x + d.x * k, e.y + d.y * k, e.z + d.z * if f.inside.is_some() || f.seat.is_some() { k } else { k_up })
+            }
             _ => want,
         };
         f.eye = Some(at);
         // (what the glide is still behind by is kept while it lasts and let go of after:
         // `foot_after_humans` puts the eyes on the head from then on, and without this
         // the last bit of the way was one jump)
-        if settling {
-            f.lag = at - want;
-        } else {
-            f.lag *= (-dt64 * 9.0).exp();
-            if f.lag.length() < 0.001 {
-                f.lag = DVec3::ZERO;
-            }
-        }
+        keep_lag(&mut f, settling, at - want, dt64);
         let dy = ((want_yaw - f.eye_yaw + 540.0).rem_euclid(360.0)) - 180.0;
         f.eye_yaw = (f.eye_yaw + dy * k as f32).rem_euclid(360.0);
         cam.position = at;
@@ -1354,92 +1456,4 @@ impl App {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn walker() -> OnFoot {
-        OnFoot {
-            pos: DVec3::ZERO,
-            heading: 0.0,
-            vel: DVec2::ZERO,
-            lift: 0.0,
-            vz: 0.0,
-            seat: None,
-            inside: None,
-            cam: FootCam::First,
-            yaw: 0.0,
-            pitch: 0.0,
-            eye: None,
-            eye_yaw: 0.0,
-            lag: DVec3::ZERO,
-            settle: 0.0,
-            view_before: "driver".into(),
-            kind: 0,
-            face_seat: false,
-            transit: None,
-            arrive: None,
-            kneel: false,
-            crouch: 0.0,
-        }
-    }
-
-    /// The bus's sound fades in as the eyes come in through its wall, inside its box (and
-    /// a coupled part's), and not at all from outside.
-    #[test]
-    fn the_cab_is_heard_by_how_far_in_the_eyes_are() {
-        let mut def = omsi_vehicle::Vehicle::default();
-        def.bounding_box = Some([2.5, 12.0, 3.0, 0.0, -0.5, 1.5]);
-        let ty = Arc::new(omsi_sim::VehicleType {
-            def,
-            model: Default::default(),
-            model_dir: Default::default(),
-            program: Arc::new(omsi_script::compile(&Default::default())),
-            meshes: Vec::new(),
-            paint_schemes: Vec::new(),
-            texchanges: Vec::new(),
-            wheel_meshes: Vec::new(),
-            suspension_axles: Vec::new(),
-            missing_packs: Vec::new(),
-            mesh_bounds: Vec::new(),
-            mesh_boxes: Vec::new(),
-        });
-        let mut v = omsi_sim::VehicleInstance::new(ty, omsi_sim::VehicleHost::new(Default::default()));
-        v.position = DVec3::new(1200.0, -300.0, 40.0);
-        v.heading = 30.0;
-        let bb = v.ty.def.bounding_box.expect("a bounding box");
-        let xf = v.world_transform();
-        let at = |x: f32, y: f32| xf.transform_point3(glam::Vec3::new(x, y, bb[5])).as_dvec3();
-        let wall = bb[3] + bb[0] * 0.5;
-        assert_eq!(super::inside_amount(&v, at(wall + 1.0, bb[4])), 0.0, "outside");
-        assert_eq!(super::inside_amount(&v, at(bb[3], bb[4])), 1.0, "the aisle");
-        let half = super::inside_amount(&v, at(wall - super::CAB_SOUND_DEPTH * 0.5, bb[4]));
-        assert!((half - 0.5).abs() < 0.02, "{half}");
-    }
-
-    /// C kneels: the eyes go down to about a metre over a moment (a picture from below,
-    /// #1148), the walk becomes a shuffle, and C again stands up; not on a seat.
-    #[test]
-    fn kneeling_lowers_the_eyes_and_slows_the_walk() {
-        let mut f = walker();
-        assert_eq!(f.eye_drop(), DVec3::ZERO);
-        assert_eq!(f.pace(false), WALK);
-        assert!(f.toggle_kneel() && f.kneel);
-        f.ease_crouch(0.05);
-        assert!(f.crouch > 0.2 && f.crouch < 0.9, "{}", f.crouch);
-        for _ in 0..60 {
-            f.ease_crouch(1.0 / 60.0);
-        }
-        assert_eq!(f.crouch, 1.0);
-        assert_eq!(f.eye_drop().z, -KNEEL_DROP);
-        assert_eq!((f.pace(false), f.pace(true)), (KNEEL_WALK, KNEEL_WALK));
-        assert!(f.toggle_kneel() && !f.kneel);
-        for _ in 0..60 {
-            f.ease_crouch(1.0 / 60.0);
-        }
-        assert_eq!(f.eye_drop(), DVec3::ZERO);
-        assert_eq!(f.pace(true), RUN);
-        // (seated: nothing to kneel on)
-        f.seat = Some((BusId::Player, 3));
-        assert!(!f.toggle_kneel() && !f.kneel);
-    }
-}
+mod tests;

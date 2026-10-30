@@ -3,8 +3,8 @@
 //! OMSI looks a texture up by *file name* in a search order: the object's `texture` folder,
 //! then the global `Texture` folder, trying a same-stem DDS first, the exact name, then other supported
 //! extensions (OMSI's `.dds`, `.bmp`, `.tga`, `.jpg`, `.png`, and what openOMSI reads besides:
-//! `.jpeg`, `.webp`, `.tif`, `.gif`, `.ktx2`, `.ktx`, `.qoi`, `.hdr`, `.exr`, `.pnm`), plus
-//! seasonal (`Texture\Spring` …) and `_LOW` variants. A `<texture>.cfg` sidecar carries
+//! `.jpeg`, `.webp`, `.tif`, `.gif`, `.ktx2`, `.ktx`, `.qoi`, `.hdr`, `.exr`, `.pnm`) - except
+//! for a name that asks for a DDS, which is that DDS or missing - plus seasonal (`Texture\Spring` …) and `_LOW` variants. A `<texture>.cfg` sidecar carries
 //! per-texture flags.
 
 use hashbrown::HashMap;
@@ -73,6 +73,25 @@ pub struct TextureCfg {
 }
 
 impl TextureCfg {
+    /// How the rain wets the surface, as the materials carry it (`MaterialExtra::moisture`,
+    /// the share of the wet road's film and pools the shaders give it): 1 a sealed surface
+    /// water stands on in pools (`[puddles]`), 0.5 one a film of water runs over with a pool
+    /// here and there (`[moisture]` on asphalt, concrete, cobbles), 0 one that only soaks it
+    /// up as everything outside does - `[moisture]` on grass, earth or gravel (`[surface]` 3
+    /// to 5): a lawn holds no film to mirror the lamps in, and the stock grass strips glowed
+    /// like mirrors at night in the rain.
+    pub fn wetness_kind(&self) -> f32 {
+        if self.puddles {
+            1.0
+        } else if self.moisture && self.surface_given && (3..=5).contains(&self.surface) {
+            0.0
+        } else if self.moisture {
+            0.5
+        } else {
+            0.0
+        }
+    }
+
     pub fn load(path: &Path) -> TextureCfg {
         let mut c = TextureCfg::default();
         if let Ok(f) = omsi_cfg::CfgFile::read(path) {
@@ -454,8 +473,12 @@ pub fn trust_generated_dir(dir: &Path) {
 }
 
 fn under_content_root(path: &Path) -> bool {
+    // (or in a sealed mount: another player's bus fetched by its content, whose files the
+    // game put there itself, each checked - its paint's pictures are named in full there,
+    // and taken from this machine's own copy instead they were another bus's)
     !path.components().any(|c| matches!(c, std::path::Component::ParentDir))
         && (omsi_cfg::content_roots().iter().any(|r| path.starts_with(r))
+            || omsi_cfg::vfs::is_sealed(path)
             || GENERATED_DIRS.lock().iter().any(|d| path.starts_with(d)))
 }
 
@@ -491,6 +514,14 @@ fn find_texture_in_dir(dir: &Path, name: &str) -> Option<PathBuf> {
     let p = omsi_cfg::resolve_path(dir, name);
     if omsi_cfg::vfs::is_file(&p) {
         return Some(p);
+    }
+    // A DDS that is not there is missing, as in Omsi.exe: the stand-in only ever goes from
+    // another format to its DDS, never back. The MAN DN95's body asks for `envmap.dds`, which
+    // it does not ship; taking its `envmap.bmp` instead turned the paint into a mirror where
+    // the original draws it without a reflection.
+    let asked_dds = Path::new(name).extension().is_some_and(|e| e.eq_ignore_ascii_case("dds"));
+    if asked_dds {
+        return None;
     }
     for ext in EXTENSIONS.into_iter().filter(|e| *e != "dds") {
         let p = omsi_cfg::resolve_path(dir, &format!("{}.{}", stem.display(), ext));
@@ -816,6 +847,11 @@ mod tests {
         // Without DDS, the requested format wins over the other fallback formats.
         assert_eq!(find_texture_uncached("local_only.png", &[&local]), Some(local.join("local_only.png")));
         assert_eq!(find_texture_uncached("missing.png", &[&local]), None);
+        // A DDS asked for and not there is missing: not stood in for by the BMP beside it
+        // (the MAN DN95's `envmap.dds` next to its `envmap.bmp`).
+        std::fs::write(local.join("envmap.bmp"), b"x").unwrap();
+        assert_eq!(find_texture_uncached("envmap.dds", &[&local]), None);
+        assert_eq!(find_texture_uncached("envmap.bmp", &[&local]), Some(local.join("envmap.bmp")));
         std::fs::remove_dir_all(dir).unwrap();
     }
 

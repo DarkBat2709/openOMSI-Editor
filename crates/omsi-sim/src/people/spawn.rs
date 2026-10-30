@@ -99,6 +99,7 @@ impl PeopleSim {
             served_stop: None,
             ai_visits: HashMap::new(),
             last_door_open: HashMap::new(),
+            runner_rolls: HashMap::new(),
             holds: Vec::new(),
             ai_requests: Vec::new(),
             tickets: None,
@@ -119,6 +120,7 @@ impl PeopleSim {
             content: 0,
             ticket_requests: 0,
             ticket_points: 0,
+            sale_events: Vec::new(),
             entry_req: Vec::new(),
             exit_req: Vec::new(),
             entry_busy: Vec::new(),
@@ -135,6 +137,7 @@ impl PeopleSim {
             avatars: HashMap::new(),
             avatar_cmds: HashMap::new(),
             avatar_hidden: HashMap::new(),
+            manual_door_requests: HashMap::new(),
             last_buses: Arc::new(Vec::new()),
             avatar_only: false,
             driver_away: false,
@@ -151,10 +154,10 @@ impl PeopleSim {
             stroll_timer: 0.0,
             defer_populate: false,
             exact_fare: true,
+            bad_driving: true,
             boarding: "auto".into(),
             stand_chance: 0.05,
             give_ticket: false,
-            give_change_all: false,
             ticket_key: "T".into(),
             eye: None,
             center: DVec3::ZERO,
@@ -325,7 +328,8 @@ impl PeopleSim {
         }
         let free = (0..self.people.len()).find(|&i| {
             let p = &self.people[i];
-            p.puppet.is_none() && !p.remote && matches!(p.state, State::Strolling(_) | State::Standing | State::Leaving { .. }) && !self.seen(p.position)
+            // (not somebody put out to run for a bus, see `runners`)
+            p.puppet.is_none() && !p.remote && matches!(p.state, State::Strolling(_) | State::Standing | State::Leaving { .. }) && !self.seen(p.position) && !self.put_out(p.id)
         });
         match free {
             Some(i) => {
@@ -744,6 +748,7 @@ impl PeopleSim {
         if self.desk_busy == Some(id) {
             self.desk_busy = None;
             self.request = None;
+            self.change_due = None;
         }
     }
 }
