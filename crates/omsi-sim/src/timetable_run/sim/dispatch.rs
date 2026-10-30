@@ -33,18 +33,11 @@ impl ScheduleSim {
         self.retry_at.clear();
         self.startup.clear();
         self.later_layover.clear();
-        // (the clock set back over midnight: the day before)
-        while day_time < self.day_base {
-            self.day_base -= DAY;
-            let mut c = self.date_clock.clone();
-            if c.day_of_year > 1 {
-                c.day_of_year -= 1;
-            } else {
-                c.year -= 1;
-                c.day_of_year = crate::clock::days_in_year(c.year);
-            }
-            self.date_clock = c.clone();
-            self.set_day(&c);
+        // Skip directly to the requested date, rather than rebuilding the timetable
+        // once for every intervening day (hundreds of reassignments on year jumps).
+        if day_time.is_finite() && day_time < self.day_base {
+            let days_back = ((self.day_base - day_time) / DAY).ceil() as i64;
+            self.shift_calendar_days(-days_back);
         }
         self.roll_day(day_time);
         for i in 0..self.departures.len() {
@@ -255,11 +248,18 @@ impl ScheduleSim {
         let tod = day_time - self.day_base;
         let window = if std::mem::take(&mut self.restarted) { window.max(20.0 * 60.0) } else { window };
         let loading = window > 60.0;
+        // At the start (and after the clock was set) every trip still under way is put out,
+        // however long ago it left - yesterday's night trips before 24:00 among them, as
+        // Omsi.exe's loader places each tour's bus on its last trip begun (0x73a700): only
+        // the last 20 minutes' trips came, and a map opened in the evening never got the
+        // bus that stands on a light's detector from 20:00 to 04:00 (Städtedreieck's
+        // Bergerplatz, so its evening and night programs never ran).
+        let under_way = |d: &Departure| loading && self.times.get(d.trip).and_then(|t| t.get(d.profile)).is_some_and(|t| d.time + t.duration > tod);
         let due: Vec<usize> = self
             .departures
             .iter()
             .enumerate()
-            .filter(|(i, d)| !d.spawned && d.time <= tod && d.time > tod - window && self.runs(*i))
+            .filter(|(i, d)| !d.spawned && d.time <= tod && (d.time > tod - window || under_way(d)) && self.runs(*i))
             .map(|(i, _)| i)
             .collect();
         for i in due {
@@ -306,6 +306,13 @@ impl ScheduleSim {
             // only a trip with stops has a first stop to wait at: a flight (TXL.ttl, every
             // ten minutes) would take off early
             if !trip_has_stations(&self.data.trips[d.trip]) {
+                continue;
+            }
+            // nor one that does not begin at a stop: one that comes in from the map's edge
+            // first stood at the start of its track early, in the way of the trains coming
+            // in (X10 Berlin's S7 trains, edge to edge through Zoologischer Garten, put out
+            // a quarter of an hour early)
+            if !self.times_of(i).begins_at_stop() {
                 continue;
             }
             let prev_end = self.dep_time(k) + self.times_of(k).duration;

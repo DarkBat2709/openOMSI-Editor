@@ -52,6 +52,16 @@ forbid omsi-script omsi-render
 forbid omsi-geometry omsi-sim
 forbid omsi-geometry omsi-render
 
+# The trolleybus's wire, poles and traction are pure state and physics on the base layer: they
+# know no other crate of the game (and nothing of how they are shown or heard).
+forbid omsi-trolley omsi-sim
+forbid omsi-trolley omsi-render
+forbid omsi-trolley omsi-audio
+forbid omsi-trolley omsi-scene
+forbid omsi-trolley omsi-vehicle
+forbid omsi-trolley omsi-script
+forbid omsi-trolley omsi-ui
+
 # Transport and plugin hosting do not know the game.
 forbid omsi-net omsi-sim
 forbid omsi-net omsi-render
@@ -96,6 +106,14 @@ forbid omsi-scene omsi-input
 forbid omsi-scene omsi-xr
 forbid omsi-scene omsi-launcher-*
 
+# The navigator draws what the game tells it each frame (`NavFrame`): no input, sound,
+# network session, plugins or launcher in it.
+forbid omsi-navigator omsi-input
+forbid omsi-navigator omsi-audio
+forbid omsi-navigator omsi-net
+forbid omsi-navigator omsi-plugin
+forbid omsi-navigator omsi-launcher-*
+
 # The input devices read controllers and keys: they neither draw nor sound, nor know the network,
 # the plugins or the launcher.
 forbid omsi-input omsi-render
@@ -137,6 +155,14 @@ forbid omsi-photo omsi-audio
 forbid omsi-photo omsi-ui
 forbid omsi-photo omsi-net
 forbid omsi-photo omsi-launcher-*
+
+# The interface's machine translation knows omsi-ui's fallback hook and nothing of the game.
+forbid omsi-mt omsi-sim
+forbid omsi-mt omsi-render
+forbid omsi-mt omsi-audio
+forbid omsi-mt omsi-net
+forbid omsi-mt omsi-scene
+forbid omsi-mt omsi-launcher-*
 
 # The launcher's data side (what `omsi-launcher --cli` offers a terminal too) knows nothing of
 # its front ends: the model and the page's commands stand on it, never the other way round.

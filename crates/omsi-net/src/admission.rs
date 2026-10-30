@@ -12,7 +12,10 @@ pub(crate) struct Ban {
     pub why: String,
 }
 
-pub(crate) fn source_ip(from: SocketAddr) -> Option<IpAddr> {
+/// Who a datagram comes from, as bans and locks count it: the player behind the web
+/// gateway (not the gateway's own loopback socket), an IPv6 address by its /64; none for
+/// this machine.
+pub fn source_ip(from: SocketAddr) -> Option<IpAddr> {
     let ip = crate::ws::gateway_client(from).unwrap_or(from.ip());
     (!ip.is_loopback() && !ip.is_unspecified()).then(|| crate::ws::source_key(ip))
 }
@@ -284,5 +287,76 @@ mod tests {
         let fresh = raw();
         let _d = crate::ws::GatewayClient::register(fresh.local_addr().unwrap(), "203.0.113.7".parse().unwrap());
         assert!(knock(&fresh, &mut host, Some(0x3333)).unwrap().starts_with("WELCOME|"));
+    }
+
+    fn knock_hw(s: &UdpSocket, host: &mut LanSession, nonce: u64, name: &str, hw: &str) -> Option<String> {
+        let port = host.local_addr().unwrap().port();
+        let msg = format!("HELLO|{PROTOCOL}|-|{name}||m|1989-05-30|32400|||{nonce:016x}|||{hw}");
+        let mut buf = [0u8; 1500];
+        for _ in 0..20 {
+            let _ = s.send_to(msg.as_bytes(), ("127.0.0.1", port));
+            host.tick(0.02, &Pose::default());
+            while let Ok((n, _)) = s.recv_from(&mut buf) {
+                let t = String::from_utf8_lossy(&buf[..n]).to_string();
+                if t.starts_with("WELCOME|") || t.starts_with("REJECT|") {
+                    return Some(t);
+                }
+            }
+        }
+        None
+    }
+
+    /// The smoke test of the hardware ban: a player is sent away and its machine banned;
+    /// the same machine comes back with a new game (a new nonce), another name and another
+    /// address, and is turned away; another machine joins; lifting the ban lets it in; and a
+    /// later hello of a connection cannot swap the identifier it joined with.
+    #[test]
+    fn a_banned_machine_stays_out_whatever_the_game_calls_itself() {
+        let hw = |n: u8| format!("{:032x}", 0xabcd_0000u128 + n as u128);
+        let mut host = LanSession::host(28290, "host", WorldInfo::default(), true).unwrap();
+        let first = raw();
+        let welcome = knock_hw(&first, &mut host, 0x1111, "Griefer", &hw(1)).unwrap();
+        assert!(welcome.starts_with("WELCOME|"), "{welcome}");
+        let id: u32 = welcome.split('|').nth(2).unwrap().parse().unwrap();
+        assert_eq!(host.peer_hardware_id(id), Some(hw(1).as_str()));
+        // (the same connection says another identifier later: the first one holds)
+        let port = host.local_addr().unwrap().port();
+        let _ = first.send_to(format!("HELLO|{PROTOCOL}|-|Griefer||m|1989-05-30|32400|||{:016x}|||{}", 0x1111, hw(2)).as_bytes(), ("127.0.0.1", port));
+        host.tick(0.02, &Pose::default());
+        assert_eq!(host.peer_hardware_id(id), Some(hw(1).as_str()));
+        // the ban: the player is sent away at once, and the door holds the machine
+        host.set_hardware_bans(vec![(hw(1), "griefing".into())]);
+        assert!(host.peer_hardware_id(id).is_none(), "sent away");
+        let again = raw();
+        let rejected = knock_hw(&again, &mut host, 0x2222, "Somebody Else", &hw(1)).unwrap();
+        assert!(rejected.starts_with("REJECT|") && rejected.contains("banned") && rejected.contains("griefing"), "{rejected}");
+        let third = raw();
+        assert!(knock_hw(&third, &mut host, 0x3333, "Griefer", &hw(1)).unwrap().starts_with("REJECT|"));
+        // another machine is not touched, and a game that sends none is let in (unless required)
+        let other = raw();
+        assert!(knock_hw(&other, &mut host, 0x4444, "Friend", &hw(9)).unwrap().starts_with("WELCOME|"));
+        let old = raw();
+        assert!(knock(&old, &mut host, Some(0x5555)).unwrap().starts_with("WELCOME|"));
+        host.require_hardware_id(true);
+        let old2 = raw();
+        assert!(knock(&old2, &mut host, Some(0x6666)).unwrap().contains("REJECT|"), "needs the identifier");
+        host.require_hardware_id(false);
+        // lifted: the machine may join again
+        host.set_hardware_bans(Vec::new());
+        let back = raw();
+        assert!(knock_hw(&back, &mut host, 0x7777, "Griefer", &hw(1)).unwrap().starts_with("WELCOME|"));
+    }
+
+    /// Two players behind the web gateway count as two sources (their own addresses), not
+    /// as the gateway's one loopback; a socket of this machine counts as none.
+    #[test]
+    fn gateway_players_are_their_own_source() {
+        let (a, b) = (addr("127.0.0.1:40101"), addr("127.0.0.1:40102"));
+        let _a = crate::ws::GatewayClient::register(a, "198.51.100.1".parse().unwrap());
+        let _b = crate::ws::GatewayClient::register(b, "198.51.100.2".parse().unwrap());
+        assert_eq!(source_ip(a), Some("198.51.100.1".parse().unwrap()));
+        assert_eq!(source_ip(b), Some("198.51.100.2".parse().unwrap()));
+        assert_eq!(source_ip(addr("127.0.0.1:40103")), None);
+        assert_eq!(source_ip(addr("[2001:db8:1:2:3:4:5:6]:9")), Some("2001:db8:1:2::".parse().unwrap()));
     }
 }

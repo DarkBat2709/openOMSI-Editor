@@ -107,7 +107,7 @@ pub(super) fn divider() -> Element {
 
 /// The game's card: its dark colour, a little see-through over the picture (`alpha`).
 pub(super) fn card(anchor: omsi_plugin::ui::Anchor, x: f32, y: f32, width: f32, alpha: u8, children: Vec<Element>) -> Panel {
-    Panel { anchor, x, y, width, padding: 14.0, gap: 8.0, background: Some(Rgba([14, 16, 20, alpha])), radius: 12.0, accent: None, visible: true, clickable: false, draggable: false, children }
+    Panel { anchor, x, y, width, padding: 14.0, gap: 8.0, background: Some(Rgba([14, 16, 20, alpha])), radius: 12.0, accent: None, visible: true, clickable: false, draggable: false, grab: false, frame: false, children }
 }
 
 // --- the frame -----------------------------------------------------------------------------
@@ -149,6 +149,16 @@ impl crate::App {
                 j.take_summary();
             }
         }
+        // (the quick menu's tile under the mouse is the one chosen, its name shown)
+        let gp = &mut self.menus.game_panels;
+        if gp.quick.is_some() && gp.ui.focused() {
+            let (x, y) = self.input.cursor;
+            if let Some(el) = gp.draw.press_at(&gp.ui, x, y).filter(|p| p.panel == "quick").and_then(|p| p.element) {
+                if let Some(q) = gp.quick.as_mut() {
+                    q.hover(&el, (x, y));
+                }
+            }
+        }
         let panels: Vec<(&str, Option<Panel>)> = vec![
             ("view", self.menus.game_panels.view.as_ref().map(|v| v.panel(self))),
             ("trip", self.menus.game_panels.trip.as_ref().map(|t| t.panel())),
@@ -184,6 +194,7 @@ impl crate::App {
             dt,
             backdrop: crate::ui::backdrop(self.settings.ui_opacity),
             navigator: None,
+            dock: None,
         };
         let gp = &mut self.menus.game_panels;
         gp.draw.frame(r, scene, &mut gp.ui, &frame);
@@ -276,7 +287,7 @@ impl crate::App {
         if code == KeyCode::Escape {
             return self.close_game_panel();
         }
-        false
+        quick_menu::key(self, code)
     }
 
     /// Esc: the panel on top closes (the quick menu, the question, the form, the summary,

@@ -30,37 +30,7 @@ pub(crate) fn player_bus_path(root: &Path, bus: &str) -> Result<PathBuf> {
     }
 }
 
-/// The next vehicle of a consist from one with definition `def` (turned round: `rev`),
-/// towards the back of the train or its front, and whether that one is turned round - as
-/// Omsi.exe builds a consist (0x70a174): towards the back a vehicle goes on with its
-/// `[couple_back]`, or with its `[couple_front]` when it is itself turned round (towards the
-/// front the other way about); the coupled one is turned round when the coupling says so,
-/// against the one it hangs on; a coupling back to its own file that turns nothing round
-/// is not followed. (Following `[couple_back]` whatever the way, the Berlin A3's unit - the
-/// S car and its K car turned round, whose `[couple_back]` names the S car - went on S, K,
-/// S, K, S, none of them turned.)
-pub(crate) fn next_coupled(def: &omsi_vehicle::vehicle::Vehicle, rev: bool, toward_back: bool) -> Option<(PathBuf, bool)> {
-    let (file, flag) = if toward_back != rev { def.couple_back.as_ref() } else { def.couple_front.as_ref() }?;
-    let path = omsi_cfg::resolve_path(def.dir(), file);
-    let same = path.file_name().map(|f| f.to_ascii_lowercase()) == def.path.file_name().map(|f| f.to_ascii_lowercase());
-    if !flag && same {
-        return None;
-    }
-    Some((path, flag ^ rev))
-}
-
-/// How many coupled parts one vehicle may have behind it. A consist that closes on itself
-/// stops on its own (see [`chain_has_part`]); this only guards against a coupling chain that
-/// keeps growing through different files.
-pub(crate) const MAX_COUPLED_PARTS: usize = 32;
-
-/// Whether the vehicle file `path` is already one of the parts of the consist `seen` - the
-/// same file, not the same spelling, so a chain that comes round again ends there instead of
-/// growing. The NF6D tram closes on itself: its rear cab car `[couple_back]`s the
-/// articulation its front car starts with, and the whole unit is eleven parts long.
-pub(crate) fn chain_has_part(seen: &[PathBuf], path: &Path) -> bool {
-    seen.iter().any(|s| omsi_vehicle::vehicle::same_file(s, path))
-}
+pub(crate) use omsi_vehicle::vehicle::{chain_has_part, next_coupled, MAX_COUPLED_PARTS};
 
 /// Load the `[couple_back]` chain behind `vehicle` (articulated rear sections, trailers),
 /// each file resolved from the folder of the part before it in whichever content root
@@ -216,8 +186,8 @@ fn player_identity(
         Some(w) => match available.iter().find(|(n, _)| n.trim() == w) {
             Some((n, _)) => Some(n.clone()),
             None => {
-                log::warn!("--number {w}: not in the bus's [number] list, the first one is taken");
-                available.first().map(|(n, _)| n.clone())
+                log::warn!("--number {w}: not in the bus's [number] list");
+                Some(w.to_string())
             }
         },
         None => available.first().map(|(n, _)| n.clone()),
@@ -274,6 +244,13 @@ pub(crate) fn spawn_player_prepared(
         world.accept_placement_prefetch(staged);
     }
     let vt = prepared.ty;
+    if let omsi_cfg::transport::Admission::Refused(why) = omsi_sim::transport::admission(world.global.transport, &vt.def) {
+        if omsi_cfg::flags::OMSI_IGNORE_TRANSPORT.is_set() {
+            log::warn!("transport: {why} (OMSI_IGNORE_TRANSPORT is set, running anyway)");
+        } else {
+            anyhow::bail!("{} {} cannot run on this map. {why}", vt.def.manufacturer, vt.def.type_name);
+        }
+    }
     log::info!(
         "vehicle {} {}: {} meshes, {} script blocks, {} variables",
         vt.def.manufacturer,
@@ -375,9 +352,16 @@ pub(crate) fn spawn_player_prepared(
     // and the terrain where it is not cut away under them (the streamer keeps both maps to
     // the loaded tiles, and the bus is one of its centres)
     vehicle.contact = Some(std::sync::Arc::new(scene::LiveGround(world.data.clone())));
-    let objects = crate::settings::Settings::load().collision_objects;
+    let loaded = crate::settings::Settings::load();
+    // (the road model of new bodies: the setting, or `OMSI_REALISTIC_ROAD=1`)
+    omsi_sim::rigid::set_realistic_default(loaded.realistic_road_physics);
+    // (the cab's steering wheel turned as far as the player's own, if asked: this bus only)
+    vehicle.set_cab_wheel_rotation(loaded.cab_wheel_rotation);
+    let objects = loaded.collision_objects;
     vehicle.collision = objects.then(|| world.data.peek().lists.collision.clone());
     vehicle.wheel_walls = objects;
+    let wires = if vehicle.trolley.is_some() { crate::trolley_net::load(args, world) } else { None };
+    vehicle.attach_wires(wires.clone());
     // a rail vehicle rides the track (its position comes from the rails, not the tyres)
     let rail_bound = crate::rail_drive::is_rail(&vt.def);
     if rail_bound {
@@ -403,8 +387,26 @@ pub(crate) fn spawn_player_prepared(
         .map(|k| k.with_game_defaults().vehicles)
         .unwrap_or_default();
     let mut p = new_player(vehicle, render, trailer_renders, bindings, rail_bound, &vt);
+    if let Some(net) = wires {
+        p.trolley_view = Some(Box::new(omsi_scene::trolley_view::TrolleyView::new(renderer, scene, net)));
+        if omsi_cfg::flags::OMSI_TROLLEY_UP.is_set() {
+            if let Some(g) = p.vehicle.trolley.as_deref_mut() {
+                g.auto_raise_for = 8.0;
+            }
+        }
+    }
     for _ in 0..3 {
         p.vehicle.update(1.0 / 30.0);
+    }
+    // a new bus with its tank full, if the player wants it (many maps have no petrol station):
+    // filled by its own pump, as at one, so each bus takes what its script says it holds; a
+    // situation's bus and a part uncoupled keep what they had (and --setvar, after it,
+    // still sets what a test asks for)
+    if !args.is_resuming() && !args.keep_fuel && crate::settings::Settings::load().full_tank {
+        match p.vehicle.refuel() {
+            Some(l) => log::info!("spawn: tank filled ({l:.0} l)"),
+            None => log::info!("spawn: this vehicle has no fuel pump handling (veh_tank): its tank stays as its script set it"),
+        }
     }
     if let Some(sv) = &args.setvar {
         for kv in sv.split(',') {
@@ -433,6 +435,9 @@ pub(crate) fn spawn_player_prepared(
             args.situation_vars.len(),
             args.situation_strvars.len()
         );
+    }
+    if let Some(id) = args.depot.as_deref().filter(|_| !args.is_resuming()) {
+        crate::depot_bus::restore(&mut p.vehicle, id);
     }
     if let Some(sv) = &args.setstr {
         for kv in sv.split(',') {
@@ -467,6 +472,9 @@ pub(crate) fn spawn_player_prepared(
     }
     p.vehicle.host.fired_triggers.clear();
     p.vehicle.host.fired_trigger_vars.clear();
+    if args.pending_cabin_temperature.swap(false, std::sync::atomic::Ordering::Relaxed) {
+        p.vehicle.set_cabin_temperature(22.0);
+    }
     Ok(Some(p))
 }
 
@@ -596,6 +604,7 @@ fn log_rigid_body(vehicle: &omsi_sim::VehicleInstance) {
 /// The player around a vehicle just set up, everything else at its start.
 fn new_player(vehicle: omsi_sim::VehicleInstance, render: scene::VehicleRender, trailer_renders: Vec<scene::VehicleRender>, bindings: Vec<omsi_content::KeyBinding>, rail_bound: bool, vt: &Arc<omsi_sim::VehicleType>) -> Player {
     static NEXT_UID: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
+    let rail_placed_z = vehicle.position.z;
     Player {
         uid: NEXT_UID.fetch_add(1, std::sync::atomic::Ordering::Relaxed),
         vehicle,
@@ -622,6 +631,7 @@ fn new_player(vehicle: omsi_sim::VehicleInstance, render: scene::VehicleRender, 
         hand_coupled: 0,
         rail_bound,
         rail: None,
+        rail_placed_z,
         head: Vec3::ZERO,
         head_vel: Vec3::ZERO,
         head_omega: Vec3::ZERO,
@@ -648,13 +658,21 @@ fn new_player(vehicle: omsi_sim::VehicleInstance, render: scene::VehicleRender, 
         blind_pick: None,
         ibis_typist: None,
         duty_typed: false,
+        ibis_holds: Default::default(),
         html_next_stop: None,
         ibis_background: false,
         arm: Default::default(),
         blinker_key_state: 0,
         blinker_cancel: crate::settings::Settings::load().blinker_cancel,
+        trolley_view: None,
+        panto_fx: Default::default(),
+        trolley_sound: Default::default(),
+        announce: crate::auto_announce::AutoAnnounce::new(),
     }
 }
+
+#[cfg(test)]
+mod cabin_input_tests;
 
 /// `OMSI_DEBUG_MESHES`: every mesh of the vehicle with its bounds, and per material slot (of the
 /// meshes whose file the flag names) which part of its texture it shows.

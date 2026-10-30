@@ -46,7 +46,17 @@ export function buttonName(n) {
   return t('Button {n}', { n: n + 1 });
 }
 
-export const newDevice = (name) => ({ name, second: '0', axes: Array.from({ length: 8 }, () => [-1, false, 0]), buttons: [], ff_scale: null, ff_invert: null, latching: [] });
+export const newDevice = (name) => ({ name, second: '0', axes: Array.from({ length: 8 }, () => [-1, false, 0]), buttons: [], ff_scale: null, ff_invert: null, ff_tune: null, latching: [], more: [] });
+// a wheel's force feedback tuning: multipliers of the self-centring, the damping and the parking
+// resistance, the minimum force (a share of full force) and the smoothing (seconds); none saved
+// (null) is these
+const FF_TUNE = { centring: 1, damping: 1, parking: 1, min_force: 0, smoothing: 0 };
+export const tuneOf = (c) => Object.fromEntries(Object.entries(FF_TUNE).map(([k, v]) => [k, Number.isFinite(c?.ff_tune?.[k]) ? c.ff_tune[k] : v]));
+/** Changes some of the tuning; all back at the defaults saves none, so the device stays as it was. */
+export function setTune(c, patch) {
+  const next = { ...(c.ff_tune || {}), ...tuneOf(c), ...patch };
+  c.ff_tune = Object.keys(FF_TUNE).every((k) => Math.abs(next[k] - FF_TUNE[k]) < 1e-6) ? null : next;
+}
 const offList = (s) => (s.ctrl_off || '').split('|').filter(Boolean);
 
 let saveTimer = 0;
@@ -173,7 +183,7 @@ export function Controllers() {
       if (c && namesMatch(c.device, name)) {
         capture.current = null;
         setCapturing(null);
-        bind(c.device, n, c.action);
+        assign(c.device, n, c.action);
         return;
       }
       if (c || wizard) return;
@@ -220,10 +230,34 @@ export function Controllers() {
     const before = d.buttons[n]?.[0] || '';
     change(d.name, (c) => {
       while (c.buttons.length <= n) c.buttons.push(['', '0']);
-      c.buttons[n] = [action, c.buttons[n][1] || '0'];
-      if (!action) c.latching = c.latching.filter((b) => b !== n);
+      let more = c.more || [];
+      let next = action;
+      if (!next) {
+        const i = more.findIndex(([b]) => b === n);
+        if (i >= 0) [next, more] = [more[i][1], more.filter((_, k) => k !== i)];
+      } else more = more.filter(([b, a]) => b !== n || a.toLowerCase() !== action.toLowerCase());
+      c.more = more;
+      c.buttons[n] = [next, c.buttons[n][1] || '0'];
+      if (!next) c.latching = c.latching.filter((b) => b !== n);
     });
     if (action && before && before.toLowerCase() !== action.toLowerCase()) toast(t('{button} now does {action} instead of {old}', { button: buttonName(n), action: actionText(action), old: actionText(before) }), 'info', 6000);
+  }
+
+  function assign(name, n, action) {
+    const d = findDevice(pads.devicesRef.current || [], name);
+    if (!d) return;
+    const has = [d.buttons[n]?.[0] || '', ...(d.more || []).filter(([b]) => b === n).map(([, a]) => a)].filter(Boolean);
+    if (!has.length) return bind(name, n, action);
+    if (has.some((a) => a.toLowerCase() === action.toLowerCase())) return;
+    change(d.name, (c) => (c.more = [...(c.more || []), [n, action]]));
+    toast(t('{button} now does {action} as well', { button: buttonName(n), action: actionText(action) }), 'info', 6000);
+  }
+
+  function unbind(name, n, action) {
+    const d = findDevice(pads.devicesRef.current || [], name);
+    if (!d) return;
+    if ((d.buttons[n]?.[0] || '').toLowerCase() === action.toLowerCase()) return bind(name, n, '');
+    change(d.name, (c) => (c.more = (c.more || []).filter(([b, a]) => b !== n || a.toLowerCase() !== action.toLowerCase())));
   }
 
   function startCapture(device, action) {
@@ -282,6 +316,8 @@ export function Controllers() {
             padButtons=${pads.cfg.pad_buttons}
             change=${(f) => change(entry.cfg.name, f)}
             bind=${(n, a) => bind(entry.cfg.name, n, a)}
+            assign=${(n, a) => assign(entry.cfg.name, n, a)}
+            unbind=${(n, a) => unbind(entry.cfg.name, n, a)}
             startCapture=${(a) => startCapture(entry.cfg.name, a)}
             stopCapture=${() => ((capture.current = null), setCapturing(null))}
             setOn=${(on) => setOn(entry.cfg.name, on)}
@@ -362,10 +398,10 @@ function LiveAxes({ live }) {
   </div>`;
 }
 
-function DeviceDetail({ e, s, off, gears, actions, lit, capturing, padButtons, change, bind, startCapture, stopCapture, setOn, setUp, remove, paused }) {
+function DeviceDetail({ e, s, off, gears, actions, lit, capturing, padButtons, change, bind, assign, unbind, startCapture, stopCapture, setOn, setUp, remove, paused }) {
   const d = e.cfg;
   const kind = kindOf(e);
-  const ff = e.live?.ff || d.ff_invert != null || (d.ff_scale || [1, 1]).some((v) => v !== 1);
+  const ff = e.live?.ff || d.ff_invert != null || d.ff_tune != null || (d.ff_scale || [1, 1]).some((v) => v !== 1);
   const steers = d.axes.some((a) => a[0] === 0);
   return html`
     <${Card}>
@@ -388,7 +424,7 @@ function DeviceDetail({ e, s, off, gears, actions, lit, capturing, padButtons, c
     ${kind === 'pad' && html`<${GamepadCard} e=${e} padButtons=${padButtons} change=${change} />`}
     ${kind !== 'buttons' && html`<${AxesCard} d=${d} live=${e.live} change=${change} gamepad=${kind === 'pad'} setUp=${setUp} />`}
     ${(steers || ff) && kind === 'wheel' && html`<${WheelCard} d=${d} live=${e.live} ff=${ff} change=${change} paused=${paused} />`}
-    <${ButtonsCard} d=${d} live=${e.live} actions=${actions} lit=${lit} capturing=${capturing} change=${change} bind=${bind} startCapture=${startCapture} stopCapture=${stopCapture} />
+    <${ButtonsCard} d=${d} live=${e.live} actions=${actions} lit=${lit} capturing=${capturing} change=${change} bind=${bind} assign=${assign} unbind=${unbind} startCapture=${startCapture} stopCapture=${stopCapture} />
   `;
 }
 
@@ -456,10 +492,16 @@ function AxesCard({ d, live, change, gamepad, setUp }) {
   </${Card}>`;
 }
 
-function ButtonsCard({ d, live, actions, lit, capturing, change, bind, startCapture, stopCapture }) {
+const LOOK = ['view_look_up', 'view_look_right', 'view_look_down', 'view_look_left'];
+
+function ButtonsCard({ d, live, actions, lit, capturing, change, bind, assign, unbind, startCapture, stopCapture }) {
   const [view, setView] = useState('actions');
   const [q, setQ] = useState('');
   const fresh = lit && Date.now() - lit.at < 4000 ? lit.n : null;
+  const seenHats = useRef(new Map());
+  if (!seenHats.current.has(d.name)) seenHats.current.set(d.name, new Set());
+  const hats = seenHats.current.get(d.name);
+  if (fresh != null && fresh >= HATS) hats.add(Math.floor((fresh - HATS) / 4));
   const [, tick] = useState(0);
   useEffect(() => {
     if (fresh == null) return;
@@ -467,11 +509,11 @@ function ButtonsCard({ d, live, actions, lit, capturing, change, bind, startCapt
     return () => clearTimeout(id);
   }, [lit]);
   const by = new Map();
-  d.buttons.forEach(([a], n) => {
+  [...d.buttons.map(([a], n) => [n, a]), ...(d.more || [])].forEach(([n, a]) => {
     if (!a) return;
     const k = a.toLowerCase();
     if (!by.has(k)) by.set(k, { action: a, buttons: [] });
-    by.get(k).buttons.push(n);
+    if (!by.get(k).buttons.includes(n)) by.get(k).buttons.push(n);
   });
   return html`<${Card}
     title="Buttons"
@@ -486,14 +528,16 @@ function ButtonsCard({ d, live, actions, lit, capturing, change, bind, startCapt
     </div>`}
     ${fresh != null &&
     !capturing &&
-    html`<div class="lit-bar"><span class="kbd on">${buttonName(fresh)}</span><span>${d.buttons[fresh]?.[0] ? actionText(d.buttons[fresh][0]) : t('Nothing')}</span></div>`}
+    html`<div class="lit-bar"><span class="kbd on">${buttonName(fresh)}</span><span>${actionsOf(d, fresh).length ? actionsOf(d, fresh).map(actionText).join(' + ') : t('Nothing')}</span></div>`}
     ${view === 'actions'
-      ? html`<${ByAction} actions=${actions} by=${by} q=${q} setQ=${setQ} fresh=${fresh} capturing=${capturing} latching=${d.latching} startCapture=${startCapture} bind=${bind} live=${live} />`
-      : html`<${ByButton} d=${d} live=${live} actions=${actions} fresh=${fresh} change=${change} bind=${bind} />`}
+      ? html`<${ByAction} actions=${actions} by=${by} q=${q} setQ=${setQ} fresh=${fresh} capturing=${capturing} latching=${d.latching} startCapture=${startCapture} unbind=${unbind} live=${live} />`
+      : html`<${ByButton} d=${d} live=${live} actions=${actions} fresh=${fresh} hats=${hats} change=${change} bind=${bind} assign=${assign} unbind=${unbind} />`}
   </${Card}>`;
 }
 
-function ByAction({ actions, by, q, setQ, fresh, capturing, latching, startCapture, bind, live }) {
+const actionsOf = (d, n) => [d.buttons[n]?.[0] || '', ...(d.more || []).filter(([b]) => b === n).map(([, a]) => a)].filter(Boolean);
+
+function ByAction({ actions, by, q, setQ, fresh, capturing, latching, startCapture, unbind, live }) {
   const query = q.trim().toLowerCase();
   const grouped = new Set(PAD_ACTION_GROUPS.flatMap(([, a]) => a.map((x) => x.toLowerCase())));
   const others = [...by.values()].map((x) => x.action).filter((a) => !grouped.has(a.toLowerCase()));
@@ -508,7 +552,7 @@ function ByAction({ actions, by, q, setQ, fresh, capturing, latching, startCaptu
         ? html`<span class="muted small">${t('Press a button on the device...')}</span>`
         : html`<div class="row chips">
             ${bound.map(
-              (n) => html`<span class=${'kbd chip' + (n === fresh ? ' on' : '')}>${buttonName(n)}${latching.includes(n) && html`<small>${t('Latching')}</small>`}<button title=${t('Remove')} onClick=${(e) => (e.stopPropagation(), bind(n, ''))}><${Icon} name="x" size=${14} /></button></span>`,
+              (n) => html`<span class=${'kbd chip' + (n === fresh ? ' on' : '')}>${buttonName(n)}${latching.includes(n) && html`<small>${t('Latching')}</small>`}<button title=${t('Remove')} onClick=${(e) => (e.stopPropagation(), unbind(n, a))}><${Icon} name="x" size=${14} /></button></span>`,
             )}
             ${can && html`<span class="assign">${bound.length ? html`<${Icon} name="plus" size=${16} />` : t('Assign')}</span>`}
           </div>`}
@@ -557,56 +601,86 @@ function SearchHits({ q, all, row }) {
     ${!hits.length && !custom && html`<${Empty} icon="search" title="No matching actions." />`}`;
 }
 
-function ByButton({ d, live, actions, fresh, change, bind }) {
+function ByButton({ d, live, actions, fresh, hats: seen, change, bind, assign, unbind }) {
+  const [adding, setAdding] = useState(null);
   const physical = live?.buttons || 0;
   const last = d.buttons.reduce((m, [a], i) => (a && i < HATS ? i + 1 : m), 0);
   const count = Math.min(HATS, Math.max(physical, last, fresh != null && fresh < HATS ? fresh + 1 : 0, live ? 0 : last));
-  const hats = [...new Set([...d.buttons.map(([a], i) => (a && i >= HATS ? i : -1)), fresh != null && fresh >= HATS ? fresh : -1])].filter((i) => i >= 0).sort((a, b) => a - b);
-  const numbers = [...Array(count).keys(), ...hats];
+  const bound = [...d.buttons.map(([a], i) => (a ? i : -1)), ...(d.more || []).map(([b]) => b)].filter((i) => i >= HATS);
+  const hats = [...new Set([...bound.map((i) => Math.floor((i - HATS) / 4)), ...seen])].sort((a, b) => a - b);
   const options = [['', t('Nothing')], ...actions.map((a) => [a, actionText(a)]).sort((x, y) => x[1].localeCompare(y[1]))];
+  const opts = (a) => (options.some(([v]) => v === a) ? options : [...options, [a, actionText(a)]]);
   const ref = useRef();
   useEffect(() => {
     if (fresh != null) ref.current?.querySelector(`[data-n="${fresh}"]`)?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
   }, [fresh]);
-  if (!numbers.length) return html`<${Empty} icon="gamepad" text="Press a button on the device: it lights up here." />`;
+  if (!count && !hats.length) return html`<${Empty} icon="gamepad" text="Press a button on the device: it lights up here." />`;
+  const lookAround = (h) => change((c) => {
+    while (c.buttons.length < HATS + h * 4 + 4) c.buttons.push(['', '0']);
+    LOOK.forEach((a, k) => {
+      const n = HATS + h * 4 + k;
+      c.buttons[n] = [a, '0'];
+      c.more = (c.more || []).filter(([b]) => b !== n);
+      c.latching = c.latching.filter((b) => b !== n);
+    });
+  });
+  const row = (n) => {
+    const a = d.buttons[n]?.[0] || '';
+    const more = (d.more || []).filter(([b]) => b === n).map(([, x]) => x);
+    const flag = (c, on) => {
+      while (c.buttons.length <= n) c.buttons.push(['', '0']);
+      c.buttons[n][1] = on ? '1' : '0';
+    };
+    return html`<div class=${'button-row' + (n === fresh ? ' lit' : '')} data-n=${n}>
+      <span class=${'kbd' + (n === fresh ? ' on' : '')}>${buttonName(n)}</span>
+      <div class="button-actions">
+        <div class="button-action">
+          <${Select} value=${a} options=${opts(a)} raw onChange=${(v) => bind(n, v)} />
+          <${Button} small kind="ghost" icon="plus" title="Add another action" disabled=${!a || adding === n} onClick=${() => setAdding(n)} />
+        </div>
+        ${more.map(
+          (x) => html`<div class="button-action">
+            <${Select} value=${x} options=${opts(x)} raw onChange=${(v) => (unbind(n, x), v && assign(n, v))} />
+            <${Button} small kind="ghost" icon="x" title="Remove" onClick=${() => unbind(n, x)} />
+          </div>`,
+        )}
+        ${adding === n &&
+        html`<div class="button-action">
+          <${Select} value="" options=${options.slice(1)} raw placeholder="Choose…" onChange=${(v) => (setAdding(null), v && assign(n, v))} />
+          <${Button} small kind="ghost" icon="x" title="Cancel" onClick=${() => setAdding(null)} />
+        </div>`}
+        <div class="button-switches">
+          <${Toggle} checked=${d.latching.includes(n)} disabled=${!a} label="Latching" onChange=${(v) => change((c) => (c.latching = v ? [...c.latching.filter((x) => x !== n), n].sort((x, y) => x - y) : c.latching.filter((x) => x !== n)))} />
+          <${Toggle} checked=${d.buttons[n]?.[1] === '1'} disabled=${!a} label="Continuous" onChange=${(v) => change((c) => flag(c, v))} />
+        </div>
+      </div>
+    </div>`;
+  };
   return html`<div class="button-grid" ref=${ref}>
-    ${numbers.map((n) => {
-      const a = d.buttons[n]?.[0] || '';
-      const latched = d.latching.includes(n);
-      return html`<div class=${'button-row' + (n === fresh ? ' lit' : '')} data-n=${n}>
-        <span class=${'kbd' + (n === fresh ? ' on' : '')}>${buttonName(n)}</span>
-        <${Select} value=${a} options=${options.some(([v]) => v === a) ? options : [...options, [a, actionText(a)]]} raw onChange=${(v) => bind(n, v)} />
-        <${Toggle} checked=${latched} disabled=${!a} label="Latching" onChange=${(v) => change((c) => (c.latching = v ? [...c.latching.filter((x) => x !== n), n].sort((x, y) => x - y) : c.latching.filter((x) => x !== n)))} />
-      </div>`;
-    })}
+    ${[...Array(count).keys()].map(row)}
+    ${hats.map(
+      (h) => html`<div class="hat-head">
+          <b>${t('Hat {n}', { n: h + 1 })}</b>
+          <${Button} small label="Look around with it" onClick=${() => lookAround(h)} />
+        </div>
+        ${[0, 1, 2, 3].map((k) => row(HATS + h * 4 + k))}`,
+    )}
   </div>`;
 }
 
 function WheelCard({ d, live, ff, change, paused }) {
   const [test, setTest] = useState(false);
-  const [steer, force] = d.ff_scale || [1, 1];
   const axis = d.axes.findIndex((a) => a[0] === 0);
   return html`<${Card} title="Steering wheel">
-    <div class="stack" style="gap:6px">
-      ${ff &&
-      html`<div class="setting-row full"><${Slider} label="Steering force" value=${steer} min=${0} max=${2} step=${0.05} format=${(v) => `${Math.round(v * 100)} %`} onChange=${(v) => change((c) => (c.ff_scale = [v, force]))} /></div>
-        <div class="setting-row full"><${Slider} label="Vibration" value=${force} min=${0} max=${2} step=${0.05} format=${(v) => `${Math.round(v * 100)} %`} onChange=${(v) => change((c) => (c.ff_scale = [steer, v]))} /></div>
-        <div class="setting-row">
-          <div class="name">${t('Invert force feedback')}</div>
-          <div class="row" style="gap:10px;justify-content:flex-end">
-            <${Button} small icon="play" label="Test the direction" disabled=${!live || axis < 0} onClick=${() => setTest(true)} />
-            <${Toggle} checked=${d.ff_invert ?? !!S.settings?.ff_invert} onChange=${(v) => change((c) => (c.ff_invert = v))} />
-          </div>
-        </div>`}
-      <div class="section-title">${t('For every wheel')}</div>
-      <${SettingRow} row=${settingRow('wheel_range')} />
-      <${SettingRow} row=${settingRow('wheel_lock')} />
-      ${ff &&
-      html`<${SettingRow} row=${settingRow('ff_enabled')} />
-        <${SettingRow} row=${settingRow('ff_road_vib')} />
-        <${SettingRow} row=${settingRow('ff_engine_vib')} />
-        <${SettingRow} row=${settingRow('ff_fade')} />`}
-    </div>
+      <div class="stack" style="gap:6px">
+        <div class="section-title">${t('For every wheel')}</div>
+        <${SettingRow} row=${settingRow('wheel_range')} />
+        <${SettingRow} row=${settingRow('wheel_lock')} />
+        <${SettingRow} row=${settingRow('cab_wheel_rotation')} />
+        ${ff && html`<${SettingRow} row=${settingRow('ff_enabled')} />`}
+      </div>
+    </${Card}>
+    ${ff && html`<${FeedbackCard} d=${d} live=${live} axis=${axis} change=${change} onTest=${() => setTest(true)} />`}
     ${test &&
     html`<${FeedbackTest}
       device=${d}
@@ -619,7 +693,62 @@ function WheelCard({ d, live, ff, change, paused }) {
         change((c) => (c.ff_invert = v));
         setTest(false);
       }}
-    />`}
+    />`}`;
+}
+
+const pct = (v) => `${Math.round(v * 100)} %`;
+const smoothMs = (v) => (v < 0.0005 ? t('Off') : `${Math.round(v * 1000)} ms`);
+
+/** A force feedback slider with a sentence on what it does. */
+function FeedbackSlider({ label, help, value, max, step = 0.05, format = pct, onChange }) {
+  return html`<div class="setting-row full"><${Slider} label=${label} help=${help} value=${value} min=${0} max=${max} step=${step} format=${format} onChange=${onChange} /></div>`;
+}
+
+/** This wheel's force feedback: its strengths and tuning (saved with the device), then the
+ * vibration every wheel shares and the direction. */
+function FeedbackCard({ d, live, axis, change, onTest }) {
+  const [steer, vib] = d.ff_scale || [1, 1];
+  const tune = tuneOf(d);
+  const scale = (i) => (v) =>
+    change((c) => {
+      const next = [...(c.ff_scale || [1, 1])];
+      next[i] = v;
+      c.ff_scale = next;
+    });
+  const tuned = (key) => (v) => change((c) => setTune(c, { [key]: v }));
+  // (the five tuning values only, as the game's own Reset tuning: the strengths have their sliders)
+  const reset = () => change((c) => (c.ff_tune = null));
+  const custom = d.ff_tune != null;
+  return html`<${Card} title="Force feedback" actions=${html`<${Button} small kind="ghost" icon="refresh" label="Reset tuning" disabled=${!custom} onClick=${reset} />`}>
+    <div class="stack" style="gap:6px">
+      ${!!S.poll?.instances?.length && html`<${Notice} kind="warn">${t("Changes take effect the next time you drive, or after Reload saved controllers in the game's controller menu.")}</${Notice}>`}
+      <div class="section-title">${t('Steering')}</div>
+      <div class="ff-grid">
+        <${FeedbackSlider} label="Steering force" help="Overall strength of the steering forces on this wheel; lower it on a strong direct-drive base, raise it on a weak wheel." value=${steer} max=${2} onChange=${scale(0)} />
+        <${FeedbackSlider} label="Self-centring" help="How strongly the moving bus turns the wheel back to straight after a turn; it never pulls while the bus is stopped." value=${tune.centring} max=${2} onChange=${tuned('centring')} />
+        <${FeedbackSlider} label="Damping" help="How much the wheel resists fast movement, so a released wheel settles at the centre instead of swinging past it; raise it if the wheel oscillates." value=${tune.damping} max=${3} onChange=${tuned('damping')} />
+        <${FeedbackSlider} label="Parking resistance" help="How heavy the wheel is to turn while the bus stands or crawls; it eases as the bus rolls." value=${tune.parking} max=${2} onChange=${tuned('parking')} />
+      </div>
+      <div class="section-title">${t('Fine tuning')}</div>
+      <div class="ff-grid">
+        <${FeedbackSlider} label="Minimum force" help="Lifts the smallest forces above the point where your wheel starts to feel them; useful on belt and gear wheels with a dead centre, leave at 0 on direct drive." value=${tune.min_force} max=${0.2} step=${0.01} onChange=${tuned('min_force')} />
+        <${FeedbackSlider} label="Smoothing" help="Softens sudden steps in the steering force that can feel grainy on strong wheels at low frame rates; higher values add a little delay." value=${tune.smoothing} max=${0.05} step=${0.005} format=${smoothMs} onChange=${tuned('smoothing')} />
+      </div>
+      <div class="section-title">${t('Vibration')}</div>
+      <div class="ff-grid">
+        <${FeedbackSlider} label="Vibration" help="Overall strength of shakes, kerb jolts and the road and engine tremble on this wheel." value=${vib} max=${2} onChange=${scale(1)} />
+        <${SettingRow} row=${settingRow('ff_road_vib')} />
+        <${SettingRow} row=${settingRow('ff_engine_vib')} />
+        <${SettingRow} row=${settingRow('ff_fade')} />
+      </div>
+      <div class="setting-row">
+        <div class="name">${t('Invert force feedback')}</div>
+        <div class="row" style="gap:10px;justify-content:flex-end">
+          <${Button} small icon="play" label="Test the direction" disabled=${!live || axis < 0} onClick=${onTest} />
+          <${Toggle} checked=${d.ff_invert ?? !!S.settings?.ff_invert} onChange=${(v) => change((c) => (c.ff_invert = v))} />
+        </div>
+      </div>
+    </div>
   </${Card}>`;
 }
 

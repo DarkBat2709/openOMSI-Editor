@@ -50,6 +50,13 @@ impl VehicleInstance {
         self.ty.program.has_script_var(name)
     }
 
+    /// Whether any of the vehicle's scripts assigns variable `name`: a variable that is only
+    /// declared (a shared varlist) keeps its starting zero and means nothing.
+    pub fn script_stores(&self, name: &str) -> bool {
+        let p = &self.ty.program;
+        p.var(name).is_some_and(|id| p.stores(id))
+    }
+
     /// The door release to fire now: the bus's own, the C2's switch turned over, else `bus_dooraft`.
     pub fn door_release_trigger(&self) -> Option<&'static str> {
         let p = &self.ty.program;
@@ -66,18 +73,20 @@ impl VehicleInstance {
     pub fn var_name(&self, index: usize) -> Option<&str> {
         self.var_index
             .iter()
-            .find(|(_, &i)| i as usize == index)
+            .find(|&(_, &i)| i as usize == index)
             .map(|(n, _)| n.as_str())
     }
 
     pub fn set_var(&mut self, name: &str, v: f32) -> bool {
-        match omsi_script::compile::with_lower(name, |k| self.var_index.get(k).copied()) {
-            Some(i) => {
-                self.state.vars[i as usize] = v;
-                true
-            }
-            None => false,
+        let slot = omsi_script::compile::with_lower(name, |k| {
+            self.var_index.get(k).copied().ok_or_else(|| self.model_only_vars.iter().any(|n| n == k))
+        });
+        match slot {
+            Ok(i) => self.state.vars[i as usize] = v,
+            Err(true) => self.add_var(name, v),
+            Err(false) => return false,
         }
+        true
     }
 
     /// Variables the engine feeds the model directly (`Dirt_Norm`, `AI`, …): OMSI's
@@ -85,12 +94,16 @@ impl VehicleInstance {
     /// read as 1.0 - every bus wore its dirt film at full strength from the first frame.
     pub fn set_engine_var(&mut self, name: &str, v: f32) {
         if !self.set_var(name, v) {
-            let id = self.state.vars.len() as omsi_script::VarId;
-            self.state.vars.push(v);
-            std::sync::Arc::make_mut(&mut self.var_index).insert(name.to_ascii_lowercase(), id);
-            self.pax_vars = std::sync::OnceLock::new();
-            self.engine_ids = std::sync::OnceLock::new();
+            self.add_var(name, v);
         }
+    }
+
+    fn add_var(&mut self, name: &str, v: f32) {
+        let id = self.state.vars.len() as omsi_script::VarId;
+        self.state.vars.push(v);
+        std::sync::Arc::make_mut(&mut self.var_index).insert(name.to_ascii_lowercase(), id);
+        self.pax_vars = std::sync::OnceLock::new();
+        self.engine_ids = std::sync::OnceLock::new();
     }
 
     pub fn trigger(&mut self, name: &str) -> bool {
@@ -138,7 +151,9 @@ impl VehicleInstance {
     pub fn trial_triggers(&mut self, names: &[&str]) -> Vec<f32> {
         let (state, vm) = (self.state.clone(), self.vm.clone());
         let (fired, fired_files, messages, time_written) = (self.host.fired_triggers.len(), self.host.fired_file_triggers.len(), self.host.messages.clone(), self.host.time_written);
+        let last_message = self.host.last_message.clone();
         let fired_vars = self.host.fired_trigger_vars.len();
+        let network_sounds = self.host.network_sound_triggers.len();
         for n in names {
             self.trigger(n);
         }
@@ -147,8 +162,10 @@ impl VehicleInstance {
         self.vm = vm;
         self.host.fired_triggers.truncate(fired);
         self.host.fired_trigger_vars.truncate(fired_vars);
+        self.host.network_sound_triggers.truncate(network_sounds);
         self.host.fired_file_triggers.truncate(fired_files);
         self.host.messages = messages;
+        self.host.last_message = last_message;
         self.host.time_written = time_written;
         out
     }

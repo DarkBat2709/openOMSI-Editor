@@ -224,7 +224,7 @@ impl App {
             None => match event_loop.create_window(attrs) {
                 Ok(w) => Arc::new(w),
                 Err(e) => {
-                    fatal_message(&format!("The game cannot open its window: {e}"));
+                    fatal_message(&omsi_ui::tr("The game cannot open its window: {e}").replace("{e}", &e.to_string()));
                     crate::platform::exit(event_loop);
                     return;
                 }
@@ -237,10 +237,10 @@ impl App {
             cursor_size / 2, cursor_size / 2,
         ).ok().map(|source| event_loop.create_custom_cursor(source));
         self.input.cursor_kind = u8::MAX;
-        let start = match crate::startup::RendererStart::begin(&mut self.gfx.instance, &window, self.args.session_settings.render_options(&self.settings)) {
+        let start = match crate::startup::RendererStart::begin(&mut self.gfx.instance, &window, omsi_render::RenderOptions { max_scene: crate::settings::fullscreen_scene_cap(self.settings.fullscreen, self.gfx.spanned, resolution), ..self.args.session_settings.render_options(&self.settings) }) {
             Ok(s) => s,
             Err(e) => {
-                fatal_message(&format!("The game cannot draw on this computer: {e:#}"));
+                fatal_message(&omsi_ui::tr("The game cannot draw on this computer: {e:#}").replace("{e:#}", &omsi_ui::tr(&format!("{e:#}"))));
                 crate::platform::exit(event_loop);
                 return;
             }
@@ -310,7 +310,7 @@ impl App {
         let renderer = match ws.start.wait(&mut self.gfx.instance) {
             Ok(r) => r,
             Err(e) => {
-                fatal_message(&format!("The game cannot draw on this computer: {e:#}"));
+                fatal_message(&omsi_ui::tr("The game cannot draw on this computer: {e:#}").replace("{e:#}", &omsi_ui::tr(&format!("{e:#}"))));
                 crate::platform::exit(event_loop);
                 return true;
             }
@@ -326,7 +326,8 @@ impl App {
         let Some(window) = self.window.clone() else { return };
         #[cfg(windows)]
         if self.settings.vr_requested() {
-            match crate::openxr::Vr::new(&renderer, self.settings.vr_scale, self.settings.vr_desktop_mirror) {
+            let image_scale = renderer.start_xr(self.settings.vr_scale);
+            match crate::openxr::Vr::new(&mut renderer, image_scale, self.settings.vr_desktop_mirror) {
                 Ok(vr) => self.xr.vr = Some(vr),
                 Err(e) => log::error!("OpenXR could not start: {e:#}"),
             }
@@ -351,7 +352,7 @@ impl App {
             match SurfaceState::new_with(&self.gfx.instance, window.clone(), &renderer, size.width, size.height, vsync) {
                 Ok(s) => self.gfx.surface = Some(s),
                 Err(e) => {
-                    fatal_message(&format!("The game's window cannot be drawn into: {e:#}"));
+                    fatal_message(&omsi_ui::tr("The game's window cannot be drawn into: {e:#}").replace("{e:#}", &format!("{e:#}")));
                     crate::platform::exit(event_loop);
                     return;
                 }
@@ -441,7 +442,8 @@ impl App {
                         .unwrap_or(1200.0)
                         .max(omsi_map::tile_size());
                     w.set_fast_texture_loads(true);
-                    let (textures, video) = (texture_budget(), video_memory_limit(&self.settings));
+                    let video = video_memory_limit(&self.settings);
+                    let textures = texture_budget(video);
                     w.set_texture_budget(textures);
                     w.set_video_memory_limit(video);
                     log::info!(
@@ -454,6 +456,7 @@ impl App {
                         &start_centers(&self.args, &cam, Some(&w)),
                         distance,
                         700.0,
+                        crate::release_free_memory,
                     ));
                     self.world = Some(w);
                     self.menus.editor = None;
@@ -503,7 +506,7 @@ impl App {
                     Err(e) if self.args.bus.is_some() => {
                         log::warn!("the bus could not be put down ({e:#}); trying again");
                         spawn_player(&self.args, &w, &renderer, &mut scene).map_err(|e2| {
-                            self.service_msg = Some((format!("The bus could not be loaded: {}", format!("{e2:#}").lines().next().unwrap_or_default()), 15.0));
+                            self.service_msg = Some((format!("The bus could not be loaded ({})", format!("{e2:#}").lines().next().unwrap_or_default()), 15.0));
                             e2
                         })
                     }
@@ -588,6 +591,10 @@ impl App {
                     n.show_ai = self.settings.nav_ai;
                     n.show_surface = self.settings.nav_surface;
                     n.light = self.settings.nav_light;
+                    n.show_3d = self.settings.nav_3d;
+                    n.classic_2d = self.settings.nav_classic_2d;
+                    n.widget = self.settings.nav_widget;
+                    n.size = self.settings.nav_size;
                 }
                 if let Some(d) = self.args.driver.as_deref() {
                     self.session.career = career::Career::load(&self.args.root, d);
@@ -599,6 +606,7 @@ impl App {
                         h.set_lan_seed(lan::population_seed(lan));
                     }
                     h.exact_fare = self.settings.exact_fare;
+                    h.bad_driving = self.settings.pax_bad_driving;
                     h.boarding = self.settings.boarding.clone();
                     h.stand_chance = self.settings.standing_chance;
                     h.voices = match self.settings.pax_voices.as_str() { "off" => 2, "tickets" => 1, _ => 0 };
@@ -681,7 +689,7 @@ impl App {
                                 }
                                 Err(e) => {
                                     log::warn!("no player duty: {e}");
-                                    self.service_msg = Some((format!("No duty: {e}"), 20.0));
+                                    self.service_msg = Some((omsi_ui::i18n::tr_fill_words("No duty ({e})", &[("{e}", &e)]), 20.0));
                                     None
                                 }
                             };
@@ -707,6 +715,7 @@ impl App {
                                 }
                             }
                         }
+                        sch.start_transit(w.clone());
                         self.session.schedule = Some(sch);
                     } else if !crate::rail_drive::args_rail(&self.args) && self.args.lan_join.is_none() {
                         // (the timetable is still the map's to read and pick a duty from: a
@@ -734,6 +743,9 @@ impl App {
                         std::time::Duration::from_millis(1500),
                     );
                 }
+                if let Some(p) = self.player.as_mut() {
+                    crate::duty_start::set_starting_cabin_temperature(&self.args, &mut p.vehicle);
+                }
                 self.world = Some(w);
                 self.menus.editor = None;
                 self.menus.editor_paused = None;
@@ -747,11 +759,18 @@ impl App {
         self.last = Instant::now();
     }
 
-    /// The first area of a streamed map is loading: show how far it got, and start the rest
-    /// of the world once it is there. Returns false while the loading screen is up.
+    /// The first area of a streamed map is loading, then what holds the start (`omsi_lan::game::start_held`):
+    /// show how far it got, start the world once it is there. False while the loading screen is up.
     pub(crate) fn drive_start(&mut self, event_loop: &ActiveEventLoop) -> bool {
         let Some(cam) = self.cam.starting.take() else {
-            return true;
+            let Some((caption, progress)) = omsi_lan::game::start_held() else { return true };
+            if let (Some(renderer), Some(scene)) = (self.renderer.take(), self.scene.take()) { self.loading_frame(renderer, scene, &caption, progress) }
+            // (--exit-after holds while the start waits - our bus on its way - as while loading)
+            if let Some(limit) = self.args.exit_after.filter(|l| self.started.elapsed().as_secs_f32() > *l) {
+                log::info!("exit after {limit} s while the start waited: {caption}");
+                crate::platform::exit(event_loop);
+            }
+            return false;
         };
         let (Some(renderer), Some(mut scene)) = (self.renderer.take(), self.scene.take()) else {
             self.cam.starting = Some(cam);
@@ -797,7 +816,8 @@ impl App {
                 log::warn!("this run was started again after the graphics device was lost ({n}): lighter graphics for this run");
                 self.service_msg = Some(("The graphics driver reset the card: the game started again with lighter graphics for this drive. Settings → Graphics keeps yours for the next start.".into(), 12.0));
             }
-            return true;
+            omsi_lan::game::drive_started(&self.args.lan_config(), &self.args.root, self.player.as_ref().map(|p| &p.vehicle));
+            return omsi_lan::game::start_held().is_none();
         };
         let name = self
             .world
@@ -810,6 +830,27 @@ impl App {
                 }
             })
             .unwrap_or_default();
+        // (the bar eases towards the count: it came in unevenly and jumped to its end)
+        let dt = self.menus.loading.tick();
+        if self.menus.loading.expected <= 0.0 {
+            self.menus.loading.expected = crate::ui::LoadTimes::expected(&self.args.map).unwrap_or(crate::ui::LOADING_FIRST_GUESS);
+            log::info!("loading: {:.1} s expected for {}", self.menus.loading.expected, self.args.map);
+        }
+        self.menus.loading.step(done as f32 / total.max(1) as f32, dt);
+        self.menus.loading.title = name.trim().to_string();
+        self.loading_frame(renderer, scene, name.trim(), self.menus.loading.shown());
+        self.cam.starting = Some(cam);
+        if let Some(limit) = self.args.exit_after {
+            if self.started.elapsed().as_secs_f32() > limit {
+                log::info!("exit after {limit} s while loading: {done} of {total} tiles");
+                crate::platform::exit(event_loop);
+            }
+        }
+        false
+    }
+
+    /// One loading screen picture (the map, or our bus going to the server): `title`, bar at `shown`.
+    fn loading_frame(&mut self, renderer: omsi_render::Renderer, mut scene: Scene, title: &str, shown: f32) {
         let mut reconfigure = false;
         if let (Some(ui), Some(s), Some(win)) = (
             self.ui.as_mut(),
@@ -819,15 +860,7 @@ impl App {
             scene.overlays.clear();
             let dpi = win.scale_factor() as f32;
             let scale = dpi * crate::ui::size_factor(s.config.height as f32, dpi, self.settings.ui_scale, self.settings.ui_scale_window);
-            // (the bar eases towards the count: it came in unevenly and jumped to its end)
-            let dt = self.menus.loading.tick();
-            if self.menus.loading.expected <= 0.0 {
-                self.menus.loading.expected = crate::ui::LoadTimes::expected(&self.args.map).unwrap_or(crate::ui::LOADING_FIRST_GUESS);
-                log::info!("loading: {:.1} s expected for {}", self.menus.loading.expected, self.args.map);
-            }
-            self.menus.loading.step(done as f32 / total.max(1) as f32, dt);
-            self.menus.loading.title = name.trim().to_string();
-            ui.loading(&renderer, &mut scene, s.config.width as f32, s.config.height as f32, scale, name.trim(), self.menus.loading.shown(), self.menus.loading.clock(), self.menus.loading.tip());
+            ui.loading(&renderer, &mut scene, s.config.width as f32, s.config.height as f32, scale, title, shown, self.menus.loading.clock(), self.menus.loading.tip());
             let acquired = s.acquire();
             // a swapchain that no longer fits the window (Vulkan says so after the switch
             // to full screen, without a resize event) is made again, as the game's own
@@ -889,14 +922,6 @@ impl App {
             }
         }
         self.scene = Some(scene);
-        self.cam.starting = Some(cam);
-        if let Some(limit) = self.args.exit_after {
-            if self.started.elapsed().as_secs_f32() > limit {
-                log::info!("exit after {limit} s while loading: {done} of {total} tiles");
-                crate::platform::exit(event_loop);
-            }
-        }
-        false
     }
 
 }
@@ -945,16 +970,14 @@ pub(crate) fn report_missing_content(w: &World, msg: &mut Option<(String, f32)>)
     let _ = std::fs::write(&path, text);
     let objects = files.iter().filter(|(_, w)| *w != "spline").count();
     let splines = files.len() - objects;
-    let addons: Vec<&String> = by_addon.keys().take(4).collect();
-    let more = if by_addon.len() > 4 { format!(" and {} more", by_addon.len() - 4) } else { String::new() };
+    let mut addons = by_addon.keys().take(4).map(|a| a.as_str()).collect::<Vec<_>>().join(", ");
+    if by_addon.len() > 4 {
+        addons.push_str(", …");
+    }
     log::warn!("missing content: {objects} objects, {splines} splines, {} textures (list: {})", textures.len(), path.display());
     if !files.is_empty() {
         *msg = Some((
-            format!(
-                "This map uses {objects} objects and {splines} splines that are not installed (add-ons: {}{more}). The list is in {}",
-                addons.iter().map(|a| a.as_str()).collect::<Vec<_>>().join(", "),
-                path.display()
-            ),
+            format!("This map uses {objects} objects and {splines} splines that are not installed (add-ons: {addons}). The list is in {}", path.display()),
             15.0,
         ));
     }

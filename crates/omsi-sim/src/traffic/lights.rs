@@ -20,6 +20,15 @@ pub struct LightStop {
 /// `[approachdist]` (m): about four seconds at town speed.
 pub const DEFAULT_APPROACH: f32 = 50.0;
 
+/// From how far before the stop line (m) a rail vehicle asks a light whose program gives
+/// no distance (unset or 0, as level crossings mostly do): about its braking distance from
+/// 100 km/h, so the barriers are down when it comes.
+pub const RAIL_ASK_DISTANCE: f32 = 600.0;
+
+/// A vehicle waiting with its front within this of the stop line (m) asks its light, the
+/// `[approachdist]` notwithstanding (with 0 a car half a metre short never asked).
+pub const WAITING_AT_LINE: f32 = 3.0;
+
 /// The `TrafficLightPhase` of an object no crossing light drives: a signal without a
 /// `[varparent]`, one whose crossing has no program, any other scripted object. Omsi.exe
 /// binds every placed object's `TrafficLightPhase` and `TrafficLightApproach` to a light
@@ -98,6 +107,24 @@ impl TrafficLightController {
         self.approach.get(i).copied().flatten().unwrap_or(DEFAULT_APPROACH)
     }
 
+    /// Whether light `i` is asked by a vehicle `gap` m before its stop line (below 0: over
+    /// it) going `speed` m/s. The program's own distance holds for every vehicle; where it
+    /// gives none (unset or 0) a rail vehicle asks from [`RAIL_ASK_DISTANCE`], a road one
+    /// from the default when unset and only at the line when 0. Whoever waits at the line
+    /// asks.
+    pub fn is_asked_by(&self, i: usize, gap: f32, speed: f32, rail: bool) -> bool {
+        if speed.abs() < 0.5 && gap <= WAITING_AT_LINE {
+            return true;
+        }
+        let set = self.approach.get(i).copied().flatten();
+        let distance = match (set.filter(|&d| d > 0.0), rail) {
+            (Some(d), _) => d,
+            (None, true) => RAIL_ASK_DISTANCE,
+            (None, false) => set.unwrap_or(DEFAULT_APPROACH),
+        };
+        gap <= distance
+    }
+
     /// Run the cycle clock on by `dt` seconds of game time, honouring the stop and jump
     /// points with this frame's requests (`request`, set by the caller before).
     pub fn advance(&mut self, dt: f32) {
@@ -133,7 +160,11 @@ impl TrafficLightController {
             let Some((k, d)) = best else {
                 if left > 0.0 {
                     clear_rewind(self, left);
-                    self.passed.clear();
+                    // (a sliver of a frame left over does not make the clock leave the
+                    // points it stands on)
+                    if left > 1e-6 {
+                        self.passed.clear();
+                    }
                 }
                 self.time = (self.time + left).rem_euclid(cycle);
                 return;
@@ -145,9 +176,20 @@ impl TrafficLightController {
             self.time = (self.time + d).rem_euclid(cycle);
             left -= d;
             let p = self.stops[k];
-            let asked = self.request.get(p.light).copied().unwrap_or(false);
+            let asked = if p.if_request {
+                self.stops.iter().any(|q| q.if_request && q.time == p.time && q.jump_to == p.jump_to && self.request.get(q.light).copied().unwrap_or(false))
+            } else {
+                self.request.get(p.light).copied().unwrap_or(false)
+            };
             let active = if p.if_request { !asked } else { asked };
-            if !active {
+            // A stop does not hold the changeover to green: while some light shows
+            // red-and-yellow the clock goes on. London's Brixton Road programs put a stop a
+            // second into red-and-yellow, and a queue waiting there held the junction in the
+            // changeover for good. Any other phase may hold: green, and also flashing
+            // yellow, dark or all red (mod level crossings rest with dark road lights,
+            // night programs without a jump).
+            let holdable = p.jump_to.is_some() || !self.in_changeover();
+            if !active || !holdable {
                 self.passed.push(k);
                 continue;
             }
@@ -159,10 +201,26 @@ impl TrafficLightController {
                     // rest: the main road stays green round it until a request comes
                     // (Winsenburg's win-4: replayed once, it ran through yellow and red
                     // with nobody waiting and flickered between green and yellow, #1722).
-                    let no_progress = ((to as f64 - p.time as f64).rem_euclid(cycle)).abs() < 1e-6;
+                    // A jump past the cycle's end starts the next cycle at 0, it is not
+                    // wrapped round: Städtedreieck's Bergerplatz jumps to 130 s of its
+                    // 127 s cycle, and taken as 3 s it ran its night flashing in every
+                    // daytime cycle.
+                    let jump_to = f64::from(to);
+                    let target = if jump_to < cycle { jump_to.rem_euclid(cycle) } else { 0.0 };
+                    let no_progress = ((target - p.time as f64).rem_euclid(cycle)).abs() < 1e-6;
                     self.rewound = (!p.if_request && to > 1e-6 && to < p.time - 1e-6).then_some(k);
-                    self.time = (to as f64).rem_euclid(cycle);
+                    self.time = target;
+                    // The clock lands on the point it jumped to: the points that lie exactly
+                    // there are behind it, as the ones it was jumped over are. Taken again at
+                    // the landing, win-4's "nobody asks at the bus light: back to 2 s" fired
+                    // on arriving at 22 s by the other bus's jump and sent the clock round
+                    // 2 -> 22 -> 2 for good: the second bus light never got its green (#3092).
                     self.passed.clear();
+                    for (j, q) in self.stops.iter().enumerate() {
+                        if ((q.time as f64 - target).rem_euclid(cycle) < 1e-6 || (target - q.time as f64).rem_euclid(cycle) < 1e-6) && j != k {
+                            self.passed.push(j);
+                        }
+                    }
                     // A jump at the cycle boundary can target zero (for example TCSP17's
                     // `[traffic_light_jump] 4 84 1 0`). At cycle position zero that is a
                     // no-op: without remembering this event, it fires again at distance
@@ -182,6 +240,11 @@ impl TrafficLightController {
                 }
             }
         }
+    }
+
+    /// Some light shows red-and-yellow: the program is changing over to green.
+    fn in_changeover(&self) -> bool {
+        (0..self.lights.len()).any(|i| Self::aspect(self.state(i)) == Aspect::RedYellow)
     }
 
     /// State of light `i` at position `x` of the cycle (s).

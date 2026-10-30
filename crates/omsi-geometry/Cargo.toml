@@ -13,3 +13,4 @@ omsi-cfg = { path = "../omsi-cfg" }
 glam.workspace = true
 log.workspace = true
 serde.workspace = true
+spade.workspace = true

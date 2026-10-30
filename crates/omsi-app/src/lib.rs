@@ -12,13 +12,16 @@
 //! launcher knows through `apple_bridge`.
 
 mod admin;
-mod check;
+mod admin_panel;
+mod auto_announce;
+mod player_list;
+mod voice_chat;
+use omsi_scene::check;
 use omsi_platform::discord;
 #[cfg(steam)]
 mod steam;
-use omsi_lan::voice;
-mod head_idle;
-use omsi_input::headtrack;
+pub(crate) use omsi_scene::head_idle;
+use omsi_input::{head_filter, headtrack, tobii};
 #[cfg(windows)]
 use omsi_xr::openxr;
 #[cfg(target_os = "android")]
@@ -35,7 +38,7 @@ mod platform;
 mod touch;
 mod units;
 mod placing;
-mod mt;
+use omsi_mt as mt;
 use omsi_platform::updater;
 mod update_watch;
 use omsi_platform::presence;
@@ -48,6 +51,7 @@ use omsi_career::career;
 use omsi_input::describe;
 mod editor;
 mod editor_reload;
+mod route_editor;
 mod spline_audit;
 mod audit_events;
 mod spline_editor;
@@ -62,7 +66,7 @@ mod junction_events;
 mod junction_connections;
 mod roadside_objects;
 mod roadside_events;
-mod editor_diagnostics;
+use omsi_scene::editor_diagnostics;
 mod traffic_editor;
 mod editor_path_edit;
 mod traffic_connector;
@@ -77,10 +81,10 @@ mod game_panels;
 mod game_controller_menu;
 mod rail_drive;
 use omsi_scene::driver;
-mod export;
-mod hud;
+use omsi_scene::export;
+pub(crate) use omsi_scene::hud;
 mod humans;
-mod journey;
+use omsi_career::journey;
 use omsi_input::keys;
 // (LAN play: the session is omsi-lan's `game`, see `lan_play`; the shared world's mirror
 // stays here: it drives the app's `Traffic`, `Humans` and their view directly)
@@ -91,9 +95,10 @@ use omsi_scene::lights;
 mod launcher;
 mod menu;
 mod mirror_hud;
-mod navigator;
+use omsi_navigator as navigator;
 mod vr_navigator;
 use omsi_scene::money;
+mod milezero;
 mod radio;
 
 use omsi_scene::puddles;
@@ -103,17 +108,28 @@ use omsi_scene::{rain, window_wipers};
 mod scene;
 mod season_phase;
 mod schedule;
-mod schedule_paper;
+/// The cab's paper timetable (`omsi_scene::schedule_paper`) in the game's language.
+mod schedule_paper {
+    pub(crate) fn update_vehicle(
+        vehicle: &mut omsi_sim::VehicleInstance,
+        duty: &omsi_sim::timetable_run::PlayerDuty,
+        fonts: &mut omsi_sim::texttex::FontLibrary,
+    ) -> anyhow::Result<()> {
+        omsi_scene::schedule_paper::update_vehicle(vehicle, duty, fonts, || crate::settings::Settings::load().language)
+    }
+}
 mod real_time;
 mod settings;
 mod shell;
 mod photo;
+mod depot_bus;
 mod devtools;
 mod telemetry;
 use omsi_scene::threads;
-mod tiles;
+use omsi_scene::tiles;
 mod traffic;
 mod view_sync;
+mod watchdog;
 mod ui;
 
 // the game itself, split by what each part does
@@ -125,7 +141,7 @@ mod camera_util;
 // the game controllers, their mappings and force feedback (`omsi-input`), at their old paths
 use omsi_input::{controllers, gamepad_profile, hpattern};
 mod cli;
-mod diagnostics;
+use omsi_input::diagnostics;
 mod perf_overlay;
 mod perf_report;
 pub(crate) use omsi_cfg::profile_keys;
@@ -134,12 +150,17 @@ mod support_bundle;
 mod duty_start;
 mod input_script;
 mod app_impl;
-mod launcher_link;
+use omsi_guard::launcher_link;
 use omsi_lan::mods as lan_mods;
 mod memory;
 mod offscreen;
-mod ground_gap;
+pub(crate) use omsi_sim::ground_gap;
 mod on_foot;
+mod trolley_hands;
+mod trolley_mouse;
+pub(crate) mod trolley_net;
+mod trolley_sound;
+mod optimiser;
 use omsi_scene::route_arrows;
 mod server;
 mod player;
@@ -147,6 +168,7 @@ mod plugin_io;
 // the plugins' panels (`omsi-plugin-ui`) at their old path, and the app's side of their input
 use omsi_plugin_ui as plugin_ui;
 mod plugin_panels;
+mod process_permissions;
 mod plugins;
 mod services;
 mod sim_thread;
@@ -155,8 +177,9 @@ mod spawn;
 use omsi_input::stock_keys;
 mod startup;
 mod traffic_link;
-mod tutorial;
+pub(crate) use omsi_content::tutorial;
 mod weather_setup;
+mod weather_tomorrow;
 use omsi_weather::{weather_cycle, weather_model};
 mod world_load;
 
@@ -164,7 +187,7 @@ mod world_load;
 rust_i18n::i18n!("locales");
 // (the tables are read when this crate compiles: this makes cargo compile it again when they
 // change - the macro alone left the old texts in the program)
-const _LOCALES: &str = include_str!("../locales/app.yml");
+use omsi_launcher_lib::i18n::TABLES as _LOCALES;
 const _EDITOR_LOCALES: &str = include_str!("../locales/editor.yml");
 
 /// Show the interface in `code` (the settings' ENG / DEU / FRA / RUS).
@@ -179,6 +202,12 @@ pub(crate) fn ui_language(code: &str) {
     omsi_ui::i18n::set_language(iso);
     omsi_sim::vehicle_api::set_locale(iso);
 }
+
+const MISSING_ORIGINAL: &str = "The original OMSI 2 was not found.\n\n\
+    openOMSI needs a complete installation of the original game (any version). \
+    Choose its folder in the launcher (Setup), or start once with \
+    --root \"/path/to/OMSI 2\", the folder with Omsi.exe, maps and Vehicles in it.\n\n\
+    Missing in {folder}: {missing}";
 
 fn locale_keys(yml: &str) -> impl Iterator<Item = String> + '_ {
     yml.lines().filter_map(|l| l.strip_prefix('"')?.strip_suffix("\":")).filter(|k| k.contains('{')).filter_map(|k| {
@@ -241,10 +270,11 @@ pub fn run() -> Result<()> {
     restart_with_allocator_settings();
     #[cfg(windows)]
     attach_parent_console();
-    // `--check-vehicle <file>`: the loaders' findings as JSON, no window, no log
-    if std::env::args().nth(1).as_deref() == Some("--check-vehicle") {
+    // `--check <file or folder>` (`--check-vehicle`, its old name): the loaders' findings
+    // as JSON, no window, no log
+    if matches!(std::env::args().nth(1).as_deref(), Some("--check" | "--check-vehicle")) {
         let rest: Vec<String> = std::env::args().skip(2).collect();
-        return check::run(&rest);
+        return check::run(&rest, crate::startup::find_root);
     }
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
     // a panic goes into the log (which the launcher keeps per session) with where it
@@ -291,7 +321,7 @@ pub fn run() -> Result<()> {
         if omsi_cfg::flags::OMSI_LAUNCHER.is_set() && open_launcher()? {
             return Ok(());
         }
-        return open_app_launcher();
+        return open_app_launcher(fatal_message);
     }
     let Some(app) = make_app(args, server_cfg)? else { return Ok(()) };
     // a game session's start goes into the start guard's journal (a version whose sessions
@@ -337,12 +367,22 @@ pub(crate) fn prepare(mut args: Args, bare: bool) -> Result<Option<(Args, Option
         args.on_foot = false;
         args.schedule = false;
     }
+    optimiser::recover_cut_short();
     ui_language(&settings::Settings::load().language);
     units::Units::from_setting(&settings::Settings::load().units).set();
     // (a server has no interface to translate)
     mt::enable(settings::Settings::load().machine_translation && args.server.is_none());
     // the dedicated server: server.cfg decides the world, the rest is a host without a window
     let server_cfg = match args.server.clone() {
+        // (a start script asking for the maps: server.cfg written when missing, nothing more
+        // of a server's start - no METAR report fetched)
+        Some(p) if args.list_maps => {
+            if let Err(e) = server::ServerCfg::load(&p, game_lists::TRAFFIC_MAX) {
+                eprintln!("server: {e:#}");
+                std::process::exit(2);
+            }
+            None
+        }
         Some(p) => match server::prepare(&mut args, &p) {
             Ok(c) => Some(c),
             Err(e) => {
@@ -368,7 +408,8 @@ pub(crate) fn prepare(mut args: Args, bare: bool) -> Result<Option<(Args, Option
     log::info!("script random seed {seed} (OMSI_SEED={seed} repeats it)");
     let launcher_mode = bare && !args.menu;
     if !is_omsi_root(&args.root) {
-        match find_root() {
+        // (a start script checks the folder it was given: never another one found instead)
+        match find_root().filter(|_| !args.list_maps) {
             Some(p) => {
                 log::info!("OMSI 2 found at {}", p.display());
                 args.root = p;
@@ -383,19 +424,11 @@ pub(crate) fn prepare(mut args: Args, bare: bool) -> Result<Option<(Args, Option
                 // installation of it there is nothing to play on, and every player must have
                 // the same base whatever copy of OMSI 2 they own
                 let missing = omsi_cfg::missing_original_essentials(&args.root);
-                let text = format!(
-                    "The original OMSI 2 was not found.\n\n\
-                     openOMSI needs a complete installation of the original game (any version). \
-                     Choose its folder in the launcher (Setup), or start once with \
-                     --root \"/path/to/OMSI 2\", the folder with Omsi.exe, maps and Vehicles in it.\n\n\
-                     Missing in {}: {}",
-                    args.root.display(),
-                    missing.join(", ")
-                );
-                if server_cfg.is_some() {
+                let text = omsi_ui::tr(MISSING_ORIGINAL).replace("{folder}", &args.root.display().to_string()).replace("{missing}", &missing.join(", "));
+                if server_cfg.is_some() || args.list_maps {
                     eprintln!("{text}");
                 } else {
-                    fatal_dialog("openOMSI cannot start", &text);
+                    fatal_dialog(&omsi_ui::tr("openOMSI cannot start"), &text);
                 }
                 if cfg!(any(target_os = "android", target_os = "ios")) {
                     // (a phone's app is not ended from inside: back to the launcher)
@@ -405,7 +438,7 @@ pub(crate) fn prepare(mut args: Args, bare: bool) -> Result<Option<(Args, Option
             }
         }
     }
-    if let Some(memo) = root_memo().filter(|_| is_omsi_root(&args.root)) {
+    if let Some(memo) = root_memo().filter(|_| is_omsi_root(&args.root) && server_cfg.is_none() && args.pack_map.is_none()) {
         let _ = std::fs::write(memo, args.root.to_string_lossy().as_bytes());
     }
     // content roots: the game's own folder (mods) first, then the original installation
@@ -430,12 +463,36 @@ pub(crate) fn prepare(mut args: Args, bare: bool) -> Result<Option<(Args, Option
         omsi_cfg::vfs::mount_dir_zips(&c.join("Archives"));
     }
     omsi_cfg::add_content_root(args.root.clone());
+    if args.list_maps {
+        for m in server::installed_maps() {
+            println!("{m}");
+        }
+        std::process::exit(0);
+    }
+    // a server's map must be installed: said now, with the maps there are, rather than as
+    // a file the loading could not read
+    if server_cfg.is_some() {
+        if let Err(e) = server::check_map(&args) {
+            eprintln!("server: {e}");
+            std::process::exit(2);
+        }
+    }
     Ok(Some((args, server_cfg)))
 }
 
 /// The game for `args`, ready for its window; None when there is no window to open (a
 /// picture or a model was written instead).
 pub(crate) fn make_app(mut args: Args, server_cfg: Option<server::ServerCfg>) -> Result<Option<App>> {
+    if let (Some(map), Some(to)) = (args.pack_map.clone(), args.pack_to.clone()) {
+        omsi_lan::map_pack::run(&map, &to)?;
+        return Ok(None);
+    }
+    // the window's simulation beside the picture or inline, for the whole session (an
+    // offscreen run - a dedicated server, a picture - steps inline and never asks)
+    if args.offscreen.is_none() {
+        let sim_thread = omsi_sim::sim_thread::set_enabled(settings::Settings::load().sim_thread);
+        log::info!("sim thread: {}", if sim_thread { "the AI traffic, the people and the scenery scripts step beside the picture" } else { "off: every step on the main thread" });
+    }
     let _lan_status = lan::StatusFileGuard;
     // OMSI's tutorials: the lesson's own situation
     if let Some(n) = args.tutorial.filter(|n| (1..=4).contains(n)) {
@@ -481,6 +538,12 @@ pub(crate) fn make_app(mut args: Args, server_cfg: Option<server::ServerCfg>) ->
     } else {
         None
     };
+    // a dedicated server without its session has nobody to serve: why, and the end (it went
+    // on running alone, unreachable, with a warning among the log's lines)
+    if let (Some(cfg), None) = (server_cfg.as_ref(), lan.as_ref()) {
+        eprintln!("server: cannot open the session on UDP port {} (the line above says why): another server or program uses it, or the system refuses it. Stop the other one, or choose another `port` in {}", cfg.port, args.server.as_deref().map(|p| p.display().to_string()).unwrap_or_else(|| "server.cfg".into()));
+        std::process::exit(3);
+    }
     // turned away at the door (banned, full, another version): no game to play there
     if lan.as_ref().and_then(lan::turned_away).is_some() {
         log::info!("game ends");
@@ -498,6 +561,7 @@ pub(crate) fn make_app(mut args: Args, server_cfg: Option<server::ServerCfg>) ->
     if let (Some(cfg), Some(l)) = (server_cfg.as_ref(), lan.as_ref()) {
         lan::open_public_gateway(l, server::info_of(cfg), cfg.web_port, cfg.tunnel);
         lan::publish_vehicles(args.root.clone(), cfg.vehicles.clone());
+        server::start_public_list(cfg);
         if cfg.tunnel {
             // the address to give the players, as soon as cloudflared says it
             std::thread::spawn(|| {
@@ -517,6 +581,10 @@ pub(crate) fn make_app(mut args: Args, server_cfg: Option<server::ServerCfg>) ->
         if l.role == omsi_net::Role::Host {
             l.clock_speed = if settings.time_sync { 1.0 } else { settings.time_speed.clamp(1.0, 30.0) };
         }
+    }
+    // a server's voice chat: what its server.cfg allows (a game that hosts has its own settings)
+    if let (Some(l), Some(c)) = (lan.as_mut(), server_cfg.as_ref()) {
+        l.set_voice_policy(c.voice);
     }
     let mut lan_game = lan::LanGame::default();
     if args.export_glb.is_none() && args.lan_join.is_some() {
@@ -567,7 +635,12 @@ fn assemble_app(args: Args, settings: settings::Settings) -> App {
     // Steam must be initialized before the graphics instance and window so its overlay can
     // hook the rendering process before the first surface is created.
     #[cfg(steam)]
-    let steam = if is_server { None } else { crate::steam::Steam::start() };
+    // Fixtures must not create multiple process-global native Steam clients.
+    let steam = if is_server || cfg!(test) {
+        None
+    } else {
+        crate::steam::Steam::start()
+    };
     let instance = graphics_instance();
     let vr_nav_profiles = crate::vr_navigator::Profiles::load(crate::vr_navigator::profiles_path().as_deref());
     let ui = ui::Ui::new();
@@ -659,6 +732,7 @@ fn assemble_app(args: Args, settings: settings::Settings) -> App {
             metar_rx: None,
             metar_once: false,
             metar_next: 0.0,
+            tomorrow: Default::default(),
             sky,
         },
         menus: MenuState {
@@ -694,14 +768,18 @@ fn assemble_app(args: Args, settings: settings::Settings) -> App {
             admin_list: None,
             list_kind: None,
             key_capture: None,
+            ctrl_add_action: false,
             menu_prev_pause: false,
             info_bar,
             timetable: false,
+            hud_resize: None,
             notices: Vec::new(),
             note_watch: Default::default(),
             loading: Default::default(),
             menu_edit: None,
             menu_edit_icao: false,
+            menu_edit_number: false,
+            menu_edit_ident: false,
             menu_edit_search: false,
             menu_search: String::new(),
             swap_pending: false,
@@ -720,6 +798,7 @@ fn assemble_app(args: Args, settings: settings::Settings) -> App {
             view_fov: None,
             head_idle_hold: Default::default(),
             ego: false,
+            flashlight: false,
             in_cab: false,
             look: (0.0, 0.0),
             look_smooth: (0.0, 0.0),
@@ -731,37 +810,15 @@ fn assemble_app(args: Args, settings: settings::Settings) -> App {
             orbit: ORBIT_DEFAULT,
         },
         ui,
-        perf: PerfState {
-            fps: 0.0,
-            profile: Default::default(),
-            profile_prev: Default::default(),
-            total_frames: 0,
-            input_script,
-            shot: None,
-            frames: 0,
-            fps_t,
-            log_state: Default::default(),
-            spikes: 0,
-            worst_ms: 0.0,
-            governor: (0.0, 0, 0.0),
-            governor_low: 0,
-            governor_wait_prev: 0.0,
-            play_started: None,
-            cpu_mark: None,
-            thread_cpu_mark: None,
-            instructions_mark: None,
-            profile_mark: None,
-            frame_times: Vec::new(),
-            frame_stages: Vec::new(),
-            overlay: Default::default(),
-            texture_cut_at: None,
-        },
+        perf: PerfState::new(input_script, fps_t),
         sound: SoundState {
             radio,
+            milezero: Default::default(),
             audio: None,
             ambience: None,
             soundscape: None,
             voice: None,
+            voice_mutes: crate::voice_chat::load_mutes(),
             foot_in: None,
             voices_waiting: Vec::new(),
         },
@@ -780,9 +837,12 @@ fn assemble_app(args: Args, settings: settings::Settings) -> App {
             both_drag: None,
             clock_hold: 0.0,
             pad_look: [false; 4],
+            pad_repeat: Vec::new(),
             pad_voice_radio: false,
+            pad_voice_nearby: false,
             arrow_glance: false,
             headtrack: None,
+            head_filter: Default::default(),
             headtrack_failed: None,
             headtrack_scale_last: None,
             headtrack_scale_bias: [0.0; 6],
@@ -834,15 +894,10 @@ fn assemble_app(args: Args, settings: settings::Settings) -> App {
             update_watch,
             presence,
             plugins: None,
+            vehicle_scripts_of: None,
+            object_scripts: Default::default(),
         },
-        net: NetState {
-            remote_walkers: Vec::new(),
-            inside_remote: None,
-            is_admin: false,
-            lan: None,
-            remotes: Default::default(),
-            lan_world: Default::default(),
-        },
+        net: NetState::default(),
         service_msg: clock_note.map(|m| (m, 10.0)),
         settings,
         exiting: false,
@@ -919,6 +974,17 @@ mod tests {
 }
 
 #[cfg(test)]
+pub(crate) fn with_test_language<T>(code: &str, f: impl FnOnce() -> T) -> T {
+    use std::sync::{Mutex, OnceLock};
+    static LANGUAGE_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+    let _guard = LANGUAGE_LOCK.get_or_init(|| Mutex::new(())).lock().unwrap_or_else(|e| e.into_inner());
+    ui_language(code);
+    let result = f();
+    ui_language("ENG");
+    result
+}
+
+#[cfg(test)]
 mod locale_tests {
     use omsi_ui::i18n::{templated, templates, Piece};
 
@@ -929,6 +995,31 @@ mod locale_tests {
         let used: Vec<String> = templates(super::locale_keys(super::_LOCALES)).into_iter().map(|(k, _)| k).collect();
         for k in ["Graphics profile \"{name}\" not found", "Mirror panel added ({} in all)", "Head tracking with opentrack (UDP port {})"] {
             assert!(used.iter().any(|x| x == k), "{k}");
+        }
+    }
+
+    #[test]
+    fn multiplayer_messages_are_translated_in_traditional_chinese() {
+        for key in [
+            "Host's mods could not be fetched: {e}",
+            "Host's mods: everything the host uses is installed here",
+            "LAN: other players join with the code {}  (or by an address: {})",
+            "LAN: the host's weather: {}",
+            "Sent to the server: {action}",
+            "The server does not offer {name}",
+            "Online: {n} other players",
+            "Online: nobody else yet",
+            "Online: 1 other player",
+            "Online: connecting ...",
+            "Online: not connected: {reason} (chat /reconnect)",
+            "Online: in {host}'s game, {others}",
+            "Online: {warning}",
+            "nobody else yet",
+            "1 other player",
+            "{n} other players",
+        ] {
+            let translated = super::_rust_i18n_try_translate("zh-tw", key).map(|text| text.into_owned());
+            assert!(translated.as_ref().is_some_and(|text| !text.trim().is_empty() && text != key), "zh-tw: {key}");
         }
     }
 

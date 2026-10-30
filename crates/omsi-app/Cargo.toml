@@ -26,8 +26,11 @@ standalone-editor = ["omsi-platform/standalone-editor"]
 winresource.workspace = true
 
 [dependencies]
+sha2.workspace = true
 omsi-cfg = { path = "../omsi-cfg" }
 omsi-map = { path = "../omsi-map" }
+omsi-mapdraw = { path = "../omsi-mapdraw" }
+omsi-navigator = { path = "../omsi-navigator" }
 omsi-scenery = { path = "../omsi-scenery" }
 omsi-model = { path = "../omsi-model" }
 omsi-o3d = { path = "../omsi-o3d" }
@@ -35,7 +38,10 @@ omsi-texture = { path = "../omsi-texture" }
 omsi-geometry = { path = "../omsi-geometry" }
 omsi-render = { path = "../omsi-render" }
 omsi-photo = { path = "../omsi-photo" }
+omsi-mt = { path = "../omsi-mt" }
 omsi-sim = { path = "../omsi-sim" }
+omsi-transit = { path = "../omsi-transit" }
+omsi-trolley = { path = "../omsi-trolley" }
 omsi-htmlengine = { path = "../omsi-htmlengine" }
 omsi-plugin = { path = "../omsi-plugin" }
 omsi-vehicle = { path = "../omsi-vehicle" }
@@ -43,6 +49,7 @@ omsi-content = { path = "../omsi-content" }
 omsi-timetable = { path = "../omsi-timetable" }
 omsi-script = { path = "../omsi-script" }
 omsi-audio = { path = "../omsi-audio" }
+omsi-voice = { path = "../omsi-voice" }
 wgpu.workspace = true
 winit.workspace = true
 glam.workspace = true
@@ -55,6 +62,7 @@ rayon.workspace = true
 omsi-net = { path = "../omsi-net" }
 omsi-platform = { path = "../omsi-platform" }
 omsi-guard = { path = "../omsi-guard" }
+omsi-admin = { path = "../omsi-admin" }
 omsi-lan = { path = "../omsi-lan" }
 omsi-input = { path = "../omsi-input" }
 omsi-xr = { path = "../omsi-xr" }
@@ -78,13 +86,14 @@ ab_glyph.workspace = true
 rustrict = "0.7"
 gilrs = "0.11"
 ureq.workspace = true
-sha2.workspace = true
 ring.workspace = true
 rust-i18n = "4"
 # updates: the release archives from GitHub
 zip.workspace = true
 tar = "0.4"
 flate2.workspace = true
+# the launcher preview's pictures: a JPEG encoder a few times faster than image's
+jpeg-encoder = { version = "0.7.1", features = ["simd"] }
 
 # the desktop's clipboard and file dialogs (a phone has neither in this form; an iPhone's
 # come from the Swift side, see `apple`)
@@ -118,9 +127,6 @@ features = ["angle"]
 
 # the interface's machine translation (`mt`): CTranslate2 with Meta's NLLB model, as the
 # `trad` crate does it (Apple's Accelerate for the maths; Apple silicon only)
-[target.'cfg(all(target_os = "macos", target_arch = "aarch64"))'.dependencies]
-ct2rs = { version = "0.10.1", default-features = false, features = ["tokenizers", "accelerate", "ruy"] }
-
 # Android: winit's NativeActivity backend, the system log, and JNI for the few things only
 # Java offers (storage permission, the screen's cut-outs, vibration)
 [target.'cfg(target_os = "android")'.dependencies]
@@ -130,6 +136,8 @@ jni = "0.21"
 ndk-context = "0.1"
 
 [dev-dependencies]
+# Test-only access to the actual clickable control rectangles in the pause menu.
+omsi-ui = { path = "../omsi-ui", features = ["test-support"] }
 # the control names from a table (`ControlNames::from_table`) for the key picker's tests
 omsi-input = { path = "../omsi-input", features = ["test-support"] }
 # the stages' declared groups held against what their code reaches (`frame_stages/access_tests.rs`)

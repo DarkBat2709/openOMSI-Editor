@@ -1,7 +1,7 @@
 [package]
 name = "omsi-guard"
 version = "0.1.0"
-edition = "2021"
+edition.workspace = true
 description = "The start guard: a release that crashes or hangs at the start is healed by an update, by going back to the version before, or by a safe mode"
 license = "AGPL-3.0-only"
 
@@ -9,6 +9,9 @@ license = "AGPL-3.0-only"
 omsi-cfg = { path = "../omsi-cfg" }
 # (the updater: install, go back, the bad versions; no graphics in it)
 omsi-platform = { path = "../omsi-platform" }
+omsi-launcher-core = { path = "../omsi-launcher-core" }
+anyhow.workspace = true
+log.workspace = true
 serde_json.workspace = true
 
 [target.'cfg(unix)'.dependencies]

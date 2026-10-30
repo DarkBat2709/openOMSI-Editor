@@ -4,6 +4,9 @@ use super::*;
 pub struct World {
     pub root: PathBuf,
     pub global: GlobalCfg,
+    /// The map's `transport` folder: stations, routes, wires, switches, depots, signals (empty
+    /// for a map without one).
+    pub transit: Arc<omsi_transit::TransitData>,
     pub map_dir: PathBuf,
     /// Empty tiles created this session, with stable global.cfg indices and mod paths.
     pub(super) editor_tiles: Mutex<HashMap<(i32, i32), (usize, PathBuf)>>,
@@ -38,6 +41,7 @@ pub struct World {
     /// its whole texture set twenty times (200 ms a spawn, 1.5 fps on Spandau).
     /// (With the number of sets holding each.)
     pub(super) vehicle_textures: Arc<Mutex<HashMap<PathBuf, (TextureId, usize)>>>,
+    pub(super) freetex_reloads: Arc<FreeTextureReloads>,
     /// GPU meshes of vehicles by (bus file, mesh index), shared across paint schemes.
     pub(super) vehicle_meshes: Arc<Mutex<HashMap<(PathBuf, usize), (MeshId, usize)>>>,
     /// Vehicle meshes and textures made on a worker, until their set is uploaded.
@@ -48,7 +52,7 @@ pub struct World {
     /// The textures prepared tiles decoded for their upload, while some prepared tile
     /// still holds them (see `decode_wanted_textures`).
     pub(super) decoded_in_flight: Mutex<HashMap<PathBuf, std::sync::Weak<TextureData>>>,
-    pub(super) upgrades_done: Arc<Mutex<Vec<(PathBuf, Arc<TextureData>)>>>,
+    pub(super) upgrades_done: Arc<Mutex<Vec<crate::freetex_reload::TextureUpgrade>>>,
     /// Roller-blind pictures (`[matl_freetex]`) uploaded as RGBA, to be compressed.
     pub(super) freetex_upgrades: Arc<Mutex<Vec<PathBuf>>>,
     /// OMSI's `[texmemlimit]`: bytes the scenery and vehicle textures may take on the GPU

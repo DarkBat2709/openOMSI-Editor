@@ -7,9 +7,12 @@ use super::*;
 pub(crate) mod batch;
 mod cull;
 mod effects;
+mod ground;
 mod headlamp_shadow;
 mod main_pass;
 mod post;
+mod precip_map;
+pub(crate) use precip_map::*;
 mod prepass;
 mod setup;
 mod shadow;
@@ -17,8 +20,9 @@ mod shadow_plan;
 mod submit;
 
 pub(crate) use batch::DrawPlan;
-pub(crate) use headlamp_shadow::{headlamp_shadow, lamp_shadow_code, own_headlamp, VehicleBox};
-pub(crate) use shadow::LampTiles;
+pub(crate) use ground::GroundPlan;
+pub(crate) use headlamp_shadow::{headlamp_shadow, own_headlamp, VehicleBox, HEADLAMP_SHADOW_REACH};
+pub(crate) use shadow::{CabinMotion, LampTiles};
 pub(crate) use shadow_plan::ShadowPlan;
 
 /// The frame's switches from the environment: read once at the start of every frame
@@ -34,6 +38,7 @@ pub(crate) struct FrameEnv {
     pub no_puddle_reflections: bool,
     pub no_rt_frame: bool,
     pub no_ao: bool,
+    pub no_ao_reach: bool,
     pub shadow_near_every_frame: bool,
     pub shadow_far_every_frame: bool,
     pub lamp_shadows_every_frame: bool,
@@ -53,12 +58,18 @@ pub(crate) struct FrameEnv {
     pub no_bundles: bool,
     pub no_msaa_prepass: bool,
     pub no_main_split: bool,
+    pub no_post_split: bool,
     pub no_smoke: bool,
     pub no_snowfall: bool,
+    pub no_rain: bool,
+    pub no_ground_pass: bool,
+    pub no_precip_roof: bool,
     pub no_coronas: bool,
     pub no_glare: bool,
     pub debug_fog_lamps: bool,
     pub no_rt_grade: bool,
+    pub no_own_vehicle_lamp_block: bool,
+    pub sky_cube_every_frame: bool,
 }
 
 impl FrameEnv {
@@ -73,6 +84,7 @@ impl FrameEnv {
             no_puddle_reflections: omsi_cfg::flags::OMSI_NO_PUDDLE_REFLECTIONS.is_set(),
             no_rt_frame: omsi_cfg::flags::OMSI_NO_RT_FRAME.is_set(),
             no_ao: omsi_cfg::flags::OMSI_NO_AO.is_set(),
+            no_ao_reach: omsi_cfg::flags::OMSI_NO_AO_REACH.is_set(),
             shadow_near_every_frame: omsi_cfg::flags::OMSI_SHADOW_NEAR_EVERY_FRAME.is_set(),
             shadow_far_every_frame: omsi_cfg::flags::OMSI_SHADOW_FAR_EVERY_FRAME.is_set(),
             lamp_shadows_every_frame: omsi_cfg::flags::OMSI_LAMP_SHADOWS_EVERY_FRAME.is_set(),
@@ -90,12 +102,18 @@ impl FrameEnv {
             no_bundles: omsi_cfg::flags::OMSI_NO_BUNDLES.is_set(),
             no_msaa_prepass: omsi_cfg::flags::OMSI_NO_MSAA_PREPASS.is_set(),
             no_main_split: omsi_cfg::flags::OMSI_NO_MAIN_SPLIT.is_set(),
+            no_post_split: omsi_cfg::flags::OMSI_NO_POST_SPLIT.is_set(),
             no_smoke: omsi_cfg::flags::OMSI_NO_SMOKE.is_set(),
             no_snowfall: omsi_cfg::flags::OMSI_NO_SNOWFALL.is_set(),
+            no_rain: omsi_cfg::flags::OMSI_NO_RAIN.is_set(),
+            no_ground_pass: omsi_cfg::flags::OMSI_NO_GROUND_PASS.is_set(),
+            no_precip_roof: omsi_cfg::flags::OMSI_NO_PRECIP_ROOF.is_set(),
             no_coronas: omsi_cfg::flags::OMSI_NO_CORONAS.is_set(),
             no_glare: omsi_cfg::flags::OMSI_NO_GLARE.is_set(),
             debug_fog_lamps: omsi_cfg::flags::OMSI_DEBUG_FOG_LAMPS.is_set(),
             no_rt_grade: omsi_cfg::flags::OMSI_NO_RT_GRADE.is_set(),
+            no_own_vehicle_lamp_block: omsi_cfg::flags::OMSI_NO_OWN_VEHICLE_LAMP_BLOCK.is_set(),
+            sky_cube_every_frame: omsi_cfg::flags::OMSI_SKY_CUBE_EVERY_FRAME.is_set(),
         }
     }
 }
@@ -138,6 +156,7 @@ pub(crate) struct FrameCtx<'a> {
     pub aspect: f32,
     pub cam_rel: Vec3,
     pub xr_view: bool,
+    pub eye_color: bool,
     pub lead_view: bool,
     pub enhanced_frame: bool,
     pub enhanced: bool,
@@ -148,7 +167,10 @@ pub(crate) struct FrameCtx<'a> {
     pub lamp_shadows: Vec<LampShadow>,
     pub rt_frame: bool,
     pub ao_on: bool,
+    /// The frame may lay the terrain's paint into one albedo picture (see `plan_ground`).
+    pub ground_ok: bool,
     pub prepass_on: bool,
+    pub prepass_reach: f32,
     pub dt: f32,
     pub overlays: Vec<(TextureId, [f32; 4])>,
 }

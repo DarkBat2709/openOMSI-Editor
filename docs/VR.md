@@ -43,10 +43,10 @@ The default bindings are:
 | Show or hide the VR navigator | Ctrl+Shift+N |
 | Position the VR navigator | Ctrl+Shift+M |
 
-Adjust your seating position while driving through **Esc → Options** using
-**Seat forward**, **Seat back**, **Seat up**, **Seat down**, **Seat right**, or **Seat left**.
-**Reset the seat position** restores the bus camera's default position. The launcher
-also has seat-position sliders under **Settings → Camera**; those changes apply when the next
+Adjust your seating position while driving under **Esc → Options → Camera** with
+**Seat forward and back**, **Seat height**, **Seat left and right** and **Head pitch**.
+**Reset the seat position** puts the seat back where the bus has it. The launcher
+has the same sliders under **Settings → Camera**; those changes apply when the next
 drive starts.
 
 **Esc** opens the menu in front of the headset. Move the mouse to point at cockpit
@@ -84,9 +84,42 @@ menu are available only in VR.
 
 The placement menu also offers numeric position, width, rotation, tilt, roll and
 background opacity settings. Placement and visibility are saved separately for
-each bus. Existing saved settings are preserved.
+each bus.
 
 Single-player pauses during placement; multiplayer continues running. Mouse input
 adjusts the navigator instead of operating cockpit controls. Losing window focus
 saves and ends placement. The display is an overlay, so place it in a clear spot:
 cockpit geometry does not hide it.
+
+## Headset-relative cabin input
+
+The VR pointer retains a mouse offset within the headset image. Drawing and
+picking use the same cropped eye ray, including pending mouse input; surface hits
+supply depth only. Head movement does not turn a held dial or reset mouse idle
+time. The pointer hides after ten idle seconds and returns with mouse movement or
+a menu transition. Cursor-warp events contribute no movement.
+
+VR interruption releases held controls at their current values and stops automatic
+motion with its authored stop event. Desktop release, Escape, missed clicks and
+wheel notches retain the existing automatic endpoint behaviour. VR hover refresh
+also follows head motion; it may refresh the cabin surface ray every six frames.
+Headset-free regressions cover ray alignment, pending input, idle visibility,
+precise cancellation, desktop auto movement and Escape. Mod-specific scripts and
+live headset/multiplayer behaviour are outside those tests.
+
+## Timetable controls
+
+The line-and-tour menu exposes its details pane in VR, including time arrows,
+stops and Start trip, using the same 760-pixel width threshold as desktop.
+## Enhanced+ headset render targets
+
+With Enhanced+ (ray tracing) enabled, headset eyes keep HDR colour and screen masks
+but omit unused desktop ray-reflection surfaces. The extra eye pipelines compile
+once when a VR session starts, not at desktop startup; later VR sessions reuse
+them. Desktop views keep their original surfaces and upgrade cached targets when
+needed. Rain films use the eye attachment layout even after such an upgrade.
+Without Enhanced+, this optimization changes neither pipelines nor rendering.
+Native GPU regressions compare both eye images at 1x/4x MSAA and validate rainy
+same-sized desktop/eye transitions. Per-eye history and stereo preparation remain
+separate changes. The upstream FSR 1 eye scale and mip-bias path is retained;
+a native regression covers both eyes at 75% scale with 1x/4x MSAA.

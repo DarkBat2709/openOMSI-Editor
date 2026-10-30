@@ -14,12 +14,29 @@ impl Player {
     ///
     /// `spread` is the half-angle of those rings in radians; the window passes the angle
     /// six pixels subtend, so aiming is equally forgiving at any resolution.
+    ///
+    /// From outside, a switch behind another part of the bus cannot be reached through it
+    /// ([`Self::reach`]); from the cab nothing hides one, as in Omsi.exe.
     pub(crate) fn pick(&self, origin: DVec3, dir: Vec3, spread: f32) -> Option<usize> {
-        let i = pick_in(&self.vehicle, origin, dir, spread)?;
-        if self.occlude_controls && self.control_hidden(origin, dir, None, i) {
+        let (i, centre) = pick_in(&self.vehicle, origin, dir, spread, self.reach(origin, dir))?;
+        if !centre && self.occlude_controls && self.control_hidden(origin, dir, None, i) {
             return None;
         }
         Some(i)
+    }
+
+    /// How far along a ray a switch of the bus or its coupled parts can be reached: from
+    /// outside (`occlude_controls`) up to the nearest part, walls and windows alike; from the
+    /// cab without limit (see [`reach_into`]).
+    fn reach(&self, origin: DVec3, dir: Vec3) -> Reach {
+        let (dir, outside) = (dir.normalize_or_zero(), self.occlude_controls);
+        let v = &self.vehicle;
+        let mut reach = reach_into(&v.ty, &v.mesh_props, |i| v.mesh_local_transform(i), (origin - v.position).as_vec3(), dir, outside);
+        for tr in &v.trailers {
+            let part = reach_into(&tr.ty, &tr.mesh_props, |i| tr.mesh_local_transform(i), (origin - tr.position).as_vec3(), dir, outside);
+            reach = Reach(reach.0.min(part.0));
+        }
+        reach
     }
 
     /// The page (`[htmltexture]`, or a script texture an `.opl` plugin draws) under a ray and
@@ -38,8 +55,8 @@ impl Player {
 
     /// The same forgiving pick as `pick`, for the coupled sections of an articulated bus.
     pub(crate) fn pick_trailer(&self, origin: DVec3, dir: Vec3, spread: f32) -> Option<(usize, usize)> {
-        let (ti, i) = pick_trailer_in(&self.vehicle, origin, dir, spread)?;
-        if self.occlude_controls && self.control_hidden(origin, dir, Some(ti), i) {
+        let ((ti, i), centre) = pick_trailer_in(&self.vehicle, origin, dir, spread, self.reach(origin, dir))?;
+        if !centre && self.occlude_controls && self.control_hidden(origin, dir, Some(ti), i) {
             return None;
         }
         Some((ti, i))
@@ -345,6 +362,38 @@ impl Player {
     }
 
     pub(crate) fn release(&mut self) {
+        self.release_mouse(true);
+    }
+
+    /// Precise headset manipulation must stop at the current value, including a
+    /// tiny drag or no movement. Ordinary press/release button triggers still run.
+    pub(crate) fn release_precise(&mut self) {
+        self.release_mouse(false);
+        self.cancel_auto_drag();
+    }
+
+    pub(crate) fn click_precise(&mut self, origin: DVec3, dir: Vec3, spread: f32) -> Option<usize> {
+        self.release_precise();
+        self.click(origin, dir, spread)
+    }
+
+    pub(crate) fn wheel_precise(&mut self, origin: DVec3, dir: Vec3, spread: f32, amount: f32) {
+        self.cancel_auto_drag();
+        self.wheel(origin, dir, spread, amount);
+    }
+
+    pub(crate) fn release_for_menu(&mut self, vr_active: bool) {
+        if vr_active { self.release_precise(); } else { self.release(); }
+    }
+
+    fn cancel_auto_drag(&mut self) {
+        if let Some(drag) = self.auto_drag.take() {
+            self.vehicle.host.mouse = (0.0, 0.0);
+            self.vehicle.trigger(&format!("{}_off", drag.ev));
+        }
+    }
+
+    fn release_mouse(&mut self, allow_auto_drag: bool) {
         if let Some(i) = self.pressed_mesh.take() {
             let ty = self.vehicle.ty.clone();
             let def = &ty.model.meshes[ty.meshes[i].def_index];
@@ -354,7 +403,8 @@ impl Player {
                 // other end (a click opened the NL/NG driver's door by the mouse's jitter
                 // and a second click never shut it again)
                 let anim = def.animations.first().map(|a| a.variable.clone()).filter(|v| !v.trim().is_empty() && v.trim().parse::<f32>().is_err());
-                if let (true, Some(var)) = (auto_drag_click(&ev, self.press_info.0, self.press_info.1), anim) {
+                if let (true, Some(var)) = (
+                    allow_auto_drag && auto_drag_click(&ev, self.press_info.0, self.press_info.1), anim) {
                     let now = self.vehicle.var(&var).unwrap_or(0.0);
                     let target = if now > 0.5 { 0.0 } else { 1.0 };
                     log::info!("mouse event {ev}: a click on a drag control, {var} {now:.2} -> {target}");

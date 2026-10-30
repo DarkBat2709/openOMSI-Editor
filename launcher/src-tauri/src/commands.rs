@@ -21,7 +21,7 @@ async fn work<F: FnOnce() -> Answer + Send + 'static>(f: F) -> Answer {
 }
 
 pub fn handler() -> impl Fn(tauri::ipc::Invoke) -> bool + Send + Sync + 'static {
-    tauri::generate_handler![call, call_bytes, pick_folder, pick_file, pick_mod, open_path, open_url, update_relaunch, selftest_done, fit_zoom]
+    tauri::generate_handler![call, call_bytes, pick_folder, pick_file, pick_mod, pick_hofs, open_path, open_url, update_relaunch, selftest_done, fit_zoom]
 }
 
 /// This window, for the commands of `omsi-launcher-api`.
@@ -110,13 +110,18 @@ fn pick_mod(archive: bool) -> Option<String> {
     core::pick_mod(archive).map(|p| p.to_string_lossy().to_string())
 }
 
+#[tauri::command]
+fn pick_hofs(title: String, filter: String) -> Option<Vec<String>> {
+    core::pick_hofs(&title, &filter).map(|files| files.into_iter().map(|p| p.to_string_lossy().to_string()).collect())
+}
+
 /// Show a folder or file in the system's file manager.
 #[tauri::command]
 async fn open_path(path: String) -> Answer {
     work(move || {
         let p = PathBuf::from(&path);
         if !p.exists() {
-            return Err(format!("{path} is not there"));
+            return Err(core::i18n::trf("{path} is not there", &[("path", &path)]));
         }
         open_with_system(p.as_os_str())
     })

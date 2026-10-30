@@ -69,7 +69,7 @@ function keyParts(scan, modifier) {
   if (modifier & KEY_SHIFT) parts.push('Shift');
   if (modifier & KEY_CTRL) parts.push('Ctrl');
   if (modifier & KEY_ALT) parts.push('Alt');
-  parts.push(NAME_OF[scan] || `scan ${scan}`);
+  parts.push(NAME_OF[scan]?.startsWith('Mouse') ? t(NAME_OF[scan]) : NAME_OF[scan] || `scan ${scan}`);
   return parts;
 }
 
@@ -116,7 +116,7 @@ const STOCK_SPLIT = STOCK.findIndex((b) => b.action === 'throttle');
 const stockBindings = () => ({ game: STOCK.slice(0, STOCK_SPLIT).map((b) => ({ ...b })), vehicles: STOCK.slice(STOCK_SPLIT).map((b) => ({ ...b })) });
 
 /** The game's own actions, which the bus's section has no use for. */
-const GAME_ONLY = /^(vr_|chat_|view_|door_[1-4]$|doors_all$|doors_release$|gear_(up|down)$|sim_pause$|open_menu$|screenshot$|photo_mode$|quicksave$|toggel_|exit$|voice_radio$)/;
+const GAME_ONLY = /^(vr_|chat_|view_|door_[1-4]$|doors_all$|doors_release$|gear_(up|down)$|sim_pause$|open_menu$|screenshot$|photo_mode$|quicksave$|toggel_|exit$|voice_radio$|pax_door_request$)/;
 
 const SECTIONS = [
   ['vehicles', 'Driving & the bus', 'The bus\'s own keys'],
@@ -181,7 +181,7 @@ function Keyboard() {
       }
     } catch (e) {
       setSaveError(e.message);
-      toast(e.message, 'error');
+      toast(t(e.message), 'error');
     }
   }
 

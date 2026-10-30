@@ -26,11 +26,46 @@ pub(crate) fn log_system(settings: &crate::settings::Settings) {
     if let Ok(d) = std::env::current_dir() {
         log::info!("working folder: {}", d.display());
     }
-    let env: Vec<String> = std::env::vars().filter(|(k, _)| k.starts_with("OMSI_") || k == "RUST_LOG" || k == "WGPU_BACKEND").map(|(k, v)| format!("{k}={v}")).collect();
+    let env: Vec<String> = std::env::vars().filter_map(|(k, v)| environment_entry(&k, &v)).collect();
     if !env.is_empty() {
         log::info!("environment: {}", env.join(" "));
     }
     log::info!("all settings: {settings:?}");
+}
+
+/// Keep diagnostic switches readable, but never put a player's credential in a log.
+fn environment_entry(key: &str, value: &str) -> Option<String> {
+    if !(key.starts_with("OMSI_") || key == "RUST_LOG" || key == "WGPU_BACKEND") {
+        return None;
+    }
+    // Environment names are case-insensitive on Windows.
+    let value = if key.eq_ignore_ascii_case("OMSI_TOMORROW_API_KEY") { "<set>" } else { value };
+    Some(format!("{key}={value}"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::environment_entry;
+
+    #[test]
+    fn startup_environment_masks_credentials_and_keeps_diagnostic_values() {
+        let entries = [
+            ("OMSI_TOMORROW_API_KEY", "synthetic-private-credential"),
+            ("OMSI_TOMORROW_KEY_FILE", "private/key.txt"),
+            ("OMSI_BACKEND", "vulkan"),
+            ("RUST_LOG", "info"),
+            ("WGPU_BACKEND", "vulkan"),
+            ("UNRELATED", "not-logged"),
+        ];
+        let log = entries.into_iter().filter_map(|(k, v)| environment_entry(k, v)).collect::<Vec<_>>().join(" ");
+        assert!(log.contains("OMSI_TOMORROW_API_KEY=<set>"));
+        assert!(!log.contains("synthetic-private-credential"));
+        assert!(!log.contains("not-logged"));
+        for diagnostic in ["OMSI_TOMORROW_KEY_FILE=private/key.txt", "OMSI_BACKEND=vulkan", "RUST_LOG=info", "WGPU_BACKEND=vulkan"] {
+            assert!(log.contains(diagnostic));
+        }
+        assert_eq!(environment_entry("OMSI_tomorrow_api_key", "synthetic-private-credential").as_deref(), Some("OMSI_tomorrow_api_key=<set>"));
+    }
 }
 
 /// The system's name and version (asked once: on macOS and Windows a program is run for it).
@@ -74,7 +109,7 @@ impl App {
         if self.service_msg.as_ref().map(|m| &m.0) != self.perf.log_state.last_msg.as_ref() {
             let msg = self.service_msg.as_ref().map(|m| m.0.clone());
             if msg.is_some() {
-                log::info!("on screen: {}", msg.as_deref().unwrap_or_default());
+                log::info!("on screen: {}", omsi_ui::i18n::english(msg.as_deref().unwrap_or_default()));
             }
             self.perf.log_state.last_msg = msg;
         }
@@ -108,8 +143,19 @@ impl App {
             (Some(r), Some(sc)) => format!(", GPU memory: textures {:.0} MB, meshes {:.0} MB", r.texture_bytes(sc) as f64 / 1e6, r.mesh_bytes(sc) as f64 / 1e6),
             _ => String::new(),
         };
+        // Cumulative diagnostics: visible in an ordinary game.log without requiring
+        // profiling flags, and cheap to sample at the existing one-minute status interval.
+        let faults = omsi_render::texture_upload_faults();
+        let texture_faults = if faults.malformed_mips > 0 || faults.failed_creations > 0 {
+            format!(
+                ", GPU texture failures: {} malformed mip uploads, {} failed texture creations",
+                faults.malformed_mips, faults.failed_creations
+            )
+        } else {
+            String::new()
+        };
         log::info!(
-            "status: {fps:.0} fps (worst frame {worst:.0} fps), {}, view {}, game time {:02}:{:02}, {traffic} AI vehicles{}{gpu}",
+            "status: {fps:.0} fps (worst frame {worst:.0} fps), {}, view {}, game time {:02}:{:02}, {traffic} AI vehicles{}{gpu}{texture_faults}",
             bus.or(cam).unwrap_or_default(),
             self.view,
             (time / 3600.0) as i64 % 24,

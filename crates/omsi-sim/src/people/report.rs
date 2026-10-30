@@ -16,6 +16,21 @@ impl PeopleSim {
             .collect()
     }
 
+    /// Money-related events to be handled by the app.
+    /// `None` identifies the player's bus; `Some(id)` identifies an AI bus.
+    pub fn take_money_events(&mut self) -> Vec<(Option<u64>, SaleEvent)> {
+        std::mem::take(&mut self.sale_events)
+            .into_iter()
+            .map(|(b, event)| {
+                let bus = match b {
+                    BusId::Ai(id) => Some(id),
+                    _ => None,
+                };
+                (bus, event)
+            })
+            .collect()
+    }
+
     /// Lines passengers said since the last call (the app plays them where they stand).
     pub fn take_voice_lines(&mut self) -> Vec<VoiceLine> {
         std::mem::take(&mut self.voice_lines)
@@ -118,7 +133,18 @@ impl PeopleSim {
                         waiting.insert(s);
                     }
                 }
+                // somebody late, still on the way up to the stop
+                Task::WalkingToBusstop if x.late.is_some() && x.inside.is_none() => {
+                    if let Some(s) = x.stop {
+                        waiting.insert(s);
+                    }
+                }
                 _ => {}
+            }
+        }
+        for (request, remaining) in self.manual_door_requests.values() {
+            if request.exit && *remaining > 0.0 {
+                if let BusId::Ai(id) = request.bus { alighting.insert(id); }
             }
         }
         (alighting, waiting)

@@ -45,6 +45,10 @@ impl App {
         }
         // the plugins' frame, with the bus's scripts done
         let mut plugins = self.integrations.plugins.take().unwrap_or_else(crate::plugins::load);
+        self.sync_vehicle_scripts(&mut plugins);
+        if !self.paused && !omsi_cfg::flags::OMSI_NO_PLUGINS.is_set() {
+            crate::plugin_io::object::drive(self, &mut plugins, dt);
+        }
         if !plugins.is_empty() {
             self.plugin_watch(&mut plugins);
         }
@@ -68,10 +72,11 @@ impl App {
                 h.ticket_asks_heard(&heard);
             }
             crate::plugin_io::world::follow_sounds(self);
-            // what the plugins asked the game to do: lines of the game menu
+            // what the plugins asked the game to do: lines of the game menu (not another
+            // plugin's line)
             self.integrations.plugin_command = true;
             for c in commands {
-                if let Some(k) = self.game_menu_items().iter().position(|m| m.0 == c) {
+                if let Some(k) = self.game_menu_items().iter().position(|m| m.0 == c && m.0 != "plugin") {
                     let was = self.menus.game_menu;
                     self.menus.menu_prev_pause = self.paused;
                     self.menu_choose(event_loop, k);

@@ -4,8 +4,9 @@
 //! (a bus's name, a number), is drawn as it is.
 
 use std::borrow::Cow;
-use std::collections::HashMap;
 use std::sync::RwLock;
+
+use std::collections::HashMap;
 
 /// A lookup: (language, English text) → the text in that language.
 pub type Lookup = fn(&str, &str) -> Option<String>;
@@ -64,11 +65,6 @@ struct Index {
 }
 
 static TEMPLATES: RwLock<Option<Index>> = RwLock::new(None);
-
-fn head2(s: &str) -> Option<(char, char)> {
-    let mut c = s.chars();
-    Some((c.next()?, c.next()?))
-}
 
 /// The keys of the tables that are format strings: a text drawn with its numbers or names
 /// filled in ("Mirror panel added (3 in all)") is translated by the key it was made from.
@@ -243,6 +239,42 @@ pub fn tr(text: &str) -> Cow<'_, str> {
     }
 }
 
+static SAID: RwLock<Vec<(String, String)>> = RwLock::new(Vec::new());
+
+pub fn said(shown: String, english: String) -> String {
+    if shown != english {
+        if let Ok(mut said) = SAID.write() {
+            said.retain(|(s, _)| *s != shown);
+            if said.len() >= 32 {
+                said.remove(0);
+            }
+            said.push((shown.clone(), english));
+        }
+    }
+    shown
+}
+
+fn fill_in(key: &str, holes: &[(&str, &dyn std::fmt::Display)], value: impl Fn(&str) -> String) -> String {
+    let english = holes.iter().fold(key.to_string(), |s, (h, v)| s.replace(h, &v.to_string()));
+    let shown = holes.iter().fold(tr(key).into_owned(), |s, (h, v)| s.replace(h, &value(&v.to_string())));
+    said(shown, english)
+}
+
+pub fn tr_fill(key: &str, holes: &[(&str, &dyn std::fmt::Display)]) -> String {
+    fill_in(key, holes, str::to_string)
+}
+
+pub fn tr_fill_words(key: &str, holes: &[(&str, &dyn std::fmt::Display)]) -> String {
+    fill_in(key, holes, |v| tr(v).into_owned())
+}
+
+pub fn english(text: &str) -> Cow<'_, str> {
+    match SAID.read().ok().and_then(|s| s.iter().find(|(t, _)| t == text).map(|(_, e)| e.clone())) {
+        Some(e) => Cow::Owned(e),
+        None => Cow::Borrowed(text),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -321,4 +353,13 @@ mod tests {
         let t = templates(["Gear {} (H-pattern)".to_string()]);
         assert_eq!(t[0].1, vec![Piece::Text("Gear ".into()), Piece::Hole(String::new()), Piece::Text(" (H-pattern)".into())]);
     }
+
+    #[test]
+    fn a_shown_text_remembers_its_english() {
+        let shown = said("Gang 3".into(), "Gear 3".into());
+        assert_eq!(english(&shown), "Gear 3");
+        assert_eq!(english("Gear 4"), "Gear 4");
+    }
 }
+
+fn head2(s: &str) -> Option<(char,char)> { let mut c=s.chars(); Some((c.next()?,c.next()?)) }

@@ -123,6 +123,7 @@ pub(crate) fn scene_shader_text(gl: bool) -> String {
         shaders::SCENE,
         include_str!("../enhanced_common.wgsl"),
         include_str!("../puddle_common.wgsl"),
+        include_str!("../beam_shadow_none.wgsl"),
         include_str!("../lamp_air.wgsl"),
         shaders::ENHANCED,
     ]
@@ -133,10 +134,10 @@ pub(crate) fn scene_shader_text(gl: bool) -> String {
     if !gl {
         return src;
     }
-    let clamped = |t: &str| {
+    let clamped = |t: &str, bias: &str| {
         format!(
-            "textureSample({t}, s_diffuse, clamp(uv, 0.5 / vec2<f32>(textureDimensions({t})), \
-             vec2<f32>(1.0) - 0.5 / vec2<f32>(textureDimensions({t}))))"
+            "textureSampleBias({t}, s_diffuse, clamp(uv, 0.5 / vec2<f32>(textureDimensions({t})), \
+             vec2<f32>(1.0) - 0.5 / vec2<f32>(textureDimensions({t}))), {bias})"
         )
     };
     // No SSAO and no ray tracing on OpenGL (camera.clouds.w stays 0, see `lighter_picture`):
@@ -144,12 +145,13 @@ pub(crate) fn scene_shader_text(gl: bool) -> String {
     // D3D compiler under ANGLE (fxc) recursed without end in CProgram::CheckAssertion_Group
     // and the game closed before its first frame (#197).
     let out = src
-        .replace("textureSample(t_trans, s_tile, uv)", &clamped("t_trans"))
-        .replace("textureSample(t_night, s_tile, uv)", &clamped("t_night"))
+        .replace("textureSampleBias(t_trans, s_tile, uv, bias)", &clamped("t_trans", "bias"))
+        .replace("textureSampleBias(t_night, s_tile, uv, camera.lod.x)", &clamped("t_night", "camera.lod.x"))
         .replace("ao = ao_at(in.clip.xy, in.world);", "ao = 1.0;")
+        .replace("let ag = ao_gi_at(in.clip.xy, in.world);", "let ag = vec4<f32>(1.0, 0.0, 0.0, 0.0);")
         .replace("rt_at(in.clip.xy, in.world)", "vec4<f32>(1.0, 0.0, -1.0, 0.0)");
-    debug_assert!(!out.contains("s_tile, uv)"));
-    debug_assert!(!out.contains("ao_at(in.") && !out.contains("rt_at(in."));
+    debug_assert!(!out.contains("s_tile, uv)") && !out.contains("s_tile, uv, "));
+    debug_assert!(!out.contains("ao_at(in.") && !out.contains("ao_gi_at(in.") && !out.contains("rt_at(in."));
     out
 }
 
@@ -162,6 +164,7 @@ pub(crate) fn scene_shader_text(gl: bool) -> String {
 pub(crate) fn lean_scene(src: String) -> String {
     let out = src
         .replace("irr = irr * lamp_shadow_at(li, p, n, thin);", "")
+        .replace("seen_light = seen_light + share * lamp_shadow_at(li, p, n, false);", "seen_light = seen_light + share;")
         .replace("ms = sun_shadow_soft(in.world, n, thin);", "ms = 1.0;")
         .replace("let sm = sun_shadow_soft(in.world, n, thin);", "let sm = 1.0;");
     debug_assert_eq!(out.matches("sun_shadow_soft(in.world").count(), 1);
@@ -183,13 +186,39 @@ pub(crate) fn sky_shader_source() -> String {
 /// The snowfall (snow.wgsl), with the lamps the enhanced picture lights it by (none
 /// without storage buffers).
 pub(crate) fn snow_shader_source() -> String {
+    precip_shader_source(include_str!("../snow.wgsl"))
+}
+
+/// The rainfall (rain.wgsl), as the snowfall.
+pub(crate) fn rain_shader_source() -> String {
+    let src = precip_shader_source(include_str!("../rain.wgsl"));
+    if basic_pipelines() { lean_rain(src) } else { src }
+}
+
+pub(crate) fn lean_rain(src: String) -> String {
+    const LAMPS: &str = "precip_light(in.pos, to_eye, false) * 0.3 + ";
+    debug_assert_eq!(src.matches(LAMPS).count(), 1);
+    src.replace(LAMPS, "")
+}
+
+pub(crate) fn roof_as_float(src: String) -> String {
+    const DECL: &str = "var roof_map: texture_depth_2d;";
+    const LOAD: &str = "return textureLoad(roof_map, t, 0); }";
+    debug_assert_eq!((src.matches(DECL).count(), src.matches(LOAD).count()), (1, 1));
+    src.replace(DECL, "var roof_map: texture_2d<f32>;").replace(LOAD, "return textureLoad(roof_map, t, 0).x; }")
+}
+
+pub(crate) fn precip_shader_source(own: &str) -> String {
     let src = [
-        include_str!("../snow.wgsl"),
+        include_str!("../precip_common.wgsl"),
+        own,
         include_str!("../enhanced_common.wgsl"),
         FOG_LAMP_LIGHTS,
+        include_str!("../beam_shadow_none.wgsl"),
         include_str!("../lamp_air.wgsl"),
     ]
     .join("\n");
+    let src = if gl_backend() { roof_as_float(src) } else { src };
     if array_path().no_storage() {
         let src = src
             .replace("@group(0) @binding(3) var<storage, read> lights: array<PointLight>;", "fn lights_at(i: u32) -> PointLight { return PointLight(vec4<f32>(0.0), vec4<f32>(0.0), vec4<f32>(0.0), vec4<f32>(0.0)); }")
@@ -204,6 +233,9 @@ pub(crate) fn snow_shader_source() -> String {
 pub(crate) struct SnowUniform {
     pub(crate) wind: [f32; 4],
     pub(crate) fall: [f32; 4],
+    /// The roof map's matrix, and x 1 when there is one (`passes::PrecipMap::uniform`).
+    pub(crate) roof: [[f32; 4]; 4],
+    pub(crate) roof_on: [f32; 4],
 }
 
 /// The snowfall's flakes for a snowfall of strength `s` (0..1): how many each layer of
@@ -215,6 +247,28 @@ pub(crate) fn snowfall_flakes(s: f32) -> ([u32; 3], f32) {
     ([(70000.0 * k) as u32, (55000.0 * k) as u32, (25000.0 * k) as u32], 0.0006 + 0.0034 * s * s)
 }
 
+#[repr(C)]
+#[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
+pub(crate) struct RainUniform {
+    pub(crate) wind: [f32; 4],
+    pub(crate) eye: [f32; 4],
+    pub(crate) fall: [f32; 4],
+    pub(crate) view: [f32; 4],
+    pub(crate) roof: [[f32; 4]; 4],
+    pub(crate) roof_on: [f32; 4],
+}
+
+/// How many drops each layer of rain.wgsl holds in a rain of strength `r` (0..1) at the
+/// rain's quality (0 low, 1 medium, 2 high): the near one some 90 a cubic metre in a
+/// downpour - of the drops big enough to see, a few hundred a cubic metre in heavy rain -
+/// and a tenth of that in a drizzle.
+/// The fourth figure is the splashes where they land (see rain.wgsl `splash`): some forty
+/// on each square metre at a time in a downpour, close by.
+pub(crate) fn rainfall_drops(r: f32, quality: u8) -> [u32; 4] {
+    let k = (0.12 + 0.88 * r.clamp(0.0, 1.0)) * [0.3, 0.6, 1.0][quality.min(2) as usize];
+    [(90000.0 * k) as u32, (110000.0 * k) as u32, (60000.0 * k) as u32, (25000.0 * k) as u32]
+}
+
 /// Enhanced: the lamps' light in the fog over the drawn picture (`fog_lamps.wgsl`; not
 /// without storage buffers, where there are no lamps).
 pub(crate) fn fog_lamps_shader_source() -> String {
@@ -222,6 +276,7 @@ pub(crate) fn fog_lamps_shader_source() -> String {
         include_str!("../fog_lamps.wgsl"),
         include_str!("../enhanced_common.wgsl"),
         FOG_LAMP_LIGHTS,
+        if omsi_cfg::flags::OMSI_NO_BEAM_SHADOWS.is_set() { include_str!("../beam_shadow_none.wgsl") } else { include_str!("../beam_shadow.wgsl") },
         include_str!("../lamp_air.wgsl"),
     ]
     .join("\n")
@@ -246,6 +301,7 @@ pub(crate) fn corona_shader_source() -> String {
         include_str!("../corona.wgsl"),
         include_str!("../enhanced_common.wgsl"),
         FOG_LAMP_LIGHTS,
+        include_str!("../beam_shadow_none.wgsl"),
         include_str!("../lamp_air.wgsl"),
     ]
     .join("\n");

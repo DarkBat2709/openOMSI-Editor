@@ -208,6 +208,11 @@ impl AiCar {
         self.body.kind == MotionKind::Rail
     }
 
+    /// A train (`is_train`), which asks a level crossing from far off.
+    pub fn is_train(&self) -> bool {
+        is_train(&self.vehicle.ty.def)
+    }
+
     /// Boarding at a stop: the script is told to open the doors (`AI_Scheduled_AtStation`).
     pub fn at_station(&self) -> bool {
         self.bus.as_ref().map(|b| b.at_station()).unwrap_or(false)
@@ -316,6 +321,22 @@ impl Footprint {
 /// The player's vehicle as the traffic sees it: centre, heading (deg), half length, half
 /// width, speed along the heading (m/s, negative when reversing).
 pub type PlayerBox = (DVec3, f64, f32, f32, f32);
+
+/// A train: a `.ovh` of `[type] 2` (the A3 underground, the OHE railcar, the regional
+/// trains). A tram is rail-bound too but no train: it asks its lights as a car does.
+pub fn is_train(def: &omsi_vehicle::Vehicle) -> bool {
+    matches!(def.kind, omsi_vehicle::VehicleKind::Other(2))
+}
+
+/// The player's rail vehicle on the track, set before each `tick`: the rail lane, the
+/// distance along it, whether it faces the lane's direction, and whether it is a train.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct PlayerRail {
+    pub lane: usize,
+    pub s: f32,
+    pub along: bool,
+    pub train: bool,
+}
 
 /// A random car out of the player's range: still on the map and still driving, but without
 /// a body, a script or a picture - a few numbers. It comes back as the same car (type,
@@ -502,6 +523,52 @@ pub fn personality(state: &mut AiState, seed: u64, heavy: bool) {
 /// airliner on its final approach.
 pub const AIRCRAFT_KMH: f32 = 280.0;
 
+/// Recognize AI bicycles by their vehicle files, not their mass: motorcycles can be
+/// lighter than the 0.3-ton stock bicycles (#2959). Keep the stock HC/HH20 Fahrrad
+/// and Bicycle names compatible, including the generic bike.ovh filename.
+pub fn is_bicycle(def: &omsi_vehicle::Vehicle) -> bool {
+    let path = def.path.to_string_lossy().to_ascii_lowercase();
+    path.rsplit(['/', '\\']).take(2).any(|part| {
+        part.contains("fahrrad") || part.contains("bicycle") || part.contains("bicicleta") || matches!(part, "bike" | "bike.ovh")
+    })
+}
+
+#[cfg(test)]
+mod bicycle_tests {
+    use super::is_bicycle;
+    use omsi_vehicle::Vehicle;
+
+    #[test]
+    fn stock_bicycles_are_identified_independently_of_mass() {
+        for path in [
+            "Vehicles/HC_Fahrrad/HC_Fahrrad.ovh",
+            "Vehicles/HH20_Fahrrad/fahrrad.ovh",
+            "Vehicles/Bicycle/bike.ovh",
+            "Vehicles/Bicicleta/bicicleta.ovh",
+            "Vehicles\\Bicycle\\bike.ovh",
+        ] {
+            let def = Vehicle { path: path.into(), mass: 0.3, ..Default::default() };
+            assert!(is_bicycle(&def), "{path}");
+        }
+    }
+
+    #[test]
+    fn lightweight_motorcycles_and_cars_are_not_bicycles() {
+        for (path, mass) in [
+            ("Vehicles/Motorcycles/Honda_CG_125.ovh", 0.125),
+            ("Vehicles/Motorcycles/Road_Bike_125.ovh", 0.15),
+            ("Vehicles/Motorcycles/Scooter.ovh", 0.3),
+            ("Vehicles/Sedan/sedan.ovh", 0.95),
+            ("/home/Bike/OMSI/Vehicles/Sedan/sedan.ovh", 0.95),
+            ("C:\\Bicycle\\OMSI\\Vehicles\\Motorcycles\\scooter.ovh", 0.125),
+            ("/games/Fahrrad/OMSI/Vehicles/Sedan/sedan.ovh", 0.95),
+        ] {
+            let def = Vehicle { path: path.into(), mass, ..Default::default() };
+            assert!(!is_bicycle(&def), "{path} ({mass} t)");
+        }
+    }
+}
+
 impl TrafficSim {
     /// Put `vehicle` (a random car of type `ty`, or a timetable bus with `bus`) on the road
     /// on `lane` at `s` metres into it and return its id (see `Traffic::create_car`, which
@@ -542,13 +609,19 @@ impl TrafficSim {
             // (a truck keeps to the limit like the cars, up to a truck's own 80-90 km/h: it
             // took 38-47 on every road, crawling along 80 km/h roads, #327)
             80.0 + (seed % 10) as f32
-        } else if kind == LaneKind::Street && ty.def.mass > 0.0 && ty.def.mass <= 0.3 {
-            // a bicycle (stock ones weigh exactly 0.3 t): 15-21 km/h, the `vmax` range their
-            // script cuts the drive at (#327)
+        } else if kind == LaneKind::Street && is_bicycle(&ty.def) {
+            // Stock bicycles stay at 15-21 km/h (#327), without capping light motorbikes (#2959).
             15.0 + (seed % 7) as f32
         } else {
             100.0
         };
+        // (with the realistic physics a tram or a train pulls as its class does: the pull falls
+        // with speed at the class's power; its brakes and its jerk stay the traffic's)
+        if kind == LaneKind::Rail && crate::rail::realistic() {
+            if let Some(class) = crate::rail::RailClass::of(&ty.def) {
+                state.rail_power = Some(class.performance().kw_per_tonne * 0.85);
+            }
+        }
         // lorries and vans take bends more gently than cars
         state.lat_accel = if kind == LaneKind::Air {
             50.0

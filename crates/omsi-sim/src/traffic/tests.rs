@@ -459,6 +459,34 @@ fn a_backwards_jump_replays_its_phase_once() {
 }
 
 #[test]
+fn coincident_skips_wait_for_any_of_their_lights() {
+    let p = |s: [i32; 9]| -> Vec<(i32, f32)> { s.into_iter().zip([3.0, 10.0, 3.0, 3.0, 10.0, 3.0, 3.0, 10.0, 3.0]).collect() };
+    for asking in [3, 4] {
+        let mut c = TrafficLightController::from_program(
+            vec![
+                (p([3, 6, 9, 0, 0, 0, 0, 0, 0]), Some(20.0)),
+                (p([6, 6, 6, 6, 6, 9, 0, 0, 0]), None),
+                (p([6, 6, 6, 6, 6, 9, 0, 0, 0]), None),
+                (p([0, 0, 0, 0, 0, 0, 3, 6, 9]), Some(20.0)),
+                (p([0, 0, 0, 0, 0, 0, 3, 6, 9]), None),
+                (p([0, 0, 0, 3, 6, 9, 0, 0, 0]), Some(14.0)),
+            ],
+            Some(48.0),
+            &[],
+            &[[3.0, 32.0, 1.0, 48.0], [4.0, 32.0, 1.0, 48.0], [5.0, 16.0, 1.0, 32.0], [5.0, 0.0, 0.0, 16.0], [5.0, 5.0, 0.0, 16.0], [5.0, 10.0, 0.0, 16.0], [0.0, 13.0, 0.0, 8.0]],
+        );
+        c.start(0.0);
+        c.request[asking] = true;
+        let mut green = false;
+        for _ in 0..600 {
+            c.advance(0.1);
+            green |= c.state(asking) == 6;
+        }
+        assert!(green, "light {asking} asking alone never got its green");
+    }
+}
+
+#[test]
 fn simultaneous_inactive_events_do_not_stall_the_cycle() {
     let mut c = TrafficLightController::from_program(
         vec![(vec![(0, 4.0), (6, 16.0)], None); 2],
@@ -1087,4 +1115,164 @@ fn a_way_on_that_leads_only_into_closed_lanes_is_not_taken() {
     net.lanes[2].next.clear();
     let mut car = AiState::new(0, 0.0, 5);
     assert_eq!(car.choose_after(&net, 0), Some(1));
+}
+
+/// A two-light program with stops in several kinds of phase: in the changeover (a light in
+/// red-and-yellow) a request does not hold the clock; in the green, all red or a flashing
+/// rest it does.
+#[test]
+fn stop_points_hold_only_where_traffic_goes() {
+    // light 0: green 0-30 s, yellow 3 s, red; light 1: red to 36 s, red-and-yellow 36-38 s,
+    // green 38-50 s, yellow, red
+    let program = || {
+        vec![
+            (vec![(6, 30.0), (9, 3.0), (0, 0.0)], None),
+            (vec![(0, 36.0), (3, 2.0), (6, 12.0), (9, 3.0), (0, 0.0)], None),
+        ]
+    };
+    let run = |stop_at: f32, seconds: f32| {
+        let mut ctl = TrafficLightController::from_program(program(), Some(60.0), &[[1.0, stop_at, 0.0]], &[]);
+        ctl.time = 34.5;
+        ctl.request[1] = true;
+        let steps = (seconds / 0.05) as usize;
+        for _ in 0..steps {
+            ctl.advance(0.05);
+        }
+        ctl
+    };
+    let in_changeover = run(37.0, 6.0);
+    assert!(!in_changeover.held, "held at {:.2} s", in_changeover.time);
+    assert!(in_changeover.time > 40.0);
+    assert_eq!(in_changeover.state(1), 6, "light 1 went on to green");
+    let in_green = run(42.0, 12.0);
+    assert!(in_green.held, "a request in the green holds it");
+    assert!((in_green.time - 42.0).abs() < 1e-3, "{:.2}", in_green.time);
+    // all red (both lights red at 34 s) and a dark rest hold too
+    let all_red = run(34.8, 6.0);
+    assert!(all_red.held && (all_red.time - 34.8).abs() < 1e-3, "{:.2}", all_red.time);
+    let mut dark_rest = TrafficLightController::from_program(vec![(vec![(13, 20.0), (0, 0.0)], None)], Some(40.0), &[[0.0, 5.0, 0.0]], &[]);
+    dark_rest.time = 4.0;
+    dark_rest.request[0] = true;
+    for _ in 0..80 {
+        dark_rest.advance(0.05);
+    }
+    assert!(dark_rest.held && (dark_rest.time - 5.0).abs() < 1e-3, "{:.2}", dark_rest.time);
+}
+
+/// A jump to a time beyond the cycle goes on at the start of the next cycle.
+#[test]
+fn jumps_beyond_the_cycle_restart_it() {
+    // a 90 s cycle that flashes yellow (13) for its first 15 s; at 80 s, unasked, it jumps
+    // to 97 s. Wrapped round that would be 7 s, still flashing; it must be 0.
+    let program = vec![(vec![(13, 15.0), (6, 60.0), (9, 3.0), (0, 0.0)], None)];
+    let mut ctl = TrafficLightController::from_program(program, Some(90.0), &[], &[[0.0, 80.0, 1.0, 97.0]]);
+    ctl.time = 79.0;
+    for _ in 0..12 {
+        ctl.advance(0.25);
+    }
+    assert!((ctl.time - 2.0).abs() < 1e-3, "clock at {:.2} s", ctl.time);
+    assert_eq!(ctl.state(0), 13);
+    // a jump inside the cycle still lands where it says
+    let mut inside = TrafficLightController::from_program(vec![(vec![(6, 60.0), (0, 0.0)], None)], Some(90.0), &[], &[[0.0, 80.0, 1.0, 10.0]]);
+    inside.time = 79.5;
+    inside.advance(1.0);
+    assert!((inside.time - 10.5).abs() < 1e-3, "{:.2}", inside.time);
+}
+
+#[test]
+fn the_kept_bends_give_the_bend_speed_found_anew() {
+    let net = junction();
+    let mut car = AiState::new(0, 1.3, 7);
+    car.speed = 13.9;
+    car.plan_next(&net);
+    let dt = 1.0 / 50.0;
+    for k in 0..400 {
+        let (cached, fresh) = (car.curve_speed_cached(&net), car.curve_speed(&net));
+        assert!((cached - fresh).abs() < 0.05 || (cached > 1e30 && fresh > 1e30), "step {k}: {cached} vs {fresh}");
+        if !car.advance(&net, dt, None, None) {
+            break;
+        }
+    }
+}
+
+#[test]
+fn two_quiet_jumps_at_the_cycle_start_let_the_clock_run_on() {
+    // A 127 s cycle with two day jumps at 0 s, each taken while its detector light is
+    // empty (to 15 s, past the night flashing), and one at 87 s past the cycle's end. At
+    // night both detectors are occupied: neither jump fires and the clock runs through the
+    // flashing from 0 s, frame after frame, instead of standing at 0.
+    let lights = vec![(vec![(0, 127.0)], None), (vec![(0, 127.0)], None), (vec![(13, 15.0), (6, 112.0)], None)];
+    let jumps = [[0.0, 0.0, 1.0, 15.0], [1.0, 0.0, 1.0, 15.0], [2.0, 87.0, 0.0, 130.0]];
+    let mut night = TrafficLightController::from_program(lights.clone(), Some(127.0), &[], &jumps);
+    night.request = vec![true, true, false];
+    night.time = 126.0;
+    for _ in 0..60 {
+        night.advance(0.1);
+    }
+    assert!((night.time - 5.0).abs() < 1e-3, "the night clock stood at {:.2} s", night.time);
+    assert_eq!(night.state(2), 13, "the flashing runs at night");
+    // by day the empty detectors take their jump at 0 s straight past the flashing
+    let mut day = TrafficLightController::from_program(lights, Some(127.0), &[], &jumps);
+    day.time = 126.0;
+    day.advance(2.0);
+    assert!((day.time - 16.0).abs() < 1e-3, "the day clock went on at {:.2} s", day.time);
+}
+
+/// win-4.sco ("Hauptbahnhof 4", #3092): the program as the file has it, lights 0 Main,
+/// 1 Bus, 2 Bus2, 3 Green, 4 Ped, and its thirteen jumps.
+fn win4() -> TrafficLightController {
+    TrafficLightController::from_program(
+        vec![
+            (vec![(3, 2.0), (6, 10.0), (9, 3.0), (0, 7.0), (9, 3.0), (0, 1.0)], None),
+            (vec![(0, 16.0), (6, 6.0), (0, 1.0)], Some(5.0)),
+            (vec![(0, 26.0), (6, 10.0)], Some(40.0)),
+            (vec![(6, 1.0)], Some(6.0)),
+            (vec![(6, 22.0), (0, 1.0)], Some(0.0)),
+        ],
+        Some(37.0),
+        &[],
+        &[
+            [1.0, 12.0, 1.0, 2.0],
+            [2.0, 12.0, 1.0, 2.0],
+            [1.0, 22.0, 1.0, 2.0],
+            [1.0, 22.0, 0.0, 18.0],
+            [2.0, 12.0, 0.0, 22.0],
+            [1.0, 2.0, 0.0, 12.0],
+            [1.0, 7.0, 0.0, 12.0],
+            [2.0, 2.0, 0.0, 22.0],
+            [2.0, 7.0, 0.0, 22.0],
+            [2.0, 12.0, 0.0, 22.0],
+            [2.0, 17.0, 0.0, 22.0],
+            [2.0, 31.0, 0.0, 27.0],
+            [2.0, 35.0, 0.0, 27.0],
+        ],
+    )
+}
+
+#[test]
+fn win4_gives_each_bus_light_its_green_when_it_asks_alone() {
+    // (the second bus light's request jumps to 22 s, where the first one's "nobody asks:
+    // back to 2 s" waits: landing on it is not a second visit, #3092)
+    for asking in [1usize, 2] {
+        let mut c = win4();
+        c.time = 3.0;
+        c.request[asking] = true;
+        let mut green_at = None;
+        for i in 0..400 {
+            c.advance(0.1);
+            if green_at.is_none() && c.state(asking) == 6 {
+                green_at = Some(i as f32 * 0.1);
+            }
+        }
+        let t = green_at.unwrap_or(f32::INFINITY);
+        assert!(t < 40.0, "light {asking} asking alone waited {t} s for its green");
+        assert_ne!(c.state(0), 6, "the main road stays green over a waiting bus (light {asking})");
+    }
+    // with nobody asking the main road rests on its green
+    let mut c = win4();
+    c.time = 3.0;
+    for _ in 0..1800 {
+        c.advance(0.1);
+        assert_eq!(c.state(0), 6, "the main road left its green with nobody asking");
+    }
 }

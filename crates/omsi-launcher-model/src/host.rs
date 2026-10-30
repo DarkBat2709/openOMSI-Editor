@@ -19,6 +19,9 @@ pub trait Host: Send + Sync {
     /// of maps, buses, lines).
     fn mt_enable(&self, _on: bool) {}
     fn mt_protect(&self, _texts: &mut dyn Iterator<Item = &str>) {}
+    fn tr(&self, text: &str) -> String {
+        text.to_string()
+    }
     /// A phone: what the previous run said last and the end of its log, when it crashed.
     fn previous_run_crash(&self) -> Option<(String, String)> {
         None
@@ -26,6 +29,11 @@ pub trait Host: Send + Sync {
     /// A map's roads, read the way the game's city map reads them (the navigator's).
     fn city_map(&self, _root: &Path, _tiles: &[(i32, i32, PathBuf)], _chrono: &[PathBuf]) -> CityMap {
         CityMap::default()
+    }
+    /// The map's own layers (ground, water, paved surfaces, houses: `omsi_scene::mapgen`), read
+    /// the way the navigator reads them, from the game's cache when it has them.
+    fn map_layers(&self, _root: &Path, _map_dir: &Path, _tiles: &[(i32, i32, PathBuf)], _chrono: &[PathBuf]) -> Option<omsi_map::layers::Layers> {
+        None
     }
     /// The game's city map colours (RGBA, 0 - 1): road casing, road, main road, route.
     fn city_map_colors(&self) -> [[f32; 4]; 4] {

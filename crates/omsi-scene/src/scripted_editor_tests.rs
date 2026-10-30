@@ -15,6 +15,7 @@ fn editor_keeps_attachment_advertisement_without_editable_object_record() {
     let make = || omsi_sim::scenery::SceneryInstance::new(program.clone(), &[], omsi_sim::SimClock::default(), &labels);
     let mut inst = make(); inst.state.vars[advert] = 5.0;
     world.scripted.lock().push(ScriptedObject {
+        script_lamps: Vec::new(),
         map_labels: labels.clone(), ty: ty.clone(), pos: DVec3::ZERO, xf: Mat4::IDENTITY,
         instances: vec![0], inst, controller: None, light_index: 0, light_parent: None,
         map_id: 726561, variants: Vec::new(), sounds: None, tile: (0,0), var_parent: None,
@@ -66,6 +67,7 @@ fn every_object_a_scenery_step_shows_finds_its_view_behind_a_silenced_one() {
     let mut set = ScriptedSet::default();
     for (map_id, x) in [(1, 0.0), (2, 10.0), (3, omsi_sim::scenery::SCRIPT_RANGE + 20.0)] {
         set.push(ScriptedObject {
+        script_lamps: Vec::new(),
             map_labels: Vec::new(),
             ty: ot.clone(),
             pos: DVec3::new(x, 0.0, 0.0),

@@ -83,6 +83,7 @@ impl<'a> Offscreen<'a> {
             .unwrap_or(camera.position);
         let (duty, duty_error) = player_duty(args, &world, schedule.as_mut(), player.as_mut());
         if let Some(p) = player.as_mut() {
+            crate::duty_start::set_starting_cabin_temperature(args, &mut p.vehicle);
             let active = if duty.is_some() { 1.0 } else { 0.0 };
             p.vehicle.host.schedule_active = active;
             p.vehicle.set_var("schedule_active", active);
@@ -221,15 +222,19 @@ impl<'a> Offscreen<'a> {
         } else {
             weather.path.file_stem().map(|s| s.to_string_lossy().to_string()).unwrap_or_default()
         };
-        if let (true, Some((pw, speed))) = (server, crate::server::SERVER_ADMIN.get()) {
+        if let (true, Some((pw, moderator, speed))) = (server, crate::server::SERVER_ADMIN.get()) {
             srv_admin.password = pw.clone();
+            srv_admin.moderator_password = moderator.clone();
+            if let Some((on, density)) = crate::server::SERVER_PASSENGERS.get() {
+                (srv_admin.passengers_on, srv_admin.passenger_density) = (*on, *density);
+            }
             if let Some(l) = lan_off.as_mut() {
                 l.clock_speed = *speed;
             }
         }
         let ground_gap = crate::ground_gap::GroundGap::from_env();
         if let Some(t) = traffic.as_ref() {
-            crate::ground_gap::check_lanes(&world, t);
+            crate::ground_gap::check_lanes(&world.data, t);
         }
         // the tyres' spray (see `puddles`), from roads as wet as the weather left them
         let mut spray = puddles::Spray::new();
@@ -418,6 +423,7 @@ fn new_humans(
         // the map's camera they filled the whole pool, and the players met nobody)
         h.players_only = args.server.is_some() && player.is_none();
         h.exact_fare = settings.exact_fare;
+        h.bad_driving = settings.pax_bad_driving;
         h.boarding = settings.boarding.clone();
         h.stand_chance = settings.standing_chance;
         h.voices = match settings.pax_voices.as_str() { "off" => 2, "tickets" => 1, _ => 0 };
@@ -433,7 +439,7 @@ fn new_humans(
         h.density = world
             .global
             .passenger_density((parse_time(&args.time) / 3600.0) as f32)
-            * settings.pax_density;
+            * crate::server::SERVER_PASSENGERS.get().and_then(|p| p.1).unwrap_or(settings.pax_density);
         h.time_of_day = parse_time(&args.time);
         h.stop_targets = schedule.as_ref().map(|s| s.stop_targets());
         h.stop_names = schedule.as_ref().map(|s| s.stop_names());

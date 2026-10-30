@@ -129,7 +129,7 @@ fn mapped_splines_and_objects_use_uncut_base_while_ground_keeps_paint() {
         // Both upload paths must agree: a spatially batched mapped spline and one
         // left in the per-spline path (OMSI_NO_GROUND_SPLINE_BATCHING).
         ground_splines: batch_ground_splines(vec![Arc::new(triangle(0.5))]),
-        splines: vec![(Arc::new(triangle(1.0)), spline, false, DVec3::ZERO)],
+        splines: vec![(Arc::new(triangle(1.0)), spline, false, DVec3::ZERO, Default::default())],
         objects: vec![PlacedObject {
             ot: object,
             pos: DVec3::ZERO,
@@ -337,4 +337,41 @@ fn a_maps_own_route_arrow_shows_only_with_the_route_arrows() {
     assert!(shown(&scene).iter().all(|v| !v), "hidden again once they are off");
     world.unload_tile(&renderer, &mut scene, (0, 0), None);
     assert!(world.help_arrows.lock().is_empty(), "the tile's arrows go with it");
+}
+
+#[test]
+fn a_cut_tile_still_asks_for_its_painted_ground_textures() {
+    let fixture = Fixture::new();
+    fixture.write("global.cfg", "[name]\nGround paint textures\n");
+    for name in ["base.png", "paint.png", "wall.png"] {
+        image::save_buffer(fixture.0.join(name), &[0, 255, 0, 255], 1, 1, image::ColorType::Rgba8).unwrap();
+    }
+    let mut world = World::open(&fixture.0, &fixture.0.join("global.cfg"), 20261001).unwrap();
+    world.global.ground_textures = ["base.png", "paint.png", "wall.png"]
+        .into_iter()
+        .map(|texture| omsi_map::global::GroundTex { texture: texture.into(), ..Default::default() })
+        .collect();
+    // (the masks as `cut_paint` leaves them: moved out of `paint_masks`)
+    let prepared = Prepared {
+        paint_cut: None,
+        tx: 0,
+        ty: 0,
+        terrain: None,
+        hole_walls: MeshData::default(),
+        paint_masks: Vec::new(),
+        paint: vec![(1, TextureData::from_image(Image::solid([255; 4])), 1.0)],
+        wall_paint: vec![(2, TextureData::from_image(Image::solid([255; 4])))],
+        water: None,
+        ground_splines: batch_ground_splines(Vec::new()),
+        splines: Vec::new(),
+        objects: Vec::new(),
+        trees: Vec::new(),
+        origin: DVec3::ZERO,
+        light_map: None,
+        cut: None,
+        images: Arc::new(HashMap::new()),
+    };
+    let names: Vec<String> = world.wanted_textures(&prepared).into_iter().map(|(n, _)| n).collect();
+    assert!(names.iter().any(|n| n == "paint.png"), "{names:?}");
+    assert!(names.iter().any(|n| n == "wall.png"), "{names:?}");
 }

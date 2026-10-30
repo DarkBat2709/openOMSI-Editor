@@ -147,10 +147,14 @@ impl TrafficSim {
     /// with a `[speedlimit]`) while a train's route is about to enter the track its signal
     /// route covers and no other train is on it; otherwise it shows stop (and falls back to
     /// stop behind the train that passed it).
-    pub fn signal_aspects(&self, routes: &[omsi_map::ailists::SignalRoute], player_rail: Option<(usize, bool)>) -> hashbrown::HashMap<i64, f32> {
+    pub fn signal_aspects(&mut self, routes: &[omsi_map::ailists::SignalRoute], player_rail: Option<(usize, bool)>) -> hashbrown::HashMap<i64, f32> {
         let mut out: hashbrown::HashMap<i64, f32> = hashbrown::HashMap::new();
         if routes.is_empty() {
             return out;
+        }
+        // (the signals of the map's blocks show whether their block is free)
+        for (id, a) in self.block_aspects() {
+            out.insert(id, a);
         }
         // per train: the map ids it stands on and those of its next lanes
         let mut trains: Vec<(i64, Vec<i64>)> = self
@@ -189,6 +193,20 @@ impl TrafficSim {
                 }
             }
             trains.push((here, ahead));
+        }
+        if omsi_cfg::flags::OMSI_DEBUG_SIGNALS.is_set() {
+            // where the player's train stands and which routes it is on or coming to
+            if let Some((here, ahead)) = trains.last() {
+                let on: Vec<i64> = routes.iter().filter(|r| r.entries.iter().any(|e| e[0] == *here)).map(|r| r.signal.0).collect();
+                let to: Vec<i64> = routes.iter().filter(|r| r.entries.iter().any(|e| ahead.contains(&e[0]) && e[0] != *here)).map(|r| r.signal.0).collect();
+                thread_local!(static LAST: std::cell::RefCell<(i64, Vec<i64>, Vec<i64>)> = const { std::cell::RefCell::new((i64::MIN, Vec::new(), Vec::new())) });
+                LAST.with(|l| {
+                    if *l.borrow() != (*here, on.clone(), to.clone()) {
+                        log::info!("signals: the train is on piece {here}, on the routes of signals {on:?}, coming to those of {to:?} ({} pieces ahead)", ahead.len());
+                        *l.borrow_mut() = (*here, on, to);
+                    }
+                });
+            }
         }
         for r in routes {
             let pieces: hashbrown::HashSet<i64> = r.entries.iter().map(|e| e[0]).collect();
@@ -271,6 +289,53 @@ impl TrafficSim {
     /// Seconds until light `li` of controller `c` lets traffic go (0 while it does).
     pub fn light_until_go(&self, c: usize, li: usize) -> Option<f32> {
         self.lights.get(c)?.time_until_go(li)
+    }
+
+    /// The lanes a train asks the lights of, out to `reach`: its way as planned and, past the
+    /// plan (some ninety metres or ten lanes), its timetable route on, or for a train
+    /// without one every branch of the track on.
+    pub fn train_way(&self, st: &AiState, reach: f32) -> Vec<(usize, f32)> {
+        let mut way = self.way_lanes(st, reach);
+        let Some(&(last, d)) = way.last() else { return way };
+        if d + self.net.lanes[last].length() >= reach {
+            return way;
+        }
+        let from = st.route_index.min(st.route.len());
+        if let Some(k) = st.route[from..].iter().position(|&l| l == last) {
+            let mut d = d + self.net.lanes[last].length();
+            for &l in &st.route[from + k + 1..] {
+                if d > reach {
+                    break;
+                }
+                way.push((l, d));
+                d += self.net.lanes[l].length();
+            }
+        } else if st.route.is_empty() {
+            way.extend(self.track_after(last, d, reach));
+        }
+        way
+    }
+
+    /// The lanes after `lane` within `reach` metres, on every branch of a fork (which one a
+    /// train takes is the points' business), each with the distance to its start from
+    /// where `lane` starts at `start` (m). Asking the branch it will not take only turns
+    /// that light for nobody.
+    pub fn track_after(&self, lane: usize, start: f32, reach: f32) -> Vec<(usize, f32)> {
+        let mut out: Vec<(usize, f32)> = Vec::new();
+        let mut open = vec![(lane, start + self.net.lanes[lane].length())];
+        while let Some((l, to_end)) = open.pop() {
+            if to_end > reach || out.len() > 64 {
+                continue;
+            }
+            for &n in &self.net.lanes[l].next {
+                if n == lane || out.iter().any(|o| o.0 == n) {
+                    continue;
+                }
+                out.push((n, to_end));
+                open.push((n, to_end + self.net.lanes[n].length()));
+            }
+        }
+        out
     }
 
     /// The street lanes a vehicle standing at `pos` facing `heading` is on and will drive

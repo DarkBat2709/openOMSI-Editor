@@ -13,6 +13,8 @@ import { UpdateRow, checkUpdates } from '../updates.js';
 import { SETTINGS_TABS, GRAPHICS_PROFILE_KEYS } from './settings-schema.js';
 import { VersionsDialog } from './versions.js';
 import { RadioStations } from './radio-stations.js';
+import { AiListsPage } from './ai-lists.js';
+import { OptimiseBlock } from './optimise.js';
 
 const REPO_URL = 'https://github.com/openOmsi-project/openOMSI';
 
@@ -55,19 +57,29 @@ export function SettingsPage() {
   const [ask, dialog] = useConfirm();
   if (!s.settings) return null;
   const platform = s.boot?.platform || '';
-  const current = SETTINGS_TABS.find((x) => x.id === tab);
+  // (the model test runs the game program: not on a phone)
+  const phone = ['android', 'ios'].includes(platform);
+  const tabs = SETTINGS_TABS.filter((x) => visible(x, s.settings, platform));
+  const current = tabs.find((x) => x.id === tab) || tabs[0];
   const pick = (id) => {
+    // (Troubleshooting is no tab of its own: it opens that page at its model test)
+    if (id === 'troubleshoot') {
+      remember('troubleshoot-tab', 'content');
+      return set({ page: 'troubleshoot' });
+    }
     setTab(id);
     remember('settings-tab', id);
   };
   return html`
     <${PageHead} title="Settings" text="Every change is saved at once; the game reads them when it starts." />
-    <${Tabs} value=${tab} options=${SETTINGS_TABS.map((x) => [x.id, x.label])} onChange=${pick} />
-    <div class="settings-grid" key=${tab}>
+    <${Tabs} value=${current.id} options=${[...tabs.map((x) => [x.id, x.label]), ...(phone ? [] : [['troubleshoot', 'Troubleshooting']])]} onChange=${pick} />
+    ${current.page === 'ailists'
+      ? html`<div key=${tab}><${AiListsPage} /></div>`
+      : html`<div class="settings-grid" key=${tab}>
       ${current.cols.map((col) => html`<${Card} title=${col.title}>
         ${col.rows.filter((row) => visible(row, s.settings, platform)).map((row, i) => html`<${Row} key=${i + (row.key || row.id || row.label || row.title || '')} row=${row} ask=${ask} />`)}
       </${Card}>`)}
-    </div>
+    </div>`}
     ${dialog}
   `;
 }
@@ -101,8 +113,8 @@ function Row({ row, ask }) {
   return null;
 }
 
-function Name({ label, help }) {
-  return html`<div class="name">${t(label)}${help && html`<span>${t(help)}</span>`}</div>`;
+function Name({ label, help, warn }) {
+  return html`<div class="name">${t(label)}${help && html`<span>${t(help)}</span>`}${warn && html`<span class="warn-fg">${t(warn)}</span>`}</div>`;
 }
 
 function SelectRow({ row }) {
@@ -113,7 +125,7 @@ function SelectRow({ row }) {
   const match = options.find(([v]) => same(cur, v) || String(cur) === String(v));
   const value = match ? match[0] : cur == null ? '' : typeof cur === 'boolean' ? (cur ? '1' : '0') : String(cur);
   return html`<div class="setting-row">
-    <${Name} label=${row.label} help=${row.help} />
+    <${Name} label=${row.label} help=${row.help} warn=${row.heavy?.(value, s) && 'Heavy: can cost many frames per second on most graphics cards'} />
     <${Select} value=${value} options=${options} raw=${row.raw} onChange=${async (v) => (await saveSettings({ [row.key]: asStored(cur, v) })) && row.recheckUpdates && checkUpdates()} />
   </div>`;
 }
@@ -155,7 +167,7 @@ function SliderRow({ row }) {
   };
   const value = shown ?? (isNaN(stored) ? row.def : stored);
   return html`<div class="setting-row full">
-    <${Slider} label=${row.label} value=${value} min=${row.min} max=${row.max} step=${row.step} format=${row.format} onChange=${onChange} />
+    <${Slider} label=${row.label} help=${row.help} value=${value} min=${row.min} max=${row.max} step=${row.step} format=${row.format} onChange=${onChange} />
   </div>`;
 }
 
@@ -174,6 +186,7 @@ function ButtonRow({ row }) {
 
 const CUSTOM = {
   preset: () => html`<${PresetRow} />`,
+  optimise: () => html`<${OptimiseBlock} />`,
   profiles: () => html`<${ProfilesBlock} />`,
   theme: () => html`<${ThemeRow} />`,
   launcher_layout: () => !onPhone && html`<${LauncherLayoutRow} />`,
@@ -185,18 +198,17 @@ const CUSTOM = {
   radio: () => html`<${RadioStations} />`,
 };
 
-/** The quality presets of the graphics mode chosen: the one the settings match, else
- * "Custom". A preset keeps the mode. */
+/** The quality presets, Low to Ultra: the one the settings match, else "Custom". A preset sets
+ * the graphics mode too (Low is Vanilla, Ultra Enhanced with everything on). */
 function PresetRow() {
-  const mode = S.settings.graphics || 'vanilla_plus';
   const [presets, setPresets] = useState([]);
   useEffect(() => {
     let gone = false;
-    call('graphics_presets', { mode })
+    call('graphics_presets', {})
       .then((p) => !gone && setPresets(p))
       .catch(() => !gone && setPresets([]));
     return () => (gone = true);
-  }, [mode]);
+  }, []);
   const s = S.settings;
   const matched = presets.find((p) => Object.entries(p.settings).every(([k, v]) => same(s[k], v)));
   const options = [...presets.map((p) => [p.name, p.name]), ['', 'Custom']];
@@ -351,7 +363,7 @@ function VersionRow() {
     <div class="row wrap">
       <span class="muted small grow">${t('This is openOMSI {version}', { version: S.boot?.version || '' })}</span>
       ${S.boot?.versions && html`<${Button} small icon="history" label="Choose a version…" onClick=${() => setOpen(true)} />`}
-      <${Button} small kind="ghost" icon="external" onClick=${() => call('open_url', { url: REPO_URL }).catch((e) => toast(e.message, 'error'))}>github.com/openOmsi-project/openOMSI</${Button}>
+      <${Button} small kind="ghost" icon="external" onClick=${() => call('open_url', { url: REPO_URL }).catch((e) => toast(t(e.message), 'error'))}>github.com/openOmsi-project/openOMSI</${Button}>
     </div>
     ${open && html`<${VersionsDialog} onClose=${() => setOpen(false)} />`}
   </div>`;
@@ -373,7 +385,7 @@ function ResetRow({ ask }) {
       await saveSettings({ ...defaults, language: S.settings.language }, true);
       toast(t('Every setting is back to how it came.'), 'ok');
     } catch (e) {
-      toast(e.message, 'error');
+      toast(t(e.message), 'error');
     }
   };
   return html`<div class="setting-row full">
@@ -390,7 +402,7 @@ function SupportRow() {
       const path = await call('support_package');
       toast(t('Support package saved: {path}', { path }), 'ok', 10000);
     } catch (e) {
-      toast(e.message, 'error');
+      toast(t(e.message), 'error');
     }
     setBusy(false);
   };

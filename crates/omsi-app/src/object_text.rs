@@ -17,6 +17,8 @@ pub struct Window {
     pub rects: Vec<([f32; 4], Command)>,
 }
 pub fn fields(ot: &ObjectType) -> Vec<(usize, String)> {
+    if ot.sco.is_bus_stop { return vec![(0,"Stop name".into()),(1,"Boarding maximum".into()),(2,"Boarding minimum".into()),(3,"Alighting weight".into()),(4,"Stop length (m)".into()),(5,"Platform side (0 right, 1 left)".into())]; }
+    if ot.sco.is_entry_point { return vec![(0,"Entry point name".into())]; }
     if ot.sco.tree.is_some() { return Vec::new(); }
     let mut fields = std::collections::BTreeMap::new();
     if let Some(program) = ot.program.as_ref().filter(|_| !ot.model.text_textures.is_empty()) {

@@ -101,6 +101,13 @@ pub struct ScriptSet {
     pub stringvarlists: Vec<PathBuf>,
     pub scripts: Vec<PathBuf>,
     pub constfiles: Vec<PathBuf>,
+    /// `[lua_script]` (openOMSI): Lua or compiled (`.oop`) scripts that drive every placed
+    /// object of the type (see `omsi_plugin` and `docs/OBJECT_SCRIPTS.md`).
+    pub lua: Vec<PathBuf>,
+    /// `[lua_range]`: how close the camera must be for them to run (m); 0: the game's.
+    pub lua_range: f32,
+    /// `[lua_rate]`: how often a frame of theirs runs (per second); 0: every frame.
+    pub lua_rate: f32,
 }
 
 #[derive(Debug, Clone, PartialEq, Default)]
@@ -376,6 +383,14 @@ impl SceneryObject {
                 "varnamelist" => o.scripts.varlists.extend(read_list(&mut r, &base)),
                 "stringvarnamelist" => o.scripts.stringvarlists.extend(read_list(&mut r, &base)),
                 "script" => o.scripts.scripts.extend(read_list(&mut r, &base)),
+                "lua_script" => {
+                    let p = omsi_cfg::resolve_path(&base, r.str().trim());
+                    if !p.as_os_str().is_empty() {
+                        o.scripts.lua.push(p);
+                    }
+                }
+                "lua_range" => o.scripts.lua_range = r.f32().max(0.0),
+                "lua_rate" => o.scripts.lua_rate = r.f32().max(0.0),
                 "constfile" => o.scripts.constfiles.extend(read_list(&mut r, &base)),
                 "sound" => o.sound = Some(r.str().to_string()),
                 "sound_ai" => o.sound_ai = Some(r.str().to_string()),
@@ -439,6 +454,7 @@ impl SceneryObject {
                 }
             }
         }
+        o.model.tidy_visible();
         o
     }
 }
@@ -455,12 +471,31 @@ mod tests {
     use super::*;
 
     #[test]
+    fn lua_scripts_of_an_object_are_read_with_range_and_rate() {
+        let o = SceneryObject::parse(&CfgFile::from_str("objects/gate.sco", "[mesh]\narm.o3d\n[lua_script]\ngate.lua\n[lua_range]\n120\n[lua_rate]\n20\n"));
+        assert_eq!(o.scripts.lua.len(), 1);
+        assert!(o.scripts.lua[0].ends_with("gate.lua"));
+        assert_eq!((o.scripts.lua_range, o.scripts.lua_rate), (120.0, 20.0));
+        let plain = SceneryObject::parse(&CfgFile::from_str("objects/x.sco", "[mesh]\na.o3d\n"));
+        assert!(plain.scripts.lua.is_empty() && plain.scripts.lua_range == 0.0);
+    }
+
+    #[test]
     fn a_count_larger_than_the_file_reads_only_what_is_there() {
         let o = SceneryObject::parse(&CfgFile::from_str("objects/x.sco", "[groups]\n1000000000000\nA\nB\n"));
         assert_eq!(o.groups, ["A", "B"]);
         let o = SceneryObject::parse(&CfgFile::from_str("objects/x.sco", "[groups]\n2\nA\nB\n[onlyeditor]\n"));
         assert_eq!(o.groups, ["A", "B"]);
         assert!(o.only_editor);
+    }
+
+    #[test]
+    fn several_plain_visible_blocks_keep_the_last_as_omsi_does() {
+        let o = SceneryObject::parse(&CfgFile::from_str("objects/x.sco", "[mesh]\na.o3d\n[visible]\nExclamation\n1\n[visible]\nTrafficLightApproach\n1\n"));
+        let m = &o.model.meshes[0];
+        let var = |e: f32, t: f32| move |n: &str| Some(if n == "Exclamation" { e } else { t });
+        assert_eq!(m.visible_by(var(0.0, 1.0)), Some(true));
+        assert_eq!(m.visible_by(var(1.0, 0.0)), Some(false));
     }
 
     #[test]

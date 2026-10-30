@@ -5,17 +5,22 @@
 //! the application reads these devices each frame and applies what they say.
 
 pub mod actions;
+pub mod auto_shift;
 pub mod auto_setup;
 pub mod background;
 pub mod controllers;
 pub mod describe;
 pub mod ffb_calibration;
 pub mod gamepad_profile;
+pub mod head_filter;
 pub mod headtrack;
 pub mod hpattern;
 pub mod keys;
+pub mod launcher_pads;
 pub mod pedal;
 pub mod stock_keys;
+pub mod diagnostics;
+pub mod tobii;
 
 #[cfg(windows)]
 mod dinput;

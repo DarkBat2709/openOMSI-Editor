@@ -40,7 +40,8 @@ impl VehicleInstance {
         if self.skin_rest.len() != self.animators.len() {
             self.skin_rest = rest_transforms(&self.animators, self.state.vars.len());
         }
-        skin_vertices(&self.ty, i, &self.mesh_transforms, &self.skin_rest)
+        let plan = self.skin_plans.get(&self.ty, i)?;
+        skin_vertices(&self.ty, i, &self.mesh_transforms, &self.skin_rest, plan)
     }
 
     /// Seat the drawn tyres on the hubs the physics has: a model whose suspension
@@ -107,8 +108,15 @@ impl VehicleInstance {
         if !std::mem::take(&mut self.trailers_stepped) {
             self.update_trailers(dt);
         }
+        // a raised pantograph is shown where its head meets the wire, not at the full travel
+        // the script's variable says: shown that value for the animations only
+        let shown = self.pantograph_shown();
+        let raw = shown.map(|(id, v)| (id as usize, std::mem::replace(&mut self.state.vars[id as usize], v)));
         for (i, a) in self.animators.iter_mut().enumerate() {
             self.mesh_transforms[i] = a.update(dt, &self.state.vars);
+        }
+        if let Some((id, v)) = raw {
+            self.state.vars[id] = v;
         }
         crate::anim::apply_parents(&self.animators, &mut self.mesh_transforms);
         self.seat_wheels();
@@ -169,18 +177,24 @@ impl VehicleInstance {
         // (the vehicle's own lights and the coupled parts' - which read this vehicle's
         // variables too - by their plans' sources, resolved against this vehicle's variables
         // as the names were: each part's lamp was a look-up by name every frame)
+        // (a train car with a `CarRun`: by its own variables)
         for t in &mut self.trailers {
-            t.props_plan.refresh(&t.ty, &self.var_index);
+            let index = t.run.as_deref().map_or(&self.var_index, |r| &r.names);
+            t.props_plan.refresh(&t.ty, index);
         }
-        let value = |n: &str| -> f32 { n.trim().parse::<f32>().ok().or_else(|| self.var(n.trim())).unwrap_or(0.0) };
-        let vars = &self.state.vars;
-        let fade = |model: &omsi_model::Model, fades: &mut Vec<f32>, lights: &[PropSource]| {
+        let value = |part: Option<&TrailerPart>, n: &str| -> f32 {
+            let n = n.trim();
+            let run = part.and_then(|t| t.run.as_deref());
+            n.parse::<f32>().ok().or_else(|| run.map_or_else(|| self.var(n), |r| r.get(n))).unwrap_or(0.0)
+        };
+        let fade = |part: Option<&TrailerPart>, model: &omsi_model::Model, fades: &mut Vec<f32>, lights: &[PropSource]| {
+            let vars = part.and_then(|t| t.run.as_deref()).map_or(&self.state.vars, |r| &r.state.vars);
             let mut k = 0;
             for md in &model.meshes {
                 for l in &md.light_enh_2 {
                     let v = match lights.get(k) {
                         Some(src) => src.value(vars, 0.0),
-                        None => value(&l.variable),
+                        None => value(part, &l.variable),
                     };
                     let target = (v * if l.factor > 0.0 { l.factor } else { 1.0 }).clamp(0.0, 2.0);
                     // (a NaN stays NaN through clamp: the lamp's glow was drawn black on Windows)
@@ -202,9 +216,9 @@ impl VehicleInstance {
                 }
             }
         };
-        fade(&self.ty.model, &mut lf, &self.props_plan.lights);
+        fade(None, &self.ty.model, &mut lf, &self.props_plan.lights);
         for (t, f) in self.trailers.iter().zip(part_fades.iter_mut()) {
-            fade(&t.ty.model, f, &t.props_plan.lights);
+            fade(Some(t), &t.ty.model, f, &t.props_plan.lights);
         }
         self.light_fade = lf;
         for (t, f) in self.trailers.iter_mut().zip(part_fades) {
@@ -221,6 +235,7 @@ impl VehicleInstance {
                 let value = |n: &str| self.var(n).unwrap_or(0.0);
                 ps.update_over(dt, self.position, self.body_rotation(), &|| self.particle_ground(), &value);
                 for (t, set) in self.trailers.iter().zip(parts.iter_mut()) {
+                    let value = |n: &str| t.run_var(n).or_else(|| self.var(n)).unwrap_or(0.0);
                     set.update_over(dt, t.position, t.body_rotation(), &|| [-t.ground_lift(), 0.0, 0.0], &value);
                 }
             }

@@ -62,6 +62,33 @@ fn hot_reload_keeps_device_owner_and_ffb_runtime_state() {
 }
 
 #[test]
+fn hot_reload_hands_a_new_force_feedback_tuning_to_the_open_wheel() {
+    let mut c = Controllers::with_devices(no_hardware(), vec![wheel()]);
+    c.ff_t = 3.0;
+    c.ff_smooth = -0.2;
+    c.steer = Some(("Test wheel".into(), 0.2, 0.15, true));
+    let devices = std::ptr::addr_of!(c.devices);
+    let tune = FfTune { parking: 0.0, smoothing: 0.02, ..Default::default() };
+    let mut cfg = c.configuration();
+    assert_eq!(cfg[0].ff_tune, None);
+    cfg[0].ff_tune = Some(tune);
+    c.install_cfg(cfg);
+    // the same device, still open, its forces carrying on from where they were...
+    assert_eq!(std::ptr::addr_of!(c.devices), devices);
+    assert_eq!((c.ff_t, c.ff_smooth), (3.0, -0.2));
+    assert_eq!(c.steer, Some(("Test wheel".into(), 0.2, 0.15, true)));
+    // ...and from the next frame on tuned as the launcher said: no scrub in a parked bus
+    let in_use = find_device_cfg(&c.cfg, "Test wheel").and_then(|d| d.ff_tune).unwrap_or_default();
+    assert_eq!(in_use, tune);
+    let parked = FfInput { on: true, dt: 1.0 / 60.0, ..Default::default() };
+    assert!(tuned_wheel_force(&parked, 0.2, 0.15, &mut 0.0, &mut 0.0, 1.0, 0.0, &FfTune::default()) < -0.1);
+    assert_eq!(tuned_wheel_force(&parked, 0.2, 0.15, &mut 0.0, &mut 0.0, 1.0, 0.0, &in_use), 0.0);
+    // and a wheel whose forces go off forgets what its smoothing held
+    c.feedback(FfInput { on: false, dt: 1.0 / 60.0, ..Default::default() });
+    assert_eq!(c.ff_smooth, 0.0);
+}
+
+#[test]
 fn a_device_nobody_set_up_steers_only_once_its_axis_moved() {
     let mut moved = Vec::new();
     let j = "4 axes, 25 buttons, joystick";
@@ -122,6 +149,23 @@ fn a_latching_switch_stays_in_through_the_menu_and_the_focus() {
     // switched out later: its release and the latch's way back still come
     held.event(&cfg, "Test wheel", 1, false, &mut actions);
     assert_eq!(actions.first(), Some(&("bus_stopbrake".to_string(), false)));
+}
+
+#[test]
+fn a_latching_continuous_switch_stops_repeating_when_the_focus_goes() {
+    let mut cfg = DeviceCfg { name: "Test wheel".into(), buttons: vec![("retarder_up".into(), "1".into())], latching: vec![0], ..Default::default() };
+    cfg.more = vec![(0, "gear_up".into())];
+    let mut c = Controllers::with_devices(no_hardware(), vec![cfg]);
+    c.held.event(&c.cfg, "Test wheel", 0, true, &mut c.actions);
+    c.poll();
+    c.poll();
+    assert_eq!(c.repeating, ["retarder_up", "gear_up"]);
+    c.set_focus(false);
+    c.poll();
+    assert!(c.repeating.is_empty());
+    c.set_focus(true);
+    c.poll();
+    assert_eq!(c.repeating, ["retarder_up", "gear_up"]);
 }
 
 #[test]
