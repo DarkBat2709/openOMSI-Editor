@@ -52,7 +52,7 @@ Troubleshooting: keep all DLLs beside openomsi.exe; extract the whole ZIP again 
 is missing. Do not download individual DLLs from third-party DLL websites.
 A warning about an unknown publisher is possible; this preview is not code-signed.
 Download only from the project release and compare the supplied SHA256 checksum.
-Windows 11 VM: DirectX 12 software-renderer startup, Grundorf display, camera use and normal exit tested. Full gameplay and affected physical GPUs still need confirmation.
+Windows validation includes CI checks; a manual Windows gameplay test of 0.8.9-pre remains pending.
 
 DEUTSCH
 1. Rechtsklick auf die ZIP-Datei, dann Alle extrahieren. Nicht direkt im ZIP starten.
@@ -75,7 +75,7 @@ Bei fehlenden DLLs das komplette ZIP erneut entpacken. Alle DLLs gehoeren neben 
 Keine einzelnen DLLs von fremden Downloadseiten beziehen. Diese Vorabversion ist nicht
 signiert; eine Meldung ueber einen unbekannten Herausgeber ist deshalb moeglich.
 Nur vom Projekt-Release herunterladen und die SHA256-Pruefsumme vergleichen.
-Windows-11-VM: DirectX-12-Softwarestart, Grundorf-Anzeige, Kamera und normales Beenden getestet. Vollstaendiger Spieltest und Bestaetigung auf betroffenen Grafikkarten stehen aus.
+Windows-Pruefung umfasst CI-Tests; ein manueller Windows-Spieltest von 0.8.9-pre steht noch aus.
 '''
 
 
