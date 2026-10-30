@@ -1,3 +1,33 @@
 # gitleaks fingerprints that are no secret (commit:file:rule:line).
 # The city map's route cache check, `self.city.route.0 != key || ...`, read as an API key.
 88ab9e2213267f972880464b44a72c780bda01b4:crates/omsi-app/src/navigator/city_map.rs:generic-api-key:536
+
+# Verified source-file SHA256, not a credential: apple/Shared/Pages/KeysPage.swift
+4351c36a772a6193ed0b37b65f4b57a7687de09d:SOURCE-SHA256.json:generic-api-key:85
+
+# Verified source-file SHA256, not a credential: crates/omsi-admin/src/auth.rs
+4351c36a772a6193ed0b37b65f4b57a7687de09d:SOURCE-SHA256.json:generic-api-key:326
+
+# Verified source-file SHA256, not a credential: crates/omsi-app/src/app_events/frame/view_keys.rs
+4351c36a772a6193ed0b37b65f4b57a7687de09d:SOURCE-SHA256.json:generic-api-key:360
+
+# Verified source-file SHA256, not a credential: crates/omsi-app/src/frame_stages/access_tests.rs
+4351c36a772a6193ed0b37b65f4b57a7687de09d:SOURCE-SHA256.json:generic-api-key:405
+
+# Verified source-file SHA256, not a credential: crates/omsi-net/src/ws_api.rs
+4351c36a772a6193ed0b37b65f4b57a7687de09d:SOURCE-SHA256.json:generic-api-key:939
+
+# Verified source-file SHA256, not a credential: crates/omsi-platform/src/discord.rs
+4351c36a772a6193ed0b37b65f4b57a7687de09d:SOURCE-SHA256.json:discord-api-token:973
+
+# Verified source-file SHA256, not a credential: crates/omsi-plugin/tests/api.rs
+4351c36a772a6193ed0b37b65f4b57a7687de09d:SOURCE-SHA256.json:generic-api-key:1044
+
+# Verified source-file SHA256, not a credential: crates/omsi-sim/src/door_keys.rs
+4351c36a772a6193ed0b37b65f4b57a7687de09d:SOURCE-SHA256.json:generic-api-key:1348
+
+# Verified source-file SHA256, not a credential: docs/plugin-api.json
+4351c36a772a6193ed0b37b65f4b57a7687de09d:SOURCE-SHA256.json:generic-api-key:1742
+
+# Verified source-file SHA256, not a credential: launcher/ui/js/api.js
+4351c36a772a6193ed0b37b65f4b57a7687de09d:SOURCE-SHA256.json:generic-api-key:1950

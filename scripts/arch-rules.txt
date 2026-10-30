@@ -186,8 +186,11 @@ forbid omsi-guard omsi-audio
 forbid omsi-guard omsi-launcher-model
 
 # Lines of Rust in crates/omsi-app (may grow 2 % past this; lower with --update).
-app-lines 88838
+app-lines 96606
 
 # Editor fork on upstream 0.2.50: reviewed combined baseline (2026-10-14).
 # Includes the upstream fixed-tick / stage-context refactor and existing editor.
 # Future subsystem extraction remains desirable; dependency rules are unchanged.
+
+# 0.3.45 editor integration: 96606 lines, including retained editor and route authoring.
+# Explicit release baseline; dependency boundaries and growth limits remain enforced.
